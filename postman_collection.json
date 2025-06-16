@@ -1,0 +1,767 @@
+{
+	"info": {
+		"_postman_id": "baran-api-service",
+		"name": "Baran API Service",
+		"description": "API collection for Baran Service",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"token\", jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "login"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"website_url\": \"https://example.com\",\n    \"license_key\": \"test-license-key-123\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/me",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "me"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Connection Test",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/ping",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "ping"]
+				}
+			}
+		},
+		{
+			"name": "Licenses",
+			"item": [
+				{
+					"name": "Create License",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/licenses",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "licenses"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"key\": \"string\",\n    \"expires_at\": \"2024-12-31\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Update License",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/licenses/:license",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "licenses", ":license"],
+							"variable": [
+								{
+									"key": "license",
+									"value": "1"
+								}
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"key\": \"string\",\n    \"expires_at\": \"2024-12-31\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Extend License",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/licenses/:license/extend",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "licenses", ":license", "extend"],
+							"variable": [
+								{
+									"key": "license",
+									"value": "1"
+								}
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"expires_at\": \"2024-12-31\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Check License Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/licenses/status",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "licenses", "status"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "WooCommerce",
+			"item": [
+				{
+					"name": "Register WooCommerce Key",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/register-woocommerce-key",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "register-woocommerce-key"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"key\": \"ck_1234567890abcdef\",\n    \"secret\": \"cs_1234567890abcdef\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Validate WooCommerce Key",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/validate-woocommerce-key",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "validate-woocommerce-key"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"key\": \"ck_1234567890abcdef\",\n    \"secret\": \"cs_1234567890abcdef\"\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Version",
+			"item": [
+				{
+					"name": "Check Version",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/check-version",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "check-version"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"current_version\": \"1.0.0\"\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Settings",
+			"item": [
+				{
+					"name": "Get Settings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/settings",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "settings"]
+						}
+					}
+				},
+				{
+					"name": "Update Settings",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/settings",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "settings"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"settings\": {\n        \"enable_new_product\": true,\n        \"enable_price_update\": true,\n        \"enable_stock_update\": true,\n        \"enable_name_update\": true,\n        \"rain_sale_price_unit\": \"toman\",\n        \"woocommerce_price_unit\": \"toman\"\n    }\n}"
+						}
+					}
+				},
+				{
+					"name": "Get Payment Gateways",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/settings/payment-gateways",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "settings", "payment-gateways"]
+						}
+					}
+				},
+				{
+					"name": "Update Payment Gateways",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/settings/payment-gateways",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "settings", "payment-gateways"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"gateways\": []\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Sync",
+			"item": [
+				{
+					"name": "Sync Settings",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/sync-settings",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "sync-settings"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"settings\": {}\n}"
+						}
+					}
+				},
+				{
+					"name": "Trigger Sync",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/trigger-sync",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "trigger-sync"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Logs",
+			"item": [
+				{
+					"name": "Get Logs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/logs",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "logs"]
+						}
+					}
+				},
+				{
+					"name": "Get Plugin Logs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/logs/plugin",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "logs", "plugin"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Products",
+			"item": [
+				{
+					"name": "Sync Products",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/products/sync",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "products", "sync"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"update\": [\n        {\n            \"ItemName\": \"گاباردين راسته 263\",\n            \"Barcode\": \"TRS18263NANA\",\n            \"PriceAmount\": 1290000,\n            \"PriceAfterDiscount\": 1290000,\n            \"TotalCount\": 0,\n            \"StockID\": null\n        }\n    ],\n    \"insert\": [\n        {\n            \"ItemName\": \"گاباردين\",\n            \"Barcode\": \"TRS1845NANA\",\n            \"PriceAmount\": 1290000,\n            \"PriceAfterDiscount\": 1290000,\n            \"TotalCount\": 0,\n            \"StockID\": null\n        }\n    ]\n}"
+						}
+					}
+				},
+				{
+					"name": "Bulk Sync Products",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/products/bulk-sync",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "products", "bulk-sync"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"update\": [\n        {\n            \"ItemName\": \"گاباردين راسته 263\",\n            \"Barcode\": \"TRS18263NANA\",\n            \"PriceAmount\": 1290000,\n            \"PriceAfterDiscount\": 1290000,\n            \"TotalCount\": 0,\n            \"StockID\": null\n        },\n        {\n            \"ItemName\": \"گاباردين راسته 264\",\n            \"Barcode\": \"TRS18264NANA\",\n            \"PriceAmount\": 1290000,\n            \"PriceAfterDiscount\": 1290000,\n            \"TotalCount\": 0,\n            \"StockID\": null\n        }\n    ],\n    \"insert\": [\n        {\n            \"ItemName\": \"گاباردين\",\n            \"Barcode\": \"TRS1845NANA\",\n            \"PriceAmount\": 1290000,\n            \"PriceAfterDiscount\": 1290000,\n            \"TotalCount\": 0,\n            \"StockID\": null\n        },\n        {\n            \"ItemName\": \"گاباردين 2\",\n            \"Barcode\": \"TRS1846NANA\",\n            \"PriceAmount\": 1290000,\n            \"PriceAfterDiscount\": 1290000,\n            \"TotalCount\": 0,\n            \"StockID\": null\n        }\n    ]\n}"
+						}
+					}
+				},
+				{
+					"name": "Get Sync Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/products/sync-status/1",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "products", "sync-status", "1"]
+						}
+					}
+				},
+				{
+					"name": "Sync On Cart",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/products/sync-on-cart",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "products", "sync-on-cart"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"cart_items\": [\n        {\n            \"barcode\": \"TRS18263NANA\",\n            \"quantity\": 2\n        },\n        {\n            \"barcode\": \"TRS1845NANA\",\n            \"quantity\": 1\n        }\n    ]\n}"
+						}
+					}
+				},
+				{
+					"name": "Clear MongoDB Data",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/mongo/clear-data",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "mongo", "clear-data"]
+						},
+						"description": "پاک کردن محتوای کالکشن products در مونگو و محصولات ووکامرس"
+					}
+				}
+			]
+		},
+		{
+			"name": "Webhook",
+			"item": [
+				{
+					"name": "Product Changes",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/webhook/product-changes",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "webhook", "product-changes"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"changes\": [\n        {\n            \"change_type\": \"insert\",\n            \"product\": {\n                \"ItemName\": \"گاباردين\",\n                \"Barcode\": \"TRS1845NANA\",\n                \"PriceAmount\": 1290000,\n                \"PriceAfterDiscount\": 1290000,\n                \"TotalCount\": 0,\n                \"StockID\": null\n            }\n        },\n        {\n            \"change_type\": \"update\",\n            \"product\": {\n                \"ItemName\": \"گاباردين راسته 263\",\n                \"Barcode\": \"TRS18263NANA\",\n                \"PriceAmount\": 1290000,\n                \"PriceAfterDiscount\": 1290000,\n                \"TotalCount\": 0,\n                \"StockID\": null\n            }\n        }\n    ]\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Notifications",
+			"item": [
+				{
+					"name": "Get Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/notifications",
+							"host": ["{{base_url}}"],
+							"path": ["api", "notifications"]
+						}
+					}
+				},
+				{
+					"name": "Dismiss Notification",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/notifications/dismiss",
+							"host": ["{{base_url}}"],
+							"path": ["api", "notifications", "dismiss"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"notification_id\": 1\n}"
+						}
+					}
+				},
+				{
+					"name": "Create Notification",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/notifications",
+							"host": ["{{base_url}}"],
+							"path": ["api", "notifications"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"string\",\n    \"message\": \"string\",\n    \"type\": \"string\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Update Notification",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/notifications/:notification",
+							"host": ["{{base_url}}"],
+							"path": ["api", "notifications", ":notification"],
+							"variable": [
+								{
+									"key": "notification",
+									"value": "1"
+								}
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"string\",\n    \"message\": \"string\",\n    \"type\": \"string\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Delete Notification",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/notifications/:notification",
+							"host": ["{{base_url}}"],
+							"path": ["api", "notifications", ":notification"],
+							"variable": [
+								{
+									"key": "notification",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Price Unit Settings",
+			"item": [
+				{
+					"name": "Update Price Unit Settings",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/price-unit-settings/update",
+							"host": ["{{base_url}}"],
+							"path": ["api", "price-unit-settings", "update"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"settings\": {}\n}"
+						}
+					}
+				},
+				{
+					"name": "Get Price Unit Settings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/price-unit-settings/get",
+							"host": ["{{base_url}}"],
+							"path": ["api", "price-unit-settings", "get"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Invoices",
+			"item": [
+				{
+					"name": "Handle Webhook",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/invoices/webhook",
+							"host": ["{{base_url}}"],
+							"path": ["api", "invoices", "webhook"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"invoice_data\": {}\n}"
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000"
+		}
+	]
+}
