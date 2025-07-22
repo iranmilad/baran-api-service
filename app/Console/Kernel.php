@@ -12,8 +12,12 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
-        $schedule->command('queue:work --max-jobs=1 --stop-when-empty')->everyMinute()->withoutOverlapping();
+        // Schedule queue workers for each queue in order, every minute, without overlapping
+        $schedule->command('queue:work --queue=woocommerce-update --max-jobs=1 --stop-when-empty')->everyMinute()->withoutOverlapping();
+        $schedule->command('queue:work --queue=default --max-jobs=1 --stop-when-empty')->everyMinute()->withoutOverlapping();
+        $schedule->command('queue:work --queue=products --max-jobs=1 --stop-when-empty')->everyMinute()->withoutOverlapping();
+        $schedule->command('queue:work --queue=bulk-update --max-jobs=1 --stop-when-empty')->everyMinute()->withoutOverlapping();
+        $schedule->command('queue:work --queue=woocommerce-insert --max-jobs=1 --stop-when-empty')->everyMinute()->withoutOverlapping();
     }
 
     /**
