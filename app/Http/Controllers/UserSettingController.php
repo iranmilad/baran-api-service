@@ -49,10 +49,25 @@ class UserSettingController extends Controller
                 $settings = $license->userSetting;
 
                 if (!$settings) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'تنظیمات یافت نشد'
-                    ], 404);
+                    // Create default settings if not found
+                    $settings = UserSetting::create([
+                        'license_id' => $license->id,
+                        'rain_sale_price_unit' => 'rial',
+                        'woocommerce_price_unit' => 'toman',
+                        'enable_cart_sync' => false,
+                        'enable_invoice' => false,
+                        'enable_price_update' => false,
+                        'enable_stock_update' => false,
+                        'enable_name_update' => false,
+                        'enable_new_product' => false,
+                        'invoice_settings' => [
+                            'cash_on_delivery' => 'cash',
+                            'invoice_pending_type' => 'off',
+                            'invoice_on_hold_type' => 'off',
+                            'invoice_processing_type' => 'off',
+                            'invoice_complete_type' => 'off',
+                        ],
+                    ]);
                 }
 
                 return response()->json([
