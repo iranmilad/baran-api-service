@@ -4,6 +4,7 @@ namespace App\Console;
 
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
+use Illuminate\Support\Facades\Log;
 
 class Kernel extends ConsoleKernel
 {
@@ -12,13 +13,7 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // Log the current time each time the schedule runs
-        $schedule->call(function () {
-            \Log::info('Cron schedule executed at: ' . now());
-        })->everyMinute();
 
-        // Schedule queue workers for each queue in order, every minute, without overlapping
-        $schedule->command('queue:work --queue=woocommerce-update,default,products,bulk-update,woocommerce-insert --stop-when-empty')->everyMinute()->withoutOverlapping();
     }
 
     /**
