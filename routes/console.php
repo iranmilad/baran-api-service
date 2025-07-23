@@ -25,4 +25,5 @@ Schedule::call(function () {
 
 Schedule::command('queue:work --queue=woocommerce-update,default,products,bulk-update,woocommerce-insert --stop-when-empty')
     ->everyMinute()
-    ->withoutOverlapping();
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/queue_work.log'));
