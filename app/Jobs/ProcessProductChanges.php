@@ -30,6 +30,8 @@ class ProcessProductChanges implements ShouldQueue
         $this->changes = $changes;
         $this->license_id = $license_id;
         $this->onQueue('products'); // نام صف
+        Log::info('ProcessProductChanges job created');
+
     }
 
     public function handle()
