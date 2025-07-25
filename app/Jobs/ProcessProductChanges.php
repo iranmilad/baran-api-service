@@ -79,6 +79,7 @@ class ProcessProductChanges implements ShouldQueue
                     'price_after_discount' => (int)($productData['PriceAfterDiscount'] ?? 0),
                     'total_count' => (int)($productData['TotalCount'] ?? 0),
                     'stock_id' => $productData['StockID'] ?? null,
+                    'department_name' => $productData['DepartmentName'] ?? null,
                     'is_variant' => !empty($productData['Attributes']),
                     'last_sync_at' => $now,
                     'license_id' => $this->license_id,
@@ -330,6 +331,35 @@ class ProcessProductChanges implements ShouldQueue
                     'license_id' => $this->license_id
                 ]);
                 return;
+            }
+
+            // در متد dispatchWooCommerceJobs، قبل از ارسال محصولات به ووکامرس:
+            // دریافت دسته‌بندی‌های ووکامرس فقط یک بار
+            $categories = [];
+            try {
+                $license = License::with(['userSetting', 'woocommerceApiKey'])->find($this->license_id);
+                if ($license && $license->woocommerceApiKey) {
+                    $wooApiKey = $license->woocommerceApiKey;
+                    $response = \Illuminate\Support\Facades\Http::withHeaders([
+                        'Content-Type' => 'application/json',
+                        'Accept' => 'application/json',
+                    ])->withBasicAuth(
+                        $wooApiKey->api_key,
+                        $wooApiKey->api_secret
+                    )->get($license->website_url . '/wp-json/wc/v3/products/categories');
+                    if ($response->successful()) {
+                        $categories = collect($response->json())->keyBy('name');
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::error('خطا در دریافت دسته‌بندی‌های ووکامرس: ' . $e->getMessage());
+            }
+            // سپس هنگام آماده‌سازی داده محصول برای ووکامرس:
+            // اگر department_name وجود داشت و در دسته‌بندی‌ها بود، category_id را اضافه کن
+            foreach ($products as &$product) {
+                if (!empty($product['department_name']) && isset($categories[$product['department_name']])) {
+                    $product['category_id'] = $categories[$product['department_name']]['id'];
+                }
             }
 
             // تغییر اندازه دسته به 10 محصول

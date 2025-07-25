@@ -16,6 +16,7 @@ class Product extends Model
         'price_after_discount',
         'total_count',
         'stock_id',
+        'department_name',
         'parent_id',
         'is_variant',
         'variant_data',
@@ -29,7 +30,8 @@ class Product extends Model
         'total_count' => 'integer',
         'is_variant' => 'boolean',
         'variant_data' => 'array',
-        'last_sync_at' => 'datetime'
+        'last_sync_at' => 'datetime',
+        'department_name' => 'string',
     ];
 
     public function parent(): BelongsTo

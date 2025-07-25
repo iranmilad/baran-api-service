@@ -242,6 +242,11 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             }
         }
 
+        // اضافه کردن دسته‌بندی ووکامرس بر اساس department_name
+        if (!empty($productData['department_name']) && !empty($productData['category_id'])) {
+            $data['categories'] = [['id' => $productData['category_id']]];
+        }
+
         return $data;
     }
 
