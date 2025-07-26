@@ -70,13 +70,19 @@ class UpdateWooCommerceProducts implements ShouldQueue
             $userSettings = $license->userSetting;
             $wooApiKey = $license->woocommerceApiKey;
 
-            if (!$userSettings || !$wooApiKey) {
-                Log::error('تنظیمات کاربر یا کلید API ووکامرس یافت نشد', [
+            if (!$userSettings) {
+                Log::error('تنظیمات کاربر ووکامرس یافت نشد', [
                     'license_id' => $license->id
                 ]);
                 return;
             }
 
+            if (!$wooApiKey) {
+                Log::error('کلید API ووکامرس یافت نشد', [
+                    'license_id' => $license->id
+                ]);
+                return;
+            }
             $woocommerce = new Client(
                 $license->website_url,
                 $wooApiKey->api_key,
