@@ -193,7 +193,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
     }
 
     /**
-     * دریافت اطلاعات محصولات از API باران
+     * دریافت اطلاعات محصولات از API باران یا دیتابیس
      */
     protected function getRainProducts($barcodes)
     {
@@ -204,16 +204,16 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 Log::error('لایسنس یا کاربر یافت نشد', [
                     'license_id' => $this->license_id
                 ]);
-                return [];
+                return $this->getProductsFromDatabase($barcodes);
             }
 
             $user = $license->user;
             if (!$user->api_webservice || !$user->api_username || !$user->api_password) {
-                Log::error('اطلاعات API کاربر یافت نشد', [
+                Log::warning('اطلاعات API باران کاربر یافت نشد، استفاده از داده‌های دیتابیس', [
                     'user_id' => $user->id,
                     'license_id' => $license->id
                 ]);
-                return [];
+                return $this->getProductsFromDatabase($barcodes);
             }
 
             $response = Http::withOptions([
@@ -228,18 +228,56 @@ class UpdateWooCommerceProducts implements ShouldQueue
             ]);
 
             if (!$response->successful()) {
-                Log::error('خطا در دریافت اطلاعات از API باران', [
+                Log::warning('خطا در دریافت اطلاعات از API باران، استفاده از داده‌های دیتابیس', [
                     'response' => $response->body(),
                     'user_id' => $user->id,
                     'license_id' => $license->id
                 ]);
-                return [];
+                return $this->getProductsFromDatabase($barcodes);
             }
 
             $data = $response->json();
             return $data['GetItemInfosResult'] ?? [];
         } catch (\Exception $e) {
-            Log::error('خطا در دریافت اطلاعات از API باران: ' . $e->getMessage(), [
+            Log::warning('خطا در دریافت اطلاعات از API باران، استفاده از داده‌های دیتابیس: ' . $e->getMessage(), [
+                'license_id' => $this->license_id
+            ]);
+            return $this->getProductsFromDatabase($barcodes);
+        }
+    }
+
+    /**
+     * دریافت اطلاعات محصولات از دیتابیس
+     */
+    protected function getProductsFromDatabase($barcodes)
+    {
+        try {
+            $products = Product::where('license_id', $this->license_id)
+                ->whereIn('barcode', $barcodes)
+                ->get();
+
+            $result = [];
+            foreach ($products as $product) {
+                $result[] = [
+                    'Barcode' => $product->barcode,
+                    'ItemID' => $product->item_id,
+                    'Name' => $product->item_name,
+                    'Price' => $product->price_amount,
+                    'PriceAfterDiscount' => $product->price_after_discount,
+                    'CurrentUnitCount' => $product->total_count,
+                    'StockID' => $product->stock_id,
+                    'DepartmentName' => $product->department_name
+                ];
+            }
+
+            Log::info('اطلاعات محصولات از دیتابیس دریافت شد', [
+                'license_id' => $this->license_id,
+                'count' => count($result)
+            ]);
+
+            return $result;
+        } catch (\Exception $e) {
+            Log::error('خطا در دریافت اطلاعات از دیتابیس: ' . $e->getMessage(), [
                 'license_id' => $this->license_id
             ]);
             return [];
