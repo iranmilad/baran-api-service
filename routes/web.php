@@ -21,7 +21,7 @@ Route::get('/', function () {
 use Illuminate\Support\Facades\Artisan;
 
 Route::get('/dev/migrate', function () {
-    Artisan::call('migrate:fresh');
+    Artisan::call('migrate');
     return 'Migrations refreshed!';
 });
 
@@ -35,4 +35,8 @@ Route::get('/dev/cache-clear', function () {
 Route::get('/dev/seed', function () {
     Artisan::call('db:seed');
     return 'Database seeded!';
+});
+Route::get('/dev/migratefresh', function () {
+    Artisan::call('migrate:fresh');
+    return 'Migrations refreshed!';
 });

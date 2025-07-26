@@ -119,7 +119,10 @@ class UserSettingController extends Controller
                         'message' => 'توکن نامعتبر - لایسنس یافت نشد'
                     ], 401);
                 }
-
+                \Log::info('درخواست به‌روزرسانی تنظیمات کاربر', [
+                    'license_id' => $license->id,
+                    'incoming_settings' => $request->settings
+                ]);
                 if (!$license->isActive()) {
                     Log::error('لایسنس فعال نیست', [
                         'license_id' => $license->id
