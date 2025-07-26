@@ -41,6 +41,24 @@ class UpdateWooCommerceProducts implements ShouldQueue
     public function handle()
     {
         try {
+
+            // لاگ شروع صف
+            Log::info('شروع پردازش صف به‌روزرسانی محصولات ووکامرس', [
+                'license_id' => $this->license_id,
+                'operation' => $this->operation,
+                'barcodes_count' => count($this->barcodes)
+            ]);
+
+            // لاگ اطلاع از ارسال barcode
+            if (!empty($this->barcodes)) {
+                Log::info('بارکدهای مشخص شده برای به‌روزرسانی', [
+                    'license_id' => $this->license_id,
+                    'barcodes' => $this->barcodes
+                ]);
+            }
+
+
+
             $license = License::with(['userSetting', 'woocommerceApiKey'])->find($this->license_id);
             if (!$license || !$license->isActive()) {
                 Log::error('لایسنس معتبر نیست', [
