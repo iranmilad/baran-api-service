@@ -175,6 +175,10 @@ class UserSettingController extends Controller
                     // ارسال رویداد به‌روزرسانی تنظیمات
                     event(new SettingsUpdated( $license,$settings));
 
+                \Log::info('تنظیمات کاربر ذخیره شد', [
+                    'license_id' => $settings->license_id,
+                    'settings' => $settings->toArray()
+                ]);
                 return response()->json([
                     'success' => true,
                     'message' => 'تنظیمات با موفقیت به‌روزرسانی شد',
