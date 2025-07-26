@@ -156,6 +156,11 @@ class UserSettingController extends Controller
                     ], 422);
                 }
 
+                \Log::info('درخواست به‌روزرسانی تنظیمات کاربر', [
+                    'license_id' => $license->id,
+                    'incoming_settings' => $request->settings
+                ]);
+
                 $settings = UserSetting::updateOrCreate(
                     ['license_id' => $license->id],
                     [
@@ -177,7 +182,7 @@ class UserSettingController extends Controller
 
                 \Log::info('تنظیمات کاربر ذخیره شد', [
                     'license_id' => $settings->license_id,
-                    'settings' => $settings->toArray()
+                    'saved_settings' => $settings->toArray()
                 ]);
                 return response()->json([
                     'success' => true,
