@@ -63,7 +63,10 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                 throw new \Exception('دسترسی‌های لازم در تنظیمات کاربر فعال نیست');
             }
 
+            // بررسی وجود محصولات در دیتابیس
             $productsToUpdate = [];
+            $productsToInsert = [];
+
             foreach ($this->products as $product) {
                 if (empty($product['item_id'])) {
                     Log::warning('شناسه یکتای محصول خالی است', [
@@ -71,24 +74,29 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                     ]);
                     continue;
                 }
-                $productsToUpdate[] = $this->prepareProductData($product, $userSetting);
+
+                // بررسی وجود محصول در دیتابیس
+                $existingProduct = Product::where('item_id', $product['item_id'])
+                    ->where('license_id', $this->license_id)
+                    ->first();
+
+                if ($existingProduct) {
+                    // محصول وجود دارد، به‌روزرسانی کن
+                    $productsToUpdate[] = $this->prepareProductData($product, $userSetting);
+                } else {
+                    // محصول وجود ندارد، به عنوان محصول جدید درج کن
+                    Log::info("محصول با item_id {$product['item_id']} در دیتابیس یافت نشد، به عنوان محصول جدید درج می‌شود");
+                    $productsToInsert[] = $product;
+                }
             }
 
+            // به‌روزرسانی محصولات موجود
             if (!empty($productsToUpdate)) {
                 Log::info('محصولات در حال به‌روزرسانی:', [
                     'license_id' => $this->license_id,
                     'unique_ids' => collect($productsToUpdate)->pluck('unique_id')->toArray(),
                     'barcodes' => collect($productsToUpdate)->pluck('barcode')->toArray(),
                     'count' => count($productsToUpdate)
-                ]);
-
-                // لاگ کردن محتوای درخواست
-                Log::info('محتوای درخواست به‌روزرسانی محصولات:', [
-                    'license_id' => $this->license_id,
-                    'request_data' => [
-                        'products' => $productsToUpdate
-                    ],
-                    'endpoint' => $license->website_url . '/wp-json/wc/v3/products/unique/batch/update'
                 ]);
 
                 $response = Http::withOptions([
@@ -109,8 +117,21 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                 ]);
 
                 $this->handleResponse($response, $productsToUpdate, 'update');
-            } else {
-                Log::info('هیچ محصولی برای به‌روزرسانی وجود ندارد', [
+            }
+
+            // درج محصولات جدید
+            if (!empty($productsToInsert)) {
+                Log::info('محصولات جدید برای درج:', [
+                    'license_id' => $this->license_id,
+                    'count' => count($productsToInsert)
+                ]);
+
+                // ارسال به صف درج محصولات جدید
+                $this->dispatchInsertJobs($productsToInsert, $userSetting);
+            }
+
+            if (empty($productsToUpdate) && empty($productsToInsert)) {
+                Log::info('هیچ محصولی برای به‌روزرسانی یا درج وجود ندارد', [
                     'license_id' => $this->license_id,
                     'total_checked' => count($this->products)
                 ]);
@@ -268,6 +289,39 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                     'error' => $failedOperation['error']
                 ]);
             }
+        }
+    }
+
+    /**
+     * ارسال محصولات جدید به صف درج
+     */
+    protected function dispatchInsertJobs(array $products, UserSetting $userSetting)
+    {
+        try {
+            // آماده‌سازی محصولات برای درج
+            $preparedProducts = collect($products)->map(function ($product) use ($userSetting) {
+                return $this->prepareProductData($product, $userSetting);
+            })->toArray();
+
+            // تقسیم به دسته‌های کوچک
+            $chunks = array_chunk($preparedProducts, $this->batchSize);
+
+            foreach ($chunks as $index => $chunk) {
+                BulkInsertWooCommerceProducts::dispatch($chunk, $this->license_id, $this->batchSize)
+                    ->onQueue('woocommerce-insert')
+                    ->delay(now()->addSeconds($index * 15));
+            }
+
+            Log::info('محصولات جدید به صف درج ارسال شدند', [
+                'license_id' => $this->license_id,
+                'count' => count($products),
+                'chunks' => count($chunks)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('خطا در ارسال محصولات جدید به صف درج: ' . $e->getMessage(), [
+                'license_id' => $this->license_id
+            ]);
         }
     }
 

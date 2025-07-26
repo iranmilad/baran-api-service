@@ -352,7 +352,7 @@ class ProcessProductChanges implements ShouldQueue
                     }
                 }
             } catch (\Exception $e) {
-                \Log::error('خطا در دریافت دسته‌بندی‌های ووکامرس: ' . $e->getMessage());
+                Log::error('خطا در دریافت دسته‌بندی‌های ووکامرس: ' . $e->getMessage());
             }
             // سپس هنگام آماده‌سازی داده محصول برای ووکامرس:
             // اگر department_name وجود داشت و در دسته‌بندی‌ها بود، category_id را اضافه کن
