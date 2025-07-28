@@ -2,6 +2,9 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../wordpress/wp-content/plugins/baran-inventory-manager"
 		}
 	],
 	"settings": {}
