@@ -100,6 +100,14 @@ class UserSettingController extends Controller
                     'invoice_failed_type',
                     'payment_gateways'
                 ];
+                // اگر invoice_settings به صورت آرایه وجود داشت، کلیدهای آن را به سطح بالا اضافه کن
+                if (isset($settings->invoice_settings) && is_array($settings->invoice_settings)) {
+                    foreach ($settings->invoice_settings as $k => $v) {
+                        $pluginSettings[$k] = $v;
+                    }
+                }
+                // invoice_settings را به طور کامل حذف کن
+                unset($pluginSettings['invoice_settings']);
                 $filtered = [];
                 foreach ($allowedKeys as $key) {
                     if (array_key_exists($key, $pluginSettings)) {
