@@ -40,11 +40,16 @@ class UserSetting extends Model
             'invoice_failed_type'
         ];
         $db = $data;
-        $db['invoice_settings'] = [];
-        foreach ($invoiceKeys as $key) {
-            if (array_key_exists($key, $db)) {
-                $db['invoice_settings'][$key] = $db[$key];
-                unset($db[$key]);
+        // اگر invoice_settings به صورت آرایه وجود داشت، همان را نگه دار
+        if (isset($db['invoice_settings']) && is_array($db['invoice_settings'])) {
+            // هیچ کاری نکن
+        } else {
+            $db['invoice_settings'] = [];
+            foreach ($invoiceKeys as $key) {
+                if (array_key_exists($key, $db)) {
+                    $db['invoice_settings'][$key] = $db[$key];
+                    unset($db[$key]);
+                }
             }
         }
         return $db;
