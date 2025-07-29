@@ -49,8 +49,8 @@ class UserSettingController extends Controller
                 $settings = $license->userSetting;
 
                 if (!$settings) {
-                    // Create default settings if not found
-                    $settings = UserSetting::create([
+                    // مقدار دیفالت به صورت flat برای پلاگین
+                    $default = [
                         'license_id' => $license->id,
                         'rain_sale_price_unit' => 'rial',
                         'woocommerce_price_unit' => 'toman',
@@ -60,17 +60,19 @@ class UserSettingController extends Controller
                         'enable_stock_update' => false,
                         'enable_name_update' => false,
                         'enable_new_product' => false,
-                        'invoice_settings' => [
-                            'cash_on_delivery' => 'cash',
-                            'credit_payment' => 'cash',
-                            'invoice_pending_type' => 'off',
-                            'invoice_on_hold_type' => 'off',
-                            'invoice_processing_type' => 'off',
-                            'invoice_complete_type' => 'off',
-                            'invoice_cancelled_type' => 'off',
-                            'invoice_refunded_type' => 'off',
-                            'invoice_failed_type' => 'off',
-                        ],
+                        'cash_on_delivery' => 'cash',
+                        'credit_payment' => 'cash',
+                        'invoice_pending_type' => 'off',
+                        'invoice_on_hold_type' => 'off',
+                        'invoice_processing_type' => 'off',
+                        'invoice_complete_type' => 'off',
+                        'invoice_cancelled_type' => 'off',
+                        'invoice_refunded_type' => 'off',
+                        'invoice_failed_type' => 'off',
+                    ];
+                    return response()->json([
+                        'success' => true,
+                        'data' => $default
                     ]);
                 }
 
