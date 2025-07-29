@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UserSetting extends Model
+{
     /**
      * تبدیل داده مدل به ساختار flat برای پلاگین
      */
@@ -48,7 +49,6 @@ class UserSetting extends Model
         }
         return $db;
     }
-{
     protected $fillable = [
         'license_id',
         'enable_price_update',
