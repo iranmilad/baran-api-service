@@ -23,7 +23,7 @@ Schedule::call(function () {
     \Log::info('Cron schedule executed at: ' . now());
 })->everyMinute();
 
-Schedule::command('queue:work --queue=woocommerce,woocommerce-update,default,products,bulk-update,woocommerce-insert --stop-when-empty --max-jobs=50')
+Schedule::command('queue:work --queue=category,woocommerce,woocommerce-update,default,products,bulk-update,woocommerce-insert --stop-when-empty --max-jobs=50')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer()
