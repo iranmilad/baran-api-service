@@ -76,11 +76,41 @@ class UserSettingController extends Controller
                     ]);
                 }
 
-                // همیشه خروجی را به فرمت flat (پلاگین) برگردان
+                // همیشه خروجی را به فرمت flat (پلاگین) برگردان و فقط کلیدهای مورد انتظار پلاگین را بازگردان
                 $pluginSettings = $settings->toPluginArray();
+                // فقط کلیدهای مورد انتظار پلاگین را نگه دار
+                $allowedKeys = [
+                    'license_id',
+                    'rain_sale_price_unit',
+                    'woocommerce_price_unit',
+                    'enable_cart_sync',
+                    'enable_invoice',
+                    'enable_price_update',
+                    'enable_stock_update',
+                    'enable_name_update',
+                    'enable_new_product',
+                    'cash_on_delivery',
+                    'credit_payment',
+                    'invoice_pending_type',
+                    'invoice_on_hold_type',
+                    'invoice_processing_type',
+                    'invoice_complete_type',
+                    'invoice_cancelled_type',
+                    'invoice_refunded_type',
+                    'invoice_failed_type',
+                    'payment_gateways'
+                ];
+                $filtered = [];
+                foreach ($allowedKeys as $key) {
+                    if (array_key_exists($key, $pluginSettings)) {
+                        $filtered[$key] = $pluginSettings[$key];
+                    } else {
+                        $filtered[$key] = null;
+                    }
+                }
                 return response()->json([
                     'success' => true,
-                    'data' => $pluginSettings
+                    'data' => $filtered
                 ]);
 
             } catch (\Exception $e) {
