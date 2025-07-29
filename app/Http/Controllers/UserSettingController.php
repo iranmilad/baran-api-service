@@ -76,9 +76,11 @@ class UserSettingController extends Controller
                     ]);
                 }
 
+                // همیشه خروجی را به فرمت flat (پلاگین) برگردان
+                $pluginSettings = $settings->toPluginArray();
                 return response()->json([
                     'success' => true,
-                    'data' => $settings->toPluginArray()
+                    'data' => $pluginSettings
                 ]);
 
             } catch (\Exception $e) {
