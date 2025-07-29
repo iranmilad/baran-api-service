@@ -6,6 +6,48 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UserSetting extends Model
+    /**
+     * تبدیل داده مدل به ساختار flat برای پلاگین
+     */
+    public function toPluginArray()
+    {
+        $arr = $this->toArray();
+        // اگر invoice_settings وجود دارد، کلیدهای آن را به سطح بالا منتقل کن
+        if (isset($arr['invoice_settings']) && is_array($arr['invoice_settings'])) {
+            foreach ($arr['invoice_settings'] as $k => $v) {
+                $arr[$k] = $v;
+            }
+            unset($arr['invoice_settings']);
+        }
+        return $arr;
+    }
+
+    /**
+     * تبدیل داده flat پلاگین به ساختار دیتابیس (invoice_settings آرایه)
+     */
+    public static function fromPluginArray(array $data)
+    {
+        $invoiceKeys = [
+            'cash_on_delivery',
+            'credit_payment',
+            'invoice_pending_type',
+            'invoice_on_hold_type',
+            'invoice_processing_type',
+            'invoice_complete_type',
+            'invoice_cancelled_type',
+            'invoice_refunded_type',
+            'invoice_failed_type'
+        ];
+        $db = $data;
+        $db['invoice_settings'] = [];
+        foreach ($invoiceKeys as $key) {
+            if (array_key_exists($key, $db)) {
+                $db['invoice_settings'][$key] = $db[$key];
+                unset($db[$key]);
+            }
+        }
+        return $db;
+    }
 {
     protected $fillable = [
         'license_id',

@@ -29,3 +29,7 @@ Schedule::command('queue:work --queue=woocommerce,woocommerce-update,default,pro
     ->onOneServer()
     ->timeout(60)
     ->appendOutputTo(storage_path('logs/queue_work.log'));
+
+
+
+//    /usr/local/lsws/lsphp82/bin/php  /home/samtatech.org/public_html/server/artisan schedule:run >> /home/samtatech.org/public_html/logs/artisan_schedule.log 2>&1

@@ -62,17 +62,21 @@ class UserSettingController extends Controller
                         'enable_new_product' => false,
                         'invoice_settings' => [
                             'cash_on_delivery' => 'cash',
+                            'credit_payment' => 'cash',
                             'invoice_pending_type' => 'off',
                             'invoice_on_hold_type' => 'off',
                             'invoice_processing_type' => 'off',
                             'invoice_complete_type' => 'off',
+                            'invoice_cancelled_type' => 'off',
+                            'invoice_refunded_type' => 'off',
+                            'invoice_failed_type' => 'off',
                         ],
                     ]);
                 }
 
                 return response()->json([
                     'success' => true,
-                    'data' => $settings
+                    'data' => $settings->toPluginArray()
                 ]);
 
             } catch (\Exception $e) {
@@ -164,19 +168,11 @@ class UserSettingController extends Controller
                     'incoming_settings' => $request->settings
                 ]);
 
+                // تبدیل داده flat به ساختار دیتابیس
+                $dbSettings = UserSetting::fromPluginArray($request->settings);
                 $settings = UserSetting::updateOrCreate(
                     ['license_id' => $license->id],
-                    [
-                        'rain_sale_price_unit' => $request->settings['rain_sale_price_unit'],
-                        'woocommerce_price_unit' => $request->settings['woocommerce_price_unit'],
-                        'enable_cart_sync' => $request->settings['enable_cart_sync'],
-                        'enable_invoice' => $request->settings['enable_invoice'],
-                        'enable_price_update' => $request->settings['enable_price_update'],
-                        'enable_stock_update' => $request->settings['enable_stock_update'],
-                        'enable_name_update' => $request->settings['enable_name_update'],
-                        'enable_new_product' => $request->settings['enable_new_product'],
-                        'invoice_settings' => $request->settings['invoice_settings']
-                    ]
+                    $dbSettings
                 );
 
                 if(isset($request->sync) and $request->sync==true)
@@ -190,7 +186,7 @@ class UserSettingController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => 'تنظیمات با موفقیت به‌روزرسانی شد',
-                    'data' => $settings
+                    'data' => $settings->toPluginArray()
                 ]);
 
             } catch (\Exception $e) {
