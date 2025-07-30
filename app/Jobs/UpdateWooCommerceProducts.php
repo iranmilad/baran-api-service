@@ -290,17 +290,49 @@ class UpdateWooCommerceProducts implements ShouldQueue
     protected function updateWooCommerceProducts($woocommerce, $products)
     {
         try {
+            // تهیه خلاصه اطلاعات محصولات برای لاگ
+            $productsInfo = array_map(function($product) {
+                return [
+                    'sku' => $product['sku'],
+                    'unique_id' => $product['unique_id'],
+                    'product_id' => $product['product_id'] ?? null,
+                    'variation_id' => $product['variation_id'] ?? null,
+                    'name' => $product['name'] ?? null,
+                    'price' => $product['regular_price'] ?? null,
+                    'stock' => $product['stock_quantity'] ?? null,
+                ];
+            }, $products);
+
             $response = $woocommerce->put('products/unique/batch/update', [
                 'products' => $products
             ]);
 
+            // تهیه خلاصه پاسخ دریافتی از API
+            $responseData = [
+                'status' => $response->status ?? null,
+                'success' => $response->success ?? false,
+                'message' => $response->message ?? null,
+                'updated_count' => isset($response->data) ? count($response->data) : 0,
+                'response_data' => $response->data ?? null
+            ];
+
             Log::info('محصولات با موفقیت به‌روزرسانی شدند', [
-                'count' => count($products)
+                'count' => count($products),
+                'updated_products' => $productsInfo,
+                'api_response' => $responseData,
+                'timestamp' => now()->toDateTimeString(),
+                'license_id' => $this->license_id
             ]);
 
             return $response;
         } catch (\Exception $e) {
-            Log::error('خطا در به‌روزرسانی محصولات در ووکامرس: ' . $e->getMessage());
+            Log::error('خطا در به‌روزرسانی محصولات در ووکامرس: ' . $e->getMessage(), [
+                'products_count' => count($products),
+                'products_skus' => array_column($products, 'sku'),
+                'license_id' => $this->license_id,
+                'error_code' => $e->getCode(),
+                'error_trace' => $e->getTraceAsString()
+            ]);
             throw $e;
         }
     }
