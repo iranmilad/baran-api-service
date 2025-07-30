@@ -119,8 +119,6 @@ Route::prefix('v1')->group(function () {
         // Categories and attributes routes
         Route::get('/categories-attributes', [ProductController::class, 'getCategoriesAndAttributes']);
 
-        // Product unique ID routes
-        Route::get('/products/unique-by-sku/{sku}', [ProductController::class, 'getUniqueIdBySku']);
     });
 
     // Notification routes
