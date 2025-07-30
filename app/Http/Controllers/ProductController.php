@@ -379,7 +379,7 @@ class ProductController extends Controller
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
-            ])->post($user->api_webservice . '/GetItemInfo', [
+            ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfo', [
                 'barcode' => $sku
             ]);
 
