@@ -119,7 +119,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
             // تقسیم بارکدها به دسته‌های 100 تایی
             $barcodeChunks = array_chunk($barcodes, 100);
 
-            log::info(json_encode($barcodeChunks));
+            //log::info(json_encode($barcodeChunks));
 
             $allProducts = [];
             foreach ($barcodeChunks as $chunk) {
@@ -316,6 +316,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 'products' => $products
             ]);
 
+            log::info(json_encode($response));
             // تهیه خلاصه پاسخ دریافتی از API
             $responseData = [
                 'status' => $response->status ?? null,
