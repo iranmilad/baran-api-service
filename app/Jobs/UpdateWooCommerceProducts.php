@@ -176,7 +176,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 ]);
                 return [];
             }
-            Log::info(json_encode($response->data));
+
             // تبدیل داده‌های stdClass به آرایه
             $products = [];
             foreach ($response->data as $product) {
