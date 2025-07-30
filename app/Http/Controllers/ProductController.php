@@ -346,7 +346,7 @@ class ProductController extends Controller
                 ]
             );
 
-            $response = $woocommerce->get('products/unique', [
+            $response = $woocommerce->get('products/unique-by-sku', [
                 'sku' => $sku
             ]);
 
