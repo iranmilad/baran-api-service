@@ -363,6 +363,7 @@ class ProductController extends Controller
             }
 
             $body = $response->json();
+            log::info(json_encode($body));
             $itemId = $body['GetItemInfoResult']['ItemID'] ?? null;
 
             if (!$itemId || $itemId == '00000000-0000-0000-0000-000000000000') {
