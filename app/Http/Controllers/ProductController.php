@@ -17,6 +17,7 @@ use App\Models\License;
 use Illuminate\Support\Facades\DB;
 use App\Jobs\SyncCategories;
 use Automattic\WooCommerce\Client;
+use Illuminate\Support\Facades\Http;
 
 class ProductController extends Controller
 {
@@ -328,37 +329,60 @@ class ProductController extends Controller
                 ], 403);
             }
 
-            $wooApiKey = $license->woocommerceApiKey;
-            if (!$wooApiKey) {
+            $user = $license->user;
+            if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'کلید API ووکامرس یافت نشد'
+                    'message' => 'کاربر یافت نشد'
                 ], 404);
             }
 
-            $woocommerce = new Client(
-                $license->website_url,
-                $wooApiKey->api_key,
-                $wooApiKey->api_secret,
-                [
-                    'version' => 'wc/v3',
-                    'verify_ssl' => false
-                ]
-            );
+            // بررسی وجود اطلاعات وب‌سرویس باران
+            if (empty($user->api_webservice) || empty($user->api_username) || empty($user->api_password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'اطلاعات وب‌سرویس باران تنظیم نشده است'
+                ], 400);
+            }
 
-            $response = $woocommerce->get('products/unique-by-sku', [
-                'sku' => $sku
+            // ساخت Basic Auth header
+            $authHeader = 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password);
+
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => $authHeader
+            ])->post($user->api_webservice . '/GetItemInfo', [
+                'barcode' => $sku
             ]);
+
+            if (!$response->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'خطا در ارتباط با وب‌سرویس باران: ' . $response->status()
+                ], 500);
+            }
+
+            $body = $response->json();
+            $itemId = $body['GetItemInfoResult']['ItemID'] ?? null;
+
+            if (!$itemId || $itemId == '00000000-0000-0000-0000-000000000000') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'کد یکتا برای این SKU یافت نشد'
+                ], 404);
+            }
 
             return response()->json([
                 'success' => true,
-                'data' => $response
+                'data' => [
+                    'unique_id' => $itemId,
+                    'sku' => $sku
+                ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'خطا در دریافت شناسه یکتا: ' . $e->getMessage()
+                'message' => 'خطا در دریافت کد یکتا: ' . $e->getMessage()
             ], 500);
         }
     }
