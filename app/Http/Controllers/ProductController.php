@@ -313,33 +313,54 @@ class ProductController extends Controller
         }
     }
 
-    public function getUniqueIdBySku($sku)
+    public function getUniqueIdBySku(Request $request)
     {
         try {
-            // تست موقت - بدون احراز هویت
-            return response()->json([
-                'success' => true,
-                'message' => 'روت کار می‌کند',
-                'sku' => $sku,
-                'timestamp' => now()
-            ]);
 
-            /*
+
+           // Get and validate JWT token
+           $token = $request->bearerToken();
+           if (!$token) {
+               Log::error('No token provided in request');
+               return response()->json([
+                   'success' => false,
+                   'message' => 'No token provided'
+               ], 401);
+           }
+
+
+            // Attempt to authenticate license with token
             $license = JWTAuth::parseToken()->authenticate();
-            if (!$license || !$license->isActive()) {
+            if (!$license) {
+                Log::error('Invalid token - license not found');
                 return response()->json([
                     'success' => false,
-                    'message' => 'لایسنس معتبر نیست'
+                    'message' => 'Invalid token - license not found'
+                ], 401);
+            }
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
                 ], 403);
             }
 
             $user = $license->user;
             if (!$user) {
+                Log::error('User not found for license', [
+                    'license_id' => $license->id
+                ]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'کاربر یافت نشد'
+                    'message' => 'User not found for license'
                 ], 404);
             }
+
+
 
             // بررسی وجود اطلاعات وب‌سرویس باران
             if (empty($user->api_webservice) || empty($user->api_username) || empty($user->api_password)) {
@@ -349,12 +370,15 @@ class ProductController extends Controller
                 ], 400);
             }
 
-            // ساخت Basic Auth header
-            $authHeader = 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password);
+            $sku = $request->input('sku');
 
-            $response = Http::withHeaders([
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60
+            ])->withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => $authHeader
+                'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
             ])->post($user->api_webservice . '/GetItemInfo', [
                 'barcode' => $sku
             ]);
@@ -365,6 +389,7 @@ class ProductController extends Controller
                     'message' => 'خطا در ارتباط با وب‌سرویس باران: ' . $response->status()
                 ], 500);
             }
+
 
             $body = $response->json();
             $itemId = $body['GetItemInfoResult']['ItemID'] ?? null;
@@ -383,7 +408,6 @@ class ProductController extends Controller
                     'sku' => $sku
                 ]
             ]);
-            */
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
