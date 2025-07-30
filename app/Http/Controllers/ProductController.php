@@ -250,6 +250,16 @@ class ProductController extends Controller
             // دریافت barcodes از درخواست
             $barcodes = $request->input('barcodes', []);
 
+            // ثبت لاگ قبل از شروع عملیات به‌روزرسانی
+            Log::info('Bulk update request received', [
+                'license_id' => $license->id,
+                'website_url' => $license->website_url,
+                'barcodes_count' => count($barcodes),
+                'barcodes' => $barcodes,
+                'update_type' => empty($barcodes) ? 'all_products' : 'selected_products',
+                'timestamp' => now()->toDateTimeString()
+            ]);
+
             // Queue bulk update
             UpdateWooCommerceProducts::dispatch($license->id, 'bulk', $barcodes)
                 ->onQueue('bulk-update')
