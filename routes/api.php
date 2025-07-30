@@ -101,13 +101,13 @@ Route::prefix('v1')->group(function () {
             // Product sync routes
             Route::post('/sync-on-cart', [ProductSyncController::class, 'syncOnCart']);
 
+            // Get unique ID by barcode
+            Route::get('/unique-by-sku/{sku}', [ProductController::class, 'getUniqueIdBySku']);
 
             // Sync categories
             Route::post('/sync-categories', [ProductController::class, 'syncCategories']);
         });
 
-        // Get unique ID by barcode
-        Route::get('/products/unique-by-sku/{sku}', [ProductController::class, 'getUniqueIdBySku']);
         // Webhook routes
         Route::post('/webhook/product-changes', [WebhookController::class, 'handleProductChanges']);
 

@@ -3,20 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\UpdateWooCommerceProducts;
-use App\Jobs\BulkUpdateWooCommerceProducts;
 use App\Models\UserSetting;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Tymon\JWTAuth\Exceptions\TokenExpiredException;
 use Tymon\JWTAuth\Exceptions\TokenInvalidException;
-use App\Models\Product;
 use App\Jobs\ProcessProductChanges;
 use App\Models\License;
-use Illuminate\Support\Facades\DB;
 use App\Jobs\SyncCategories;
-use Automattic\WooCommerce\Client;
 use Illuminate\Support\Facades\Http;
 
 class ProductController extends Controller
