@@ -185,6 +185,11 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 ];
             }
 
+            Log::info('تعداد محصولات دریافت شده از ووکامرس', [
+                'count' => count($products),
+                'license_id' => $this->license_id
+            ]);
+
             return $products;
         } catch (\Exception $e) {
             Log::error('خطا در دریافت محصولات از ووکامرس: ' . $e->getMessage());
