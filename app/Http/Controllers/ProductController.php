@@ -340,12 +340,15 @@ class ProductController extends Controller
                 ], 400);
             }
 
-            // ساخت Basic Auth header
-            $authHeader = 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password);
 
-            $response = Http::withHeaders([
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60
+            ])->withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => $authHeader
+                'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
             ])->post($user->api_webservice . '/GetItemInfo', [
                 'barcode' => $sku
             ]);
@@ -357,7 +360,7 @@ class ProductController extends Controller
                 ], 500);
             }
 
-            log::info($response);
+
             $body = $response->json();
             $itemId = $body['GetItemInfoResult']['ItemID'] ?? null;
 
