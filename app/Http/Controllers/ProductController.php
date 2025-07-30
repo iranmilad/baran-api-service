@@ -316,6 +316,15 @@ class ProductController extends Controller
     public function getUniqueIdBySku($sku)
     {
         try {
+            // تست موقت - بدون احراز هویت
+            return response()->json([
+                'success' => true,
+                'message' => 'روت کار می‌کند',
+                'sku' => $sku,
+                'timestamp' => now()
+            ]);
+
+            /*
             $license = JWTAuth::parseToken()->authenticate();
             if (!$license || !$license->isActive()) {
                 return response()->json([
@@ -340,15 +349,12 @@ class ProductController extends Controller
                 ], 400);
             }
 
+            // ساخت Basic Auth header
+            $authHeader = 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password);
 
-
-            $response = Http::withOptions([
-                'verify' => false,
-                'timeout' => 180,
-                'connect_timeout' => 60
-            ])->withHeaders([
+            $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
+                'Authorization' => $authHeader
             ])->post($user->api_webservice . '/GetItemInfo', [
                 'barcode' => $sku
             ]);
@@ -359,7 +365,6 @@ class ProductController extends Controller
                     'message' => 'خطا در ارتباط با وب‌سرویس باران: ' . $response->status()
                 ], 500);
             }
-
 
             $body = $response->json();
             $itemId = $body['GetItemInfoResult']['ItemID'] ?? null;
@@ -378,6 +383,7 @@ class ProductController extends Controller
                     'sku' => $sku
                 ]
             ]);
+            */
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
