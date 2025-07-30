@@ -119,6 +119,8 @@ class UpdateWooCommerceProducts implements ShouldQueue
             // تقسیم بارکدها به دسته‌های 100 تایی
             $barcodeChunks = array_chunk($barcodes, 100);
 
+            log::info(json_encode($barcodeChunks));
+
             $allProducts = [];
             foreach ($barcodeChunks as $chunk) {
                 $rainProducts = $this->getRainProducts($chunk);
