@@ -362,7 +362,7 @@ class ProductController extends Controller
                 ], 500);
             }
 
-            log::info(json_encode($response));
+            log::info($response);
             $body = $response->json();
             $itemId = $body['GetItemInfoResult']['ItemID'] ?? null;
 
