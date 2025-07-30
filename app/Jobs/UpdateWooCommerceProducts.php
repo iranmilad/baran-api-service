@@ -112,7 +112,9 @@ class UpdateWooCommerceProducts implements ShouldQueue
             }
 
             // استخراج بارکدها
-            $barcodes = collect($wooProducts)->pluck('barcode')->filter()->values()->toArray();
+            $barcodes = collect($wooProducts)->pluck('barcode')->filter(function($barcode) {
+                return !is_null($barcode) && !empty($barcode);
+            })->values()->toArray();
 
             // تقسیم بارکدها به دسته‌های 100 تایی
             $barcodeChunks = array_chunk($barcodes, 100);
