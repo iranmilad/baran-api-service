@@ -16,7 +16,7 @@ use App\Jobs\ProcessProductChanges;
 use App\Models\License;
 use Illuminate\Support\Facades\DB;
 use App\Jobs\SyncCategories;
-use GuzzleHttp\Client;
+use Automattic\WooCommerce\Client;
 
 class ProductController extends Controller
 {

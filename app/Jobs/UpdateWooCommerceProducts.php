@@ -312,7 +312,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 ];
             }, $products);
 
-            log::info(json_encode($products));
+            //log::info(json_encode($products));
             $response = $woocommerce->put('products/unique/batch/update', [
                 'products' => $products
             ]);
