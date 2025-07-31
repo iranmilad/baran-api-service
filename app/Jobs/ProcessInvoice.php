@@ -31,13 +31,17 @@ class ProcessInvoice implements ShouldQueue
         $this->license = $license;
 
         if (!$this->license) {
-            throw new \Exception('لایسنس یافت نشد');
+            Log::error('لایسنس یافت نشد');
+            $this->fail('لایسنس یافت نشد');
+            return;
         }
 
         // یافتن کاربر مربوط به لایسنس
         $this->user = $this->license->user;
         if (!$this->user) {
-            throw new \Exception('کاربر مربوط به لایسنس یافت نشد');
+            Log::error('کاربر مربوط به لایسنس یافت نشد');
+            $this->fail('کاربر مربوط به لایسنس یافت نشد');
+            return;
         }
 
         $this->onQueue('invoices');
@@ -66,12 +70,16 @@ class ProcessInvoice implements ShouldQueue
     {
             // بررسی وجود آدرس API در اطلاعات کاربر
             if (empty($this->user->api_webservice)) {
-                throw new \Exception('آدرس API در تنظیمات کاربر تنظیم نشده است');
+                Log::error('آدرس API در تنظیمات کاربر تنظیم نشده است');
+                $this->fail('آدرس API در تنظیمات کاربر تنظیم نشده است');
+                return;
             }
 
             // بررسی وجود سایر اطلاعات API کاربر
             if (empty($this->user->api_username) || empty($this->user->api_password) || empty($this->user->api_storeId) || empty($this->user->api_userId)) {
-                throw new \Exception('اطلاعات API کاربر به صورت کامل تنظیم نشده است');
+                Log::error('اطلاعات API کاربر به صورت کامل تنظیم نشده است');
+                $this->fail('اطلاعات API کاربر به صورت کامل تنظیم نشده است');
+                return;
             }
 
             // به‌روزرسانی status در صورت نیاز
@@ -150,7 +158,8 @@ class ProcessInvoice implements ShouldQueue
                     'sync_error' => $this->limitSyncError('خطا در ثبت مشتری: ' . $saveCustomerResponse->body())
                 ]);
 
-                throw new \Exception('خطا در ثبت مشتری: ' . $saveCustomerResponse->body());
+                $this->fail('خطا در ثبت مشتری: ' . $saveCustomerResponse->body());
+                return;
             }
 
                 // استعلام مجدد برای دریافت CustomerID
@@ -185,7 +194,8 @@ class ProcessInvoice implements ShouldQueue
                     'sync_error' => $this->limitSyncError('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body())
                 ]);
 
-                throw new \Exception('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
+                $this->fail('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
+                return;
             }
 
                 $customerResult = json_decode($customerResponse->json()['GetCustomerByCodeResult'], true);
@@ -215,7 +225,8 @@ class ProcessInvoice implements ShouldQueue
                     'sync_error' => $this->limitSyncError('پاسخ نامعتبر از RainSale برای اطلاعات مشتری')
                 ]);
 
-                throw new \Exception('پاسخ نامعتبر از RainSale برای اطلاعات مشتری');
+                $this->fail('پاسخ نامعتبر از RainSale برای اطلاعات مشتری');
+                return;
             }
 
             $this->invoice->customer_id = $customerResult['CustomerID'];
@@ -254,7 +265,8 @@ class ProcessInvoice implements ShouldQueue
                     // ارسال خطا به ووکامرس
                     $this->updateWooCommerceStatus(false, $errorMessage);
 
-                    throw new \Exception($errorMessage);
+                    $this->fail($errorMessage);
+                    return;
                 }
 
                 // دریافت اطلاعات محصول از دیتابیس
@@ -373,7 +385,8 @@ class ProcessInvoice implements ShouldQueue
                 // به‌روزرسانی وضعیت خطا در ووکامرس
                 $this->updateWooCommerceStatus(false, $errorMessage);
 
-
+                $this->fail($errorMessage);
+                return;
             }
 
             $responseData = $response->json();
@@ -403,7 +416,8 @@ class ProcessInvoice implements ShouldQueue
                     'sync_error' => $this->limitSyncError('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر')
                 ]);
 
-
+                $this->fail('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر');
+                return;
             }
 
             $result = $responseData['SaveSaleInvoiceByOrderResult'];

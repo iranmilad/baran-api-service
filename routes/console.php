@@ -21,7 +21,7 @@ Artisan::command('inspire', function () {
 
 Schedule::call(function () {
     \Log::info('Cron schedule executed at: ' . now());
-})->everyMinute();
+})->everyTenMinutes();
 
 Schedule::command('queue:work --queue=category,woocommerce,woocommerce-update,invoices,default,products,bulk-update,woocommerce-insert --stop-when-empty --max-jobs=50')
     ->everyMinute()
