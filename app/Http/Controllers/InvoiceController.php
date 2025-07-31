@@ -77,6 +77,19 @@ class InvoiceController extends Controller
                 ->first();
 
             if ($existingInvoice) {
+                // به‌روزرسانی order_data با داده‌های جدید
+                $existingInvoice->update([
+                    'order_data' => $request->order_data,
+                    'customer_mobile' => $request->customer_mobile
+                ]);
+
+                Log::info('داده‌های فاکتور موجود به‌روزرسانی شد', [
+                    'invoice_id' => $existingInvoice->id,
+                    'order_id' => $request->order_id,
+                    'status' => $request->order_data['status'],
+                    'updated_order_data' => $request->order_data
+                ]);
+
                 if ($existingInvoice->is_synced) {
                     Log::info('فاکتور قبلاً با این وضعیت ثبت شده است', [
                         'invoice_id' => $existingInvoice->id,
