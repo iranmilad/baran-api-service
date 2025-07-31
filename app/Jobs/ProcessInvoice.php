@@ -233,6 +233,10 @@ class ProcessInvoice implements ShouldQueue
                     // ذخیره خطا در ستون rain_sale_response
                     $this->invoice->update([
                         'rain_sale_response' => [
+                            'function' => 'ProductLookup',
+                            'request' => [
+                                'barcode' => $barcode
+                            ],
                             'error' => 'محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد',
                             'status' => 'error'
                         ],
@@ -325,6 +329,8 @@ class ProcessInvoice implements ShouldQueue
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
                     'rain_sale_response' => [
+                        'function' => 'SaveSaleInvoiceByOrder',
+                        'request' => $invoiceRequestData,
                         'error' => 'خطا در ثبت فاکتور در RainSale',
                         'response' => $response->body(),
                         'status_code' => $response->status(),
@@ -348,6 +354,8 @@ class ProcessInvoice implements ShouldQueue
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
                     'rain_sale_response' => [
+                        'function' => 'SaveSaleInvoiceByOrder',
+                        'request' => $invoiceRequestData,
                         'error' => 'پاسخ نامعتبر از RainSale',
                         'response' => $responseData,
                         'status' => 'error'
@@ -388,7 +396,13 @@ class ProcessInvoice implements ShouldQueue
 
                 // به‌روزرسانی وضعیت فاکتور
                 $this->invoice->update([
-                    'rain_sale_response' => $responseData,
+                    'rain_sale_response' => [
+                        'function' => 'SaveSaleInvoiceByOrder',
+                        'request' => $invoiceRequestData,
+                        'response' => $responseData,
+                        'status' => 'error',
+                        'error' => $result['Message']
+                    ],
                     'is_synced' => false,
                     'sync_error' => $result['Message']
                 ]);
