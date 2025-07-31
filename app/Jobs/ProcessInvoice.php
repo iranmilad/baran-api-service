@@ -50,7 +50,7 @@ class ProcessInvoice implements ShouldQueue
             if (empty($this->user->api_webservice)) {
                 throw new \Exception('آدرس API در تنظیمات کاربر تنظیم نشده است');
             }
-            
+
             // بررسی وجود سایر اطلاعات API کاربر
             if (empty($this->user->api_username) || empty($this->user->api_password) || empty($this->user->api_storeId) || empty($this->user->api_userId)) {
                 throw new \Exception('اطلاعات API کاربر به صورت کامل تنظیم نشده است');
@@ -178,25 +178,34 @@ class ProcessInvoice implements ShouldQueue
             $items = [];
             foreach ($this->invoice->order_data['items'] as $item) {
                 // دریافت اطلاعات محصول از دیتابیس
+                // بررسی ساختار unique_id (رشته یا آرایه)
+                $barcode = is_array($item['unique_id']) ? $item['unique_id']['barcode'] : $item['sku'];
+                
                 $product = \App\Models\Product::where('license_id', $this->license->license_key)
-                    ->where('barcode', $item['unique_id']['barcode'])
+                    ->where('barcode', $barcode)
                     ->first();
 
                 if (!$product) {
                     Log::error('محصول در دیتابیس یافت نشد', [
                         'invoice_id' => $this->invoice->id,
                         'order_id' => $this->invoice->woocommerce_order_id,
-                        'barcode' => $item['unique_id']['barcode']
+                        'barcode' => $barcode
                     ]);
-                    throw new \Exception('محصول با بارکد ' . $item['unique_id']['barcode'] . ' در دیتابیس یافت نشد');
+                    throw new \Exception('محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد');
                 }
 
+                // آماده‌سازی مقادیر ItemId و Barcode با توجه به ساختار unique_id
+                $itemId = is_array($item['unique_id']) ? $item['unique_id']['unique_id'] : $item['unique_id'];
+                
+                // محاسبه مقدار total در صورت عدم وجود
+                $total = isset($item['total']) ? $item['total'] : ($item['price'] * $item['quantity']);
+                
                 $items[] = [
                     'IsPriceWithTax' => true,
-                    'ItemId' => $item['unique_id']['unique_id'],
-                    'Barcode' => $item['unique_id']['barcode'],
+                    'ItemId' => $itemId,
+                    'Barcode' => $barcode,
                     'LineItemID' => count($items) + 1,
-                    'NetAmount' => $item['total'],
+                    'NetAmount' => $total,
                     'OperationType' => 1,
                     'Price' => $item['price'],
                     'Quantity' => $item['quantity'],
@@ -208,7 +217,7 @@ class ProcessInvoice implements ShouldQueue
                 Log::info('اطلاعات محصول از دیتابیس دریافت شد', [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
-                    'barcode' => $item['unique_id']['barcode'],
+                    'barcode' => $barcode,
                     'stock_id' => $product->stock_id
                 ]);
             }
