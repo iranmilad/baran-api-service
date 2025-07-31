@@ -223,7 +223,7 @@ class ProcessInvoice implements ShouldQueue
                 $itemId = $item['unique_id'];
 
                 // محاسبه مقدار total در صورت عدم وجود
-                $total = isset($item['total']) ? $item['total'] : ($item['price'] * $item['quantity']);
+                $total = isset($item['total']) ? (float)$item['total'] : ((float)$item['price'] * (int)$item['quantity']);
 
                 $items[] = [
                     'IsPriceWithTax' => true,
@@ -232,9 +232,9 @@ class ProcessInvoice implements ShouldQueue
                     'LineItemID' => count($items) + 1,
                     'NetAmount' => $total,
                     'OperationType' => 1,
-                    'Price' => $item['price'],
-                    'Quantity' => $item['quantity'],
-                    'Tax' => $item['tax'] ?? 0,
+                    'Price' => (float)$item['price'],
+                    'Quantity' => (int)$item['quantity'],
+                    'Tax' => isset($item['tax']) ? (float)$item['tax'] : 0,
                     //'StockId' => $product->stock_id,
                     'Type' => 302
                 ];
@@ -255,7 +255,7 @@ class ProcessInvoice implements ShouldQueue
             }
 
             $payments[] = [
-                'Amount' => $this->invoice->order_data['total'],
+                'Amount' => (float)$this->invoice->order_data['total'],
                 'DueDate' => now()->format('Y-m-d H:i:s'),
                 'LineItemID' => 1,
                 'TypeID' => 2,
