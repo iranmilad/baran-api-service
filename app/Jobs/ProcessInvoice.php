@@ -221,11 +221,12 @@ class ProcessInvoice implements ShouldQueue
 
                 // آماده‌سازی مقادیر ItemId و Barcode با توجه به ساختار unique_id
                 $itemId = $item['unique_id'];
+                log::info($item);
 
                 // محاسبه مقدار total در صورت عدم وجود
-                $itemPrice = (int)$item['price'];
-                $itemQuantity = (int)$item['quantity'];
-                $total = isset($item['total']) ? (int)$item['total'] : ($itemPrice * $itemQuantity);
+                $itemPrice = $item['price'];
+                $itemQuantity = $item['quantity'];
+                $total = isset($item['total']) ? $item['total'] : ($itemPrice * $itemQuantity);
 
                 // اطمینان از اینکه قیمت‌ها صفر نیستند
                 if ($itemPrice <= 0) {
