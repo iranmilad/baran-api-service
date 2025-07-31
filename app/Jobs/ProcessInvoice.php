@@ -223,9 +223,9 @@ class ProcessInvoice implements ShouldQueue
                 $itemId = $item['unique_id'];
 
                 // محاسبه مقدار total در صورت عدم وجود
-                $itemPrice = (float)$item['price'];
+                $itemPrice = (int)$item['price'];
                 $itemQuantity = (int)$item['quantity'];
-                $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
+                $total = isset($item['total']) ? (int)$item['total'] : ($itemPrice * $itemQuantity);
 
                 // اطمینان از اینکه قیمت‌ها صفر نیستند
                 if ($itemPrice <= 0) {
@@ -255,7 +255,7 @@ class ProcessInvoice implements ShouldQueue
                     'OperationType' => 1,
                     'Price' => $itemPrice,
                     'Quantity' => $itemQuantity,
-                    'Tax' => isset($item['tax']) ? (float)$item['tax'] : 0,
+                    'Tax' => isset($item['tax']) ? (int)$item['tax'] : 0,
                     //'StockId' => $product->stock_id,
                     'Type' => 302
                 ];
@@ -278,7 +278,7 @@ class ProcessInvoice implements ShouldQueue
                 $paymentTypeId = 1; // پرداخت نقدی
             }
 
-            $totalAmount = (float)$this->invoice->order_data['total'];
+            $totalAmount = (int)$this->invoice->order_data['total'];
 
             // اطمینان از اینکه مبلغ کل صفر نیست
             if ($totalAmount <= 0) {
