@@ -43,6 +43,17 @@ class ProcessInvoice implements ShouldQueue
         $this->onQueue('invoices');
     }
 
+    /**
+     * محدود کردن طول پیام خطا برای ذخیره در sync_error
+     */
+    private function limitSyncError($errorMessage)
+    {
+        if (strlen($errorMessage) > 255) {
+            return 'ساختار برگشتی غیر استاندارد';
+        }
+        return $errorMessage;
+    }
+
     public function handle()
     {
             // بررسی وجود آدرس API در اطلاعات کاربر
@@ -122,7 +133,7 @@ class ProcessInvoice implements ShouldQueue
                         'status' => 'error'
                     ],
                     'is_synced' => false,
-                    'sync_error' => 'خطا در ثبت مشتری: ' . $saveCustomerResponse->body()
+                    'sync_error' => $this->limitSyncError('خطا در ثبت مشتری: ' . $saveCustomerResponse->body())
                 ]);
 
                 throw new \Exception('خطا در ثبت مشتری: ' . $saveCustomerResponse->body());
@@ -151,7 +162,7 @@ class ProcessInvoice implements ShouldQueue
                         'status' => 'error'
                     ],
                     'is_synced' => false,
-                    'sync_error' => 'خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body()
+                    'sync_error' => $this->limitSyncError('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body())
                 ]);
 
                 throw new \Exception('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
@@ -175,7 +186,7 @@ class ProcessInvoice implements ShouldQueue
                         'status' => 'error'
                     ],
                     'is_synced' => false,
-                    'sync_error' => 'پاسخ نامعتبر از RainSale برای اطلاعات مشتری'
+                    'sync_error' => $this->limitSyncError('پاسخ نامعتبر از RainSale برای اطلاعات مشتری')
                 ]);
 
                 throw new \Exception('پاسخ نامعتبر از RainSale برای اطلاعات مشتری');
@@ -211,7 +222,7 @@ class ProcessInvoice implements ShouldQueue
                             'status' => 'error'
                         ],
                         'is_synced' => false,
-                        'sync_error' => $errorMessage
+                        'sync_error' => $this->limitSyncError($errorMessage)
                     ]);
 
                     // ارسال خطا به ووکامرس
@@ -325,7 +336,7 @@ class ProcessInvoice implements ShouldQueue
                         'status' => 'error'
                     ],
                     'is_synced' => false,
-                    'sync_error' => $errorMessage
+                    'sync_error' => $this->limitSyncError($errorMessage)
                 ]);
 
                 // به‌روزرسانی وضعیت خطا در ووکامرس
@@ -352,7 +363,7 @@ class ProcessInvoice implements ShouldQueue
                         'status' => 'error'
                     ],
                     'is_synced' => false,
-                    'sync_error' => 'خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر'
+                    'sync_error' => $this->limitSyncError('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر')
                 ]);
 
                 throw new \Exception('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر');
@@ -405,7 +416,7 @@ class ProcessInvoice implements ShouldQueue
                         'error_status' => $errorStatus
                     ],
                     'is_synced' => false,
-                    'sync_error' => $finalErrorMessage
+                    'sync_error' => $this->limitSyncError($finalErrorMessage)
                 ]);
 
                 // به‌روزرسانی وضعیت خطا در ووکامرس
