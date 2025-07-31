@@ -403,7 +403,7 @@ class ProcessInvoice implements ShouldQueue
                     'sync_error' => $this->limitSyncError('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر')
                 ]);
 
-                throw new \Exception('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر');
+
             }
 
             $result = $responseData['SaveSaleInvoiceByOrderResult'];
