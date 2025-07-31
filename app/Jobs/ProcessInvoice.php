@@ -484,17 +484,30 @@ class ProcessInvoice implements ShouldQueue
     protected function updateWooCommerceStatus($success, $message)
     {
         try {
-            // بررسی وجود اطلاعات WooCommerce
-            if (empty($this->license->woocommerce_consumer_key) || empty($this->license->woocommerce_consumer_secret)) {
-                Log::warning('اطلاعات WooCommerce API موجود نیست', [
+            // دریافت اطلاعات WooCommerce API از جدول woocommerce_api_keys
+            $wooCommerceApiKey = $this->license->woocommerceApiKey;
+
+            if (!$wooCommerceApiKey) {
+                Log::warning('کلید API WooCommerce برای این لایسنس یافت نشد', [
                     'license_id' => $this->license->id,
                     'order_id' => $this->invoice->woocommerce_order_id
                 ]);
                 return;
             }
 
-            if (empty($this->license->woocommerce_url)) {
-                Log::warning('آدرس WooCommerce موجود نیست', [
+            // بررسی وجود اطلاعات WooCommerce
+            if (empty($wooCommerceApiKey->api_key) || empty($wooCommerceApiKey->api_secret)) {
+                Log::warning('اطلاعات WooCommerce API کامل نیست', [
+                    'license_id' => $this->license->id,
+                    'order_id' => $this->invoice->woocommerce_order_id,
+                    'has_api_key' => !empty($wooCommerceApiKey->api_key),
+                    'has_api_secret' => !empty($wooCommerceApiKey->api_secret)
+                ]);
+                return;
+            }
+
+            if (empty($this->license->website_url)) {
+                Log::warning('آدرس وب‌سایت موجود نیست', [
                     'license_id' => $this->license->id,
                     'order_id' => $this->invoice->woocommerce_order_id
                 ]);
@@ -513,13 +526,13 @@ class ProcessInvoice implements ShouldQueue
                 'Accept' => 'application/json'
             ]);
 
-            // استفاده از Basic Auth
+            // استفاده از Basic Auth با کلیدهای صحیح
             $httpClient = $httpClient->withBasicAuth(
-                $this->license->woocommerce_consumer_key,
-                $this->license->woocommerce_consumer_secret
+                $wooCommerceApiKey->api_key,
+                $wooCommerceApiKey->api_secret
             );
 
-            $response = $httpClient->put($this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id, [
+            $response = $httpClient->put($this->license->website_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id, [
                 'meta_data' => [
                     [
                         'key' => '_bim_web_service_status',
@@ -541,7 +554,7 @@ class ProcessInvoice implements ShouldQueue
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'response_body' => $response->body(),
                     'status_code' => $response->status(),
-                    'url' => $this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
+                    'url' => $this->license->website_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
                     'license_id' => $this->license->id
                 ]);
             } else {
@@ -555,10 +568,8 @@ class ProcessInvoice implements ShouldQueue
             Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس', [
                 'order_id' => $this->invoice->woocommerce_order_id,
                 'error' => $e->getMessage(),
-                'url' => ($this->license->woocommerce_url ?? 'unknown') . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
-                'license_id' => $this->license->id,
-                'has_consumer_key' => !empty($this->license->woocommerce_consumer_key),
-                'has_consumer_secret' => !empty($this->license->woocommerce_consumer_secret)
+                'url' => ($this->license->website_url ?? 'unknown') . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
+                'license_id' => $this->license->id
             ]);
         }
     }
