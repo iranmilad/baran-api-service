@@ -46,9 +46,14 @@ class ProcessInvoice implements ShouldQueue
     public function handle()
     {
         try {
-            // بررسی وجود آدرس API
-            if (empty($this->license->api_url)) {
-                throw new \Exception('آدرس API در تنظیمات لایسنس تنظیم نشده است');
+            // بررسی وجود آدرس API در اطلاعات کاربر
+            if (empty($this->user->api_webservice)) {
+                throw new \Exception('آدرس API در تنظیمات کاربر تنظیم نشده است');
+            }
+            
+            // بررسی وجود سایر اطلاعات API کاربر
+            if (empty($this->user->api_username) || empty($this->user->api_password) || empty($this->user->api_storeId) || empty($this->user->api_userId)) {
+                throw new \Exception('اطلاعات API کاربر به صورت کامل تنظیم نشده است');
             }
 
             // به‌روزرسانی status در صورت نیاز
@@ -71,7 +76,7 @@ class ProcessInvoice implements ShouldQueue
 
             $customerResponse = Http::withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($this->user->rain_sale_username . ':' . $this->user->rain_sale_password)
+                'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
             ])->post($this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode', $customerRequestData);
 
             $customerResult = null;
@@ -119,7 +124,7 @@ class ProcessInvoice implements ShouldQueue
                 // ثبت مشتری در RainSale
                 $saveCustomerResponse = Http::withHeaders([
                     'Content-Type' => 'application/json',
-                    'Authorization' => 'Basic ' . base64_encode($this->user->rain_sale_username . ':' . $this->user->rain_sale_password)
+                    'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveCustomer', $customerData);
 
                 if (!$saveCustomerResponse->successful()) {
@@ -135,7 +140,7 @@ class ProcessInvoice implements ShouldQueue
                 // استعلام مجدد برای دریافت CustomerID
                 $customerResponse = Http::withHeaders([
                     'Content-Type' => 'application/json',
-                    'Authorization' => 'Basic ' . base64_encode($this->user->rain_sale_username . ':' . $this->user->rain_sale_password)
+                    'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode', $customerRequestData);
 
                 if (!$customerResponse->successful()) {
@@ -248,7 +253,7 @@ class ProcessInvoice implements ShouldQueue
             // ارسال فاکتور به RainSale
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($this->user->rain_sale_username . ':' . $this->user->rain_sale_password)
+                'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
             ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveSaleInvoiceByOrder', $invoiceRequestData);
 
             if (!$response->successful()) {
