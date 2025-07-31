@@ -454,23 +454,10 @@ class ProcessInvoice implements ShouldQueue
                     'message' => $errorMessage
                 ]);
 
-                // بررسی نوع خطا برای تعیین نحوه پردازش
-                $shouldRetry = true;
+
                 $finalErrorMessage = $errorMessage;
 
-                // خطاهایی که نباید تلاش مجدد شوند
-                if (strpos($errorMessage, 'موجودی کافی ندارد') !== false ||
-                    strpos($errorMessage, 'insufficient stock') !== false ||
-                    strpos($errorMessage, 'out of stock') !== false) {
-                    $shouldRetry = false;
-                    $finalErrorMessage = 'خطا در موجودی کالا: ' . $errorMessage;
 
-                    Log::warning('خطای موجودی کالا - عدم تلاش مجدد', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'error' => $errorMessage
-                    ]);
-                }
 
                 // به‌روزرسانی وضعیت فاکتور
                 $this->invoice->update([
@@ -480,8 +467,7 @@ class ProcessInvoice implements ShouldQueue
                         'response' => $responseData,
                         'status' => 'error',
                         'error' => $errorMessage,
-                        'error_status' => $errorStatus,
-                        'should_retry' => $shouldRetry
+                        'error_status' => $errorStatus
                     ],
                     'is_synced' => false,
                     'sync_error' => $finalErrorMessage
@@ -490,20 +476,6 @@ class ProcessInvoice implements ShouldQueue
                 // به‌روزرسانی وضعیت خطا در ووکامرس
                 $this->updateWooCommerceStatus(false, $finalErrorMessage);
 
-                // تلاش مجدد فقط برای خطاهای قابل حل
-                if ($shouldRetry) {
-                    throw new \Exception($errorMessage);
-                } else {
-                    // برای خطاهای موجودی، فاکتور را به عنوان نهایی در نظر می‌گیریم
-                    Log::info('فاکتور به دلیل خطای موجودی به عنوان نهایی ثبت شد', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'error' => $finalErrorMessage
-                    ]);
-
-                    // عدم پرتاب exception برای جلوگیری از تلاش مجدد
-                    return;
-                }
             }
 
 
@@ -512,7 +484,24 @@ class ProcessInvoice implements ShouldQueue
     protected function updateWooCommerceStatus($success, $message)
     {
         try {
-            $response = Http::withOptions([
+            // بررسی وجود اطلاعات WooCommerce
+            if (empty($this->license->woocommerce_consumer_key) || empty($this->license->woocommerce_consumer_secret)) {
+                Log::warning('اطلاعات WooCommerce API موجود نیست', [
+                    'license_id' => $this->license->id,
+                    'order_id' => $this->invoice->woocommerce_order_id
+                ]);
+                return;
+            }
+
+            if (empty($this->license->woocommerce_url)) {
+                Log::warning('آدرس WooCommerce موجود نیست', [
+                    'license_id' => $this->license->id,
+                    'order_id' => $this->invoice->woocommerce_order_id
+                ]);
+                return;
+            }
+
+            $httpClient = Http::withOptions([
                 'verify' => false,
                 'timeout' => 180,
                 'connect_timeout' => 60
@@ -522,10 +511,15 @@ class ProcessInvoice implements ShouldQueue
             })->withHeaders([
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json'
-            ])->withBasicAuth(
+            ]);
+
+            // استفاده از Basic Auth
+            $httpClient = $httpClient->withBasicAuth(
                 $this->license->woocommerce_consumer_key,
                 $this->license->woocommerce_consumer_secret
-            )->put($this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id, [
+            );
+
+            $response = $httpClient->put($this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id, [
                 'meta_data' => [
                     [
                         'key' => '_bim_web_service_status',
@@ -547,7 +541,8 @@ class ProcessInvoice implements ShouldQueue
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'response_body' => $response->body(),
                     'status_code' => $response->status(),
-                    'url' => $this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id
+                    'url' => $this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
+                    'license_id' => $this->license->id
                 ]);
             } else {
                 Log::info('وضعیت فاکتور در ووکامرس با موفقیت به‌روز شد', [
@@ -560,7 +555,10 @@ class ProcessInvoice implements ShouldQueue
             Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس', [
                 'order_id' => $this->invoice->woocommerce_order_id,
                 'error' => $e->getMessage(),
-                'url' => $this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id
+                'url' => ($this->license->woocommerce_url ?? 'unknown') . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
+                'license_id' => $this->license->id,
+                'has_consumer_key' => !empty($this->license->woocommerce_consumer_key),
+                'has_consumer_secret' => !empty($this->license->woocommerce_consumer_secret)
             ]);
         }
     }
