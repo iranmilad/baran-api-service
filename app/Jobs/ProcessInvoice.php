@@ -187,7 +187,39 @@ class ProcessInvoice implements ShouldQueue
 
             // آماده‌سازی آیتم‌های فاکتور
             $items = [];
-            foreach ($this->invoice->order_data['items'] as $item) {
+            foreach ($this->invoice->order_data['items'] as $index => $item) {
+                // بررسی وجود SKU و unique_id
+                if (empty($item['sku']) || empty($item['unique_id'])) {
+                    $errorMessage = 'برخی از آیتم‌های سفارش فاقد کد یکتا و SKU هستند';
+
+                    Log::error('آیتم فاقد SKU یا unique_id', [
+                        'invoice_id' => $this->invoice->id,
+                        'order_id' => $this->invoice->woocommerce_order_id,
+                        'item_index' => $index,
+                        'item' => $item,
+                        'has_sku' => !empty($item['sku']),
+                        'has_unique_id' => !empty($item['unique_id'])
+                    ]);
+
+                    // ذخیره خطا در دیتابیس
+                    $this->invoice->update([
+                        'rain_sale_response' => [
+                            'function' => 'SaveSaleInvoiceByOrder',
+                            'error' => $errorMessage,
+                            'item_index' => $index,
+                            'item_data' => $item,
+                            'status' => 'error'
+                        ],
+                        'is_synced' => false,
+                        'sync_error' => $errorMessage
+                    ]);
+
+                    // ارسال خطا به ووکامرس
+                    $this->updateWooCommerceStatus(false, $errorMessage);
+
+                    throw new \Exception($errorMessage);
+                }
+
                 // دریافت اطلاعات محصول از دیتابیس
                 // بررسی ساختار unique_id (رشته یا آرایه)
                 $barcode = $item['sku'];
@@ -199,7 +231,6 @@ class ProcessInvoice implements ShouldQueue
                 $itemPrice = (float)$item['price'];
                 $itemQuantity = (int)$item['quantity'];
                 $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
-
 
                 $items[] = [
                     'IsPriceWithTax' => true,
@@ -214,7 +245,6 @@ class ProcessInvoice implements ShouldQueue
                     //'StockId' => $product->stock_id,
                     'Type' => 302
                 ];
-
             }
 
             // آماده‌سازی پرداخت‌ها
@@ -263,12 +293,26 @@ class ProcessInvoice implements ShouldQueue
             ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveSaleInvoiceByOrder', $invoiceRequestData);
 
             if (!$response->successful()) {
+                $statusCode = $response->status();
+                $responseBody = $response->body();
+
                 Log::error('خطا در ثبت فاکتور در RainSale', [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $response->body(),
-                    'status_code' => $response->status()
+                    'response' => $responseBody,
+                    'status_code' => $statusCode
                 ]);
+
+                // بررسی خطای 400 و ساختار نامعتبر پاسخ
+                $errorMessage = 'خطا در ثبت فاکتور در RainSale: ' . $responseBody;
+                if ($statusCode === 400) {
+                    // تلاش برای پارس کردن JSON
+                    $jsonResponse = json_decode($responseBody, true);
+                    if (json_last_error() !== JSON_ERROR_NONE || !is_array($jsonResponse)) {
+                        // پاسخ ساختار استاندارد ندارد
+                        $errorMessage = 'درخواست نامعتبر سرور - ساختار پاسخ نامعتبر';
+                    }
+                }
 
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
@@ -276,15 +320,18 @@ class ProcessInvoice implements ShouldQueue
                         'function' => 'SaveSaleInvoiceByOrder',
                         'request' => $invoiceRequestData,
                         'error' => 'خطا در ثبت فاکتور در RainSale',
-                        'response' => $response->body(),
-                        'status_code' => $response->status(),
+                        'response' => $responseBody,
+                        'status_code' => $statusCode,
                         'status' => 'error'
                     ],
                     'is_synced' => false,
-                    'sync_error' => 'خطا در ثبت فاکتور در RainSale: ' . $response->body()
+                    'sync_error' => $errorMessage
                 ]);
 
-                throw new \Exception('خطا در ثبت فاکتور در RainSale: ' . $response->body());
+                // به‌روزرسانی وضعیت خطا در ووکامرس
+                $this->updateWooCommerceStatus(false, $errorMessage);
+
+                throw new \Exception($errorMessage);
             }
 
             $responseData = $response->json();
