@@ -373,7 +373,7 @@ class ProcessInvoice implements ShouldQueue
                 // به‌روزرسانی وضعیت خطا در ووکامرس
                 $this->updateWooCommerceStatus(false, $errorMessage);
 
-                throw new \Exception($errorMessage);
+
             }
 
             $responseData = $response->json();
