@@ -54,6 +54,14 @@ class ProcessInvoice implements ShouldQueue
         return $errorMessage;
     }
 
+    /**
+     * محدود کردن لاگ پاسخ سرور - اگر بیش از 250 کارکتر باشد لاگ نمی‌شود
+     */
+    private function shouldLogResponse($response)
+    {
+        return strlen($response) <= 250;
+    }
+
     public function handle()
     {
             // بررسی وجود آدرس API در اطلاعات کاربر
@@ -117,12 +125,18 @@ class ProcessInvoice implements ShouldQueue
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveCustomer', $customerData);
 
                 if (!$saveCustomerResponse->successful()) {
-                Log::error('خطا در ثبت مشتری', [
+                $responseBody = $saveCustomerResponse->body();
+                $logData = [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $saveCustomerResponse->body(),
                     'status_code' => $saveCustomerResponse->status()
-                ]);
+                ];
+
+                if ($this->shouldLogResponse($responseBody)) {
+                    $logData['response'] = $responseBody;
+                }
+
+                Log::error('خطا در ثبت مشتری', $logData);
 
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
@@ -146,12 +160,18 @@ class ProcessInvoice implements ShouldQueue
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode', $customerRequestData);
 
                 if (!$customerResponse->successful()) {
-                Log::error('خطا در دریافت اطلاعات مشتری پس از ثبت', [
+                $responseBody = $customerResponse->body();
+                $logData = [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $customerResponse->body(),
                     'status_code' => $customerResponse->status()
-                ]);
+                ];
+
+                if ($this->shouldLogResponse($responseBody)) {
+                    $logData['response'] = $responseBody;
+                }
+
+                Log::error('خطا در دریافت اطلاعات مشتری پس از ثبت', $logData);
 
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
@@ -172,11 +192,17 @@ class ProcessInvoice implements ShouldQueue
             }
 
             if (!isset($customerResult['CustomerID'])) {
-                Log::error('پاسخ نامعتبر از RainSale برای اطلاعات مشتری', [
+                $logData = [
                     'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $customerResult
-                ]);
+                    'order_id' => $this->invoice->woocommerce_order_id
+                ];
+
+                $responseString = json_encode($customerResult);
+                if ($this->shouldLogResponse($responseString)) {
+                    $logData['response'] = $customerResult;
+                }
+
+                Log::error('پاسخ نامعتبر از RainSale برای اطلاعات مشتری', $logData);
 
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
@@ -307,12 +333,17 @@ class ProcessInvoice implements ShouldQueue
                 $statusCode = $response->status();
                 $responseBody = $response->body();
 
-                Log::error('خطا در ثبت فاکتور در RainSale', [
+                $logData = [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $responseBody,
                     'status_code' => $statusCode
-                ]);
+                ];
+
+                if ($this->shouldLogResponse($responseBody)) {
+                    $logData['response'] = $responseBody;
+                }
+
+                Log::error('خطا در ثبت فاکتور در RainSale', $logData);
 
                 // بررسی خطای 400 و ساختار نامعتبر پاسخ
                 $errorMessage = 'خطا در ثبت فاکتور در RainSale: ' . $responseBody;
@@ -347,11 +378,17 @@ class ProcessInvoice implements ShouldQueue
 
             $responseData = $response->json();
             if (!isset($responseData['SaveSaleInvoiceByOrderResult'])) {
-                Log::error('پاسخ نامعتبر از RainSale', [
+                $logData = [
                     'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $responseData
-                ]);
+                    'order_id' => $this->invoice->woocommerce_order_id
+                ];
+
+                $responseString = json_encode($responseData);
+                if ($this->shouldLogResponse($responseString)) {
+                    $logData['response'] = $responseData;
+                }
+
+                Log::error('پاسخ نامعتبر از RainSale', $logData);
 
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
@@ -392,13 +429,19 @@ class ProcessInvoice implements ShouldQueue
                 $errorMessage = isset($result['Message']) ? $result['Message'] : 'خطای نامشخص';
                 $errorStatus = isset($result['Status']) ? $result['Status'] : null;
 
-                Log::error('خطا در ثبت فاکتور در RainSale', [
+                $logData = [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $responseData,
                     'status' => $errorStatus,
                     'message' => $errorMessage
-                ]);
+                ];
+
+                $responseString = json_encode($responseData);
+                if ($this->shouldLogResponse($responseString)) {
+                    $logData['response'] = $responseData;
+                }
+
+                Log::error('خطا در ثبت فاکتور در RainSale', $logData);
 
 
                 $finalErrorMessage = $errorMessage;
@@ -496,13 +539,19 @@ class ProcessInvoice implements ShouldQueue
             ]);
 
             if (!$response->successful()) {
-                Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس', [
+                $responseBody = $response->body();
+                $logData = [
                     'order_id' => $this->invoice->woocommerce_order_id,
-                    'response_body' => $response->body(),
                     'status_code' => $response->status(),
                     'url' => $this->license->website_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
                     'license_id' => $this->license->id
-                ]);
+                ];
+
+                if ($this->shouldLogResponse($responseBody)) {
+                    $logData['response_body'] = $responseBody;
+                }
+
+                Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس', $logData);
             }
         } catch (\Exception $e) {
             Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس', [
