@@ -236,16 +236,15 @@ class ProcessInvoice implements ShouldQueue
             // آماده‌سازی آیتم‌های فاکتور
             $items = [];
             foreach ($this->invoice->order_data['items'] as $index => $item) {
-                // بررسی وجود SKU و unique_id
-                if (empty($item['sku']) || empty($item['unique_id'])) {
-                    $errorMessage = 'برخی از آیتم‌های سفارش فاقد کد یکتا و SKU هستند';
+                // بررسی وجود unique_id
+                if (empty($item['unique_id'])) {
+                    $errorMessage = 'فاکتور دارای اقلام فاقد کد یکتا است';
 
-                    Log::error('آیتم فاقد SKU یا unique_id', [
+                    Log::error('آیتم فاقد unique_id', [
                         'invoice_id' => $this->invoice->id,
                         'order_id' => $this->invoice->woocommerce_order_id,
                         'item_index' => $index,
                         'item' => $item,
-                        'has_sku' => !empty($item['sku']),
                         'has_unique_id' => !empty($item['unique_id'])
                     ]);
 
@@ -269,12 +268,46 @@ class ProcessInvoice implements ShouldQueue
                     return;
                 }
 
-                // دریافت اطلاعات محصول از دیتابیس
-                // بررسی ساختار unique_id (رشته یا آرایه)
-                $barcode = $item['sku'];
-
-                // آماده‌سازی مقادیر ItemId و Barcode با توجه به ساختار unique_id
+                // آماده‌سازی مقادیر ItemId
                 $itemId = $item['unique_id'];
+
+                // دریافت اطلاعات محصول از دیتابیس برای استخراج بارکد
+                $product = \App\Models\Product::where('item_id', $itemId)->first();
+
+                if (!$product || empty($product->barcode)) {
+                    $errorMessage = 'بارکد برای آیتم با کد یکتا ' . $itemId . ' نامعتبر است';
+
+                    Log::error('بارکد محصول یافت نشد یا نامعتبر است', [
+                        'invoice_id' => $this->invoice->id,
+                        'order_id' => $this->invoice->woocommerce_order_id,
+                        'item_index' => $index,
+                        'item' => $item,
+                        'item_id' => $itemId,
+                        'product_found' => (bool) $product,
+                        'barcode_empty' => empty($product->barcode ?? null)
+                    ]);
+
+                    // ذخیره خطا در دیتابیس
+                    $this->invoice->update([
+                        'rain_sale_response' => [
+                            'function' => 'SaveSaleInvoiceByOrder',
+                            'error' => $errorMessage,
+                            'item_index' => $index,
+                            'item_data' => $item,
+                            'status' => 'error'
+                        ],
+                        'is_synced' => false,
+                        'sync_error' => $this->limitSyncError($errorMessage)
+                    ]);
+
+                    // ارسال خطا به ووکامرس
+                    $this->updateWooCommerceStatus(false, $errorMessage);
+
+                    $this->fail($errorMessage);
+                    return;
+                }
+
+                $barcode = $product->barcode;
 
                 // محاسبه مقدار total در صورت عدم وجود
                 $itemPrice = (float)$item['price'];
