@@ -119,13 +119,6 @@ Route::prefix('v1')->group(function () {
         // Categories and attributes routes
         Route::get('/categories-attributes', [ProductController::class, 'getCategoriesAndAttributes']);
 
-
-        // Invoice routes
-        Route::prefix('invoices')->group(function () {
-            Route::post('/webhook', [InvoiceController::class, 'handleWebhook']);
-        });
-
-
     });
 
     // Notification routes
@@ -159,7 +152,10 @@ Route::prefix('price-unit-settings')->group(function () {
     Route::get('/get', [PriceUnitSettingController::class, 'get']);
 });
 
-
+// Invoice routes
+Route::prefix('invoices')->group(function () {
+    Route::post('/webhook', [InvoiceController::class, 'handleWebhook'])->middleware("jwt.auth");
+});
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
