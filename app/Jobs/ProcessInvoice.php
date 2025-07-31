@@ -45,6 +45,15 @@ class ProcessInvoice implements ShouldQueue
 
     public function handle()
     {
+            // اضافه کردن لاگ برای بررسی داده‌های اولیه
+            Log::info('شروع پردازش فاکتور - داده‌های اولیه', [
+                'invoice_id' => $this->invoice->id,
+                'order_id' => $this->invoice->woocommerce_order_id,
+                'order_data' => $this->invoice->order_data,
+                'order_data_type' => gettype($this->invoice->order_data),
+                'items_data' => $this->invoice->order_data['items'] ?? 'not found',
+                'total_data' => $this->invoice->order_data['total'] ?? 'not found'
+            ]);
 
             // بررسی وجود آدرس API در اطلاعات کاربر
             if (empty($this->user->api_webservice)) {
@@ -224,9 +233,9 @@ class ProcessInvoice implements ShouldQueue
                 log::info($item);
 
                 // محاسبه مقدار total در صورت عدم وجود
-                $itemPrice = $item['price'];
-                $itemQuantity = $item['quantity'];
-                $total = isset($item['total']) ? $item['total'] : ($itemPrice * $itemQuantity);
+                $itemPrice = (float)$item['price'];
+                $itemQuantity = (int)$item['quantity'];
+                $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
 
                 // اطمینان از اینکه قیمت‌ها صفر نیستند
                 if ($itemPrice <= 0) {
@@ -256,7 +265,7 @@ class ProcessInvoice implements ShouldQueue
                     'OperationType' => 1,
                     'Price' => $itemPrice,
                     'Quantity' => $itemQuantity,
-                    'Tax' => isset($item['tax']) ? (int)$item['tax'] : 0,
+                    'Tax' => isset($item['tax']) ? (float)$item['tax'] : 0,
                     //'StockId' => $product->stock_id,
                     'Type' => 302
                 ];
@@ -279,7 +288,7 @@ class ProcessInvoice implements ShouldQueue
                 $paymentTypeId = 1; // پرداخت نقدی
             }
 
-            $totalAmount = (int)$this->invoice->order_data['total'];
+            $totalAmount = (float)$this->invoice->order_data['total'];
 
             // اطمینان از اینکه مبلغ کل صفر نیست
             if ($totalAmount <= 0) {
