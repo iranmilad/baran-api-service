@@ -445,6 +445,7 @@ class ProcessInvoice implements ShouldQueue
             } else {
                 $errorMessage = isset($result['Message']) ? $result['Message'] : 'خطای نامشخص';
                 $errorStatus = isset($result['Status']) ? $result['Status'] : null;
+
                 Log::error('خطا در ثبت فاکتور در RainSale', [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
@@ -452,6 +453,24 @@ class ProcessInvoice implements ShouldQueue
                     'status' => $errorStatus,
                     'message' => $errorMessage
                 ]);
+
+                // بررسی نوع خطا برای تعیین نحوه پردازش
+                $shouldRetry = true;
+                $finalErrorMessage = $errorMessage;
+
+                // خطاهایی که نباید تلاش مجدد شوند
+                if (strpos($errorMessage, 'موجودی کافی ندارد') !== false ||
+                    strpos($errorMessage, 'insufficient stock') !== false ||
+                    strpos($errorMessage, 'out of stock') !== false) {
+                    $shouldRetry = false;
+                    $finalErrorMessage = 'خطا در موجودی کالا: ' . $errorMessage;
+
+                    Log::warning('خطای موجودی کالا - عدم تلاش مجدد', [
+                        'invoice_id' => $this->invoice->id,
+                        'order_id' => $this->invoice->woocommerce_order_id,
+                        'error' => $errorMessage
+                    ]);
+                }
 
                 // به‌روزرسانی وضعیت فاکتور
                 $this->invoice->update([
@@ -461,17 +480,30 @@ class ProcessInvoice implements ShouldQueue
                         'response' => $responseData,
                         'status' => 'error',
                         'error' => $errorMessage,
-                        'error_status' => $errorStatus
+                        'error_status' => $errorStatus,
+                        'should_retry' => $shouldRetry
                     ],
                     'is_synced' => false,
-                    'sync_error' => $errorMessage
+                    'sync_error' => $finalErrorMessage
                 ]);
 
                 // به‌روزرسانی وضعیت خطا در ووکامرس
-                $this->updateWooCommerceStatus(false, $errorMessage);
+                $this->updateWooCommerceStatus(false, $finalErrorMessage);
 
-                // تلاش مجدد برای ثبت فاکتور
-                throw new \Exception($errorMessage);
+                // تلاش مجدد فقط برای خطاهای قابل حل
+                if ($shouldRetry) {
+                    throw new \Exception($errorMessage);
+                } else {
+                    // برای خطاهای موجودی، فاکتور را به عنوان نهایی در نظر می‌گیریم
+                    Log::info('فاکتور به دلیل خطای موجودی به عنوان نهایی ثبت شد', [
+                        'invoice_id' => $this->invoice->id,
+                        'order_id' => $this->invoice->woocommerce_order_id,
+                        'error' => $finalErrorMessage
+                    ]);
+
+                    // عدم پرتاب exception برای جلوگیری از تلاش مجدد
+                    return;
+                }
             }
 
 
@@ -480,10 +512,20 @@ class ProcessInvoice implements ShouldQueue
     protected function updateWooCommerceStatus($success, $message)
     {
         try {
-            $response = Http::withHeaders([
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60
+            ])->retry(3, 300, function ($exception, $request) {
+                return $exception instanceof \Illuminate\Http\Client\ConnectionException ||
+                       (isset($exception->response) && $exception->response->status() >= 500);
+            })->withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($this->license->woocommerce_consumer_key . ':' . $this->license->woocommerce_consumer_secret)
-            ])->put($this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id, [
+                'Accept' => 'application/json'
+            ])->withBasicAuth(
+                $this->license->woocommerce_consumer_key,
+                $this->license->woocommerce_consumer_secret
+            )->put($this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id, [
                 'meta_data' => [
                     [
                         'key' => '_bim_web_service_status',
@@ -501,7 +543,12 @@ class ProcessInvoice implements ShouldQueue
             ]);
 
             if (!$response->successful()) {
-                Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس: ' . $response->body());
+                Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس', [
+                    'order_id' => $this->invoice->woocommerce_order_id,
+                    'response_body' => $response->body(),
+                    'status_code' => $response->status(),
+                    'url' => $this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id
+                ]);
             } else {
                 Log::info('وضعیت فاکتور در ووکامرس با موفقیت به‌روز شد', [
                     'order_id' => $this->invoice->woocommerce_order_id,
@@ -510,7 +557,11 @@ class ProcessInvoice implements ShouldQueue
                 ]);
             }
         } catch (\Exception $e) {
-            Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس: ' . $e->getMessage());
+            Log::error('خطا در به‌روزرسانی وضعیت فاکتور در ووکامرس', [
+                'order_id' => $this->invoice->woocommerce_order_id,
+                'error' => $e->getMessage(),
+                'url' => $this->license->woocommerce_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id
+            ]);
         }
     }
 
