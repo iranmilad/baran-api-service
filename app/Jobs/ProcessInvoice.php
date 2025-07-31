@@ -345,8 +345,8 @@ class ProcessInvoice implements ShouldQueue
 
             $result = $responseData['SaveSaleInvoiceByOrderResult'];
 
-            // بررسی وضعیت پاسخ
-            if ($result['status'] === 3) {
+            // بررسی ساختار ریسپانس و وضعیت پاسخ
+            if (isset($result['Status']) && $result['Status'] === 3) {
                 Log::info('فاکتور با موفقیت ثبت شد', [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
@@ -356,18 +356,27 @@ class ProcessInvoice implements ShouldQueue
 
                 // به‌روزرسانی وضعیت فاکتور
                 $this->invoice->update([
-                    'rain_sale_response' => $responseData,
+                    'rain_sale_response' => [
+                        'function' => 'SaveSaleInvoiceByOrder',
+                        'request' => $invoiceRequestData,
+                        'response' => $responseData,
+                        'status' => 'success',
+                        'message' => $result['Message']
+                    ],
                     'is_synced' => true
                 ]);
 
                 // به‌روزرسانی وضعیت در ووکامرس با شماره فاکتور
                 $this->updateWooCommerceStatus(true, $result['Message']);
             } else {
+                $errorMessage = isset($result['Message']) ? $result['Message'] : 'خطای نامشخص';
+                $errorStatus = isset($result['Status']) ? $result['Status'] : null;
                 Log::error('خطا در ثبت فاکتور در RainSale', [
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'response' => $responseData,
-                    'status' => $result['status']
+                    'status' => $errorStatus,
+                    'message' => $errorMessage
                 ]);
 
                 // به‌روزرسانی وضعیت فاکتور
@@ -377,17 +386,18 @@ class ProcessInvoice implements ShouldQueue
                         'request' => $invoiceRequestData,
                         'response' => $responseData,
                         'status' => 'error',
-                        'error' => $result['Message']
+                        'error' => $errorMessage,
+                        'error_status' => $errorStatus
                     ],
                     'is_synced' => false,
-                    'sync_error' => $result['Message']
+                    'sync_error' => $errorMessage
                 ]);
 
                 // به‌روزرسانی وضعیت خطا در ووکامرس
-                $this->updateWooCommerceStatus(false, $result['Message']);
+                $this->updateWooCommerceStatus(false, $errorMessage);
 
                 // تلاش مجدد برای ثبت فاکتور
-                throw new \Exception($result['Message']);
+                throw new \Exception($errorMessage);
             }
 
         } catch (\Exception $e) {
