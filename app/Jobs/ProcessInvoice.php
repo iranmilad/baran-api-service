@@ -45,7 +45,7 @@ class ProcessInvoice implements ShouldQueue
 
     public function handle()
     {
-        try {
+
             // بررسی وجود آدرس API در اطلاعات کاربر
             if (empty($this->user->api_webservice)) {
                 throw new \Exception('آدرس API در تنظیمات کاربر تنظیم نشده است');
@@ -400,36 +400,7 @@ class ProcessInvoice implements ShouldQueue
                 throw new \Exception($errorMessage);
             }
 
-        } catch (\Exception $e) {
-            Log::error('خطا در پردازش فاکتور', [
-                'error' => $e->getMessage(),
-                'invoice_id' => $this->invoice->id,
-                'order_id' => $this->invoice->woocommerce_order_id,
-                'trace' => $e->getTraceAsString()
-            ]);
 
-            // اگر rain_sale_response قبلاً تنظیم نشده باشد، آن را تنظیم می‌کنیم
-            if (!$this->invoice->rain_sale_response) {
-                $this->invoice->update([
-                    'rain_sale_response' => [
-                        'error' => $e->getMessage(),
-                        'status' => 'error'
-                    ],
-                    'is_synced' => false,
-                    'sync_error' => $e->getMessage()
-                ]);
-            } else {
-                // فقط sync_error را به‌روز می‌کنیم
-                $this->invoice->update([
-                    'sync_error' => $e->getMessage()
-                ]);
-            }
-
-            // به‌روزرسانی وضعیت خطا در ووکامرس
-            $this->updateWooCommerceStatus(false, $e->getMessage());
-
-            throw $e;
-        }
     }
 
     protected function updateWooCommerceStatus($success, $message)
