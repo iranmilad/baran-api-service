@@ -45,16 +45,6 @@ class ProcessInvoice implements ShouldQueue
 
     public function handle()
     {
-            // اضافه کردن لاگ برای بررسی داده‌های اولیه
-            Log::info('شروع پردازش فاکتور - داده‌های اولیه', [
-                'invoice_id' => $this->invoice->id,
-                'order_id' => $this->invoice->woocommerce_order_id,
-                'order_data' => $this->invoice->order_data,
-                'order_data_type' => gettype($this->invoice->order_data),
-                'items_data' => $this->invoice->order_data['items'] ?? 'not found',
-                'total_data' => $this->invoice->order_data['total'] ?? 'not found'
-            ]);
-
             // بررسی وجود آدرس API در اطلاعات کاربر
             if (empty($this->user->api_webservice)) {
                 throw new \Exception('آدرس API در تنظیمات کاربر تنظیم نشده است');
@@ -76,12 +66,6 @@ class ProcessInvoice implements ShouldQueue
                 'customerCode' => $this->invoice->customer_mobile
             ];
 
-            Log::info('درخواست استعلام مشتری', [
-                'invoice_id' => $this->invoice->id,
-                'order_id' => $this->invoice->woocommerce_order_id,
-                'request_data' => $customerRequestData,
-                'api_url' => $this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode'
-            ]);
 
             $customerResponse = Http::withHeaders([
                 'Content-Type' => 'application/json',
@@ -95,20 +79,11 @@ class ProcessInvoice implements ShouldQueue
                 $customerResult = json_decode($customerResponse->json()['GetCustomerByCodeResult'], true);
                 if (isset($customerResult['CustomerID'])) {
                     $customerExists = true;
-                    Log::info('مشتری با موفقیت یافت شد', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'customer_id' => $customerResult['CustomerID']
-                    ]);
                 }
             }
 
             // اگر مشتری وجود نداشت، آن را ثبت می‌کنیم
             if (!$customerExists) {
-                Log::info('مشتری یافت نشد، در حال ثبت مشتری جدید', [
-                    'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id
-                ]);
 
                 // آماده‌سازی داده‌های مشتری برای ثبت
                 $customerData = [
@@ -123,12 +98,6 @@ class ProcessInvoice implements ShouldQueue
                     ]
                 ];
 
-                Log::info('درخواست ثبت مشتری', [
-                    'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'request_data' => $customerData,
-                    'api_url' => $this->user->api_webservice.'/RainSaleService.svc/SaveCustomer'
-                ]);
 
                 // ثبت مشتری در RainSale
                 $saveCustomerResponse = Http::withHeaders([
@@ -215,11 +184,6 @@ class ProcessInvoice implements ShouldQueue
             $this->invoice->customer_id = $customerResult['CustomerID'];
             $this->invoice->save();
 
-            Log::info('اطلاعات مشتری با موفقیت دریافت شد', [
-                'invoice_id' => $this->invoice->id,
-                'order_id' => $this->invoice->woocommerce_order_id,
-                'customer_id' => $customerResult['CustomerID']
-            ]);
 
             // آماده‌سازی آیتم‌های فاکتور
             $items = [];
@@ -230,31 +194,12 @@ class ProcessInvoice implements ShouldQueue
 
                 // آماده‌سازی مقادیر ItemId و Barcode با توجه به ساختار unique_id
                 $itemId = $item['unique_id'];
-                log::info($item);
 
                 // محاسبه مقدار total در صورت عدم وجود
                 $itemPrice = (float)$item['price'];
                 $itemQuantity = (int)$item['quantity'];
                 $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
 
-                // اطمینان از اینکه قیمت‌ها صفر نیستند
-                if ($itemPrice <= 0) {
-                    Log::warning('قیمت محصول صفر یا منفی است', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'item' => $item,
-                        'calculated_price' => $itemPrice
-                    ]);
-                }
-
-                if ($total <= 0) {
-                    Log::warning('مجموع قیمت محصول صفر یا منفی است', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'item' => $item,
-                        'calculated_total' => $total
-                    ]);
-                }
 
                 $items[] = [
                     'IsPriceWithTax' => true,
@@ -270,15 +215,6 @@ class ProcessInvoice implements ShouldQueue
                     'Type' => 302
                 ];
 
-                Log::info('اطلاعات محصول آماده شد', [
-                    'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'barcode' => $barcode,
-                    'item_price' => $itemPrice,
-                    'item_quantity' => $itemQuantity,
-                    'total' => $total,
-                    'original_item' => $item
-                ]);
             }
 
             // آماده‌سازی پرداخت‌ها
@@ -290,15 +226,6 @@ class ProcessInvoice implements ShouldQueue
 
             $totalAmount = (float)$this->invoice->order_data['total'];
 
-            // اطمینان از اینکه مبلغ کل صفر نیست
-            if ($totalAmount <= 0) {
-                Log::warning('مبلغ کل فاکتور صفر یا منفی است', [
-                    'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'total_amount' => $totalAmount,
-                    'order_data_total' => $this->invoice->order_data['total']
-                ]);
-            }
 
             $payments[] = [
                 'Amount' => $totalAmount,
@@ -307,12 +234,6 @@ class ProcessInvoice implements ShouldQueue
                 'TypeID' => 2,
             ];
 
-            Log::info('اطلاعات پرداخت آماده شد', [
-                'invoice_id' => $this->invoice->id,
-                'order_id' => $this->invoice->woocommerce_order_id,
-                'total_amount' => $totalAmount,
-                'payment_method' => $this->invoice->order_data['payment_method'] ?? 'unknown'
-            ]);
 
             // آماده‌سازی داده‌های فاکتور
             $invoiceRequestData = [
@@ -330,33 +251,6 @@ class ProcessInvoice implements ShouldQueue
                 'useCredit' => false
             ];
 
-            Log::info('درخواست ثبت فاکتور', [
-                'invoice_id' => $this->invoice->id,
-                'order_id' => $this->invoice->woocommerce_order_id,
-                'request_data' => $invoiceRequestData,
-                'api_url' => $this->user->api_webservice.'/RainSaleService.svc/SaveSaleInvoiceByOrder',
-                'original_order_data' => $this->invoice->order_data
-            ]);
-
-            // بررسی نهایی قبل از ارسال
-            foreach ($invoiceRequestData['order']['Items'] as $index => $item) {
-                if ($item['Price'] <= 0 || $item['NetAmount'] <= 0) {
-                    Log::error('خطا: قیمت یا مبلغ خالص آیتم صفر است', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'item_index' => $index,
-                        'item_data' => $item
-                    ]);
-                }
-            }
-
-            if ($invoiceRequestData['order']['Payments'][0]['Amount'] <= 0) {
-                Log::error('خطا: مبلغ پرداخت صفر است', [
-                    'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'payment_data' => $invoiceRequestData['order']['Payments'][0]
-                ]);
-            }
 
             // ارسال فاکتور به RainSale
             $response = Http::withOptions([
@@ -421,12 +315,6 @@ class ProcessInvoice implements ShouldQueue
 
             // بررسی ساختار ریسپانس و وضعیت پاسخ
             if (isset($result['Status']) && $result['Status'] === 3) {
-                Log::info('فاکتور با موفقیت ثبت شد', [
-                    'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'response' => $responseData,
-                    'invoice_number' => $result['Message']
-                ]);
 
                 // به‌روزرسانی وضعیت فاکتور
                 $this->invoice->update([
@@ -556,12 +444,6 @@ class ProcessInvoice implements ShouldQueue
                     'status_code' => $response->status(),
                     'url' => $this->license->website_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id,
                     'license_id' => $this->license->id
-                ]);
-            } else {
-                Log::info('وضعیت فاکتور در ووکامرس با موفقیت به‌روز شد', [
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'success' => $success,
-                    'message' => $message
                 ]);
             }
         } catch (\Exception $e) {
