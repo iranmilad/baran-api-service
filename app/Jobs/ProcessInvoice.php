@@ -128,14 +128,27 @@ class ProcessInvoice implements ShouldQueue
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveCustomer', $customerData);
 
                 if (!$saveCustomerResponse->successful()) {
-                    Log::error('خطا در ثبت مشتری', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
+                Log::error('خطا در ثبت مشتری', [
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id,
+                    'response' => $saveCustomerResponse->body(),
+                    'status_code' => $saveCustomerResponse->status()
+                ]);
+                
+                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'خطا در ثبت مشتری',
                         'response' => $saveCustomerResponse->body(),
-                        'status_code' => $saveCustomerResponse->status()
-                    ]);
-                    throw new \Exception('خطا در ثبت مشتری: ' . $saveCustomerResponse->body());
-                }
+                        'status_code' => $saveCustomerResponse->status(),
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => 'خطا در ثبت مشتری: ' . $saveCustomerResponse->body()
+                ]);
+                
+                throw new \Exception('خطا در ثبت مشتری: ' . $saveCustomerResponse->body());
+            }
 
                 // استعلام مجدد برای دریافت CustomerID
                 $customerResponse = Http::withHeaders([
@@ -144,14 +157,27 @@ class ProcessInvoice implements ShouldQueue
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode', $customerRequestData);
 
                 if (!$customerResponse->successful()) {
-                    Log::error('خطا در دریافت اطلاعات مشتری پس از ثبت', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
+                Log::error('خطا در دریافت اطلاعات مشتری پس از ثبت', [
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id,
+                    'response' => $customerResponse->body(),
+                    'status_code' => $customerResponse->status()
+                ]);
+                
+                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'خطا در دریافت اطلاعات مشتری پس از ثبت',
                         'response' => $customerResponse->body(),
-                        'status_code' => $customerResponse->status()
-                    ]);
-                    throw new \Exception('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
-                }
+                        'status_code' => $customerResponse->status(),
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => 'خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body()
+                ]);
+                
+                throw new \Exception('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
+            }
 
                 $customerResult = json_decode($customerResponse->json()['GetCustomerByCodeResult'], true);
             }
@@ -162,6 +188,18 @@ class ProcessInvoice implements ShouldQueue
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'response' => $customerResult
                 ]);
+                
+                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'پاسخ نامعتبر از RainSale برای اطلاعات مشتری',
+                        'response' => $customerResult,
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => 'پاسخ نامعتبر از RainSale برای اطلاعات مشتری'
+                ]);
+                
                 throw new \Exception('پاسخ نامعتبر از RainSale برای اطلاعات مشتری');
             }
 
@@ -191,6 +229,17 @@ class ProcessInvoice implements ShouldQueue
                         'order_id' => $this->invoice->woocommerce_order_id,
                         'barcode' => $barcode
                     ]);
+                    
+                    // ذخیره خطا در ستون rain_sale_response
+                    $this->invoice->update([
+                        'rain_sale_response' => [
+                            'error' => 'محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد',
+                            'status' => 'error'
+                        ],
+                        'is_synced' => false,
+                        'sync_error' => 'محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد'
+                    ]);
+                    
                     throw new \Exception('محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد');
                 }
 
@@ -272,6 +321,19 @@ class ProcessInvoice implements ShouldQueue
                     'response' => $response->body(),
                     'status_code' => $response->status()
                 ]);
+                
+                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'خطا در ثبت فاکتور در RainSale',
+                        'response' => $response->body(),
+                        'status_code' => $response->status(),
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => 'خطا در ثبت فاکتور در RainSale: ' . $response->body()
+                ]);
+                
                 throw new \Exception('خطا در ثبت فاکتور در RainSale: ' . $response->body());
             }
 
@@ -282,6 +344,18 @@ class ProcessInvoice implements ShouldQueue
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'response' => $responseData
                 ]);
+                
+                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'پاسخ نامعتبر از RainSale',
+                        'response' => $responseData,
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => 'خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر'
+                ]);
+                
                 throw new \Exception('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر');
             }
 
@@ -334,9 +408,22 @@ class ProcessInvoice implements ShouldQueue
                 'trace' => $e->getTraceAsString()
             ]);
 
-            $this->invoice->update([
-                'sync_error' => $e->getMessage()
-            ]);
+            // اگر rain_sale_response قبلاً تنظیم نشده باشد، آن را تنظیم می‌کنیم
+            if (!$this->invoice->rain_sale_response) {
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => $e->getMessage(),
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => $e->getMessage()
+                ]);
+            } else {
+                // فقط sync_error را به‌روز می‌کنیم
+                $this->invoice->update([
+                    'sync_error' => $e->getMessage()
+                ]);
+            }
 
             // به‌روزرسانی وضعیت خطا در ووکامرس
             $this->updateWooCommerceStatus(false, $e->getMessage());
