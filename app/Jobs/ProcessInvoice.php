@@ -134,7 +134,7 @@ class ProcessInvoice implements ShouldQueue
                     'response' => $saveCustomerResponse->body(),
                     'status_code' => $saveCustomerResponse->status()
                 ]);
-                
+
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
                     'rain_sale_response' => [
@@ -146,7 +146,7 @@ class ProcessInvoice implements ShouldQueue
                     'is_synced' => false,
                     'sync_error' => 'خطا در ثبت مشتری: ' . $saveCustomerResponse->body()
                 ]);
-                
+
                 throw new \Exception('خطا در ثبت مشتری: ' . $saveCustomerResponse->body());
             }
 
@@ -163,7 +163,7 @@ class ProcessInvoice implements ShouldQueue
                     'response' => $customerResponse->body(),
                     'status_code' => $customerResponse->status()
                 ]);
-                
+
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
                     'rain_sale_response' => [
@@ -175,7 +175,7 @@ class ProcessInvoice implements ShouldQueue
                     'is_synced' => false,
                     'sync_error' => 'خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body()
                 ]);
-                
+
                 throw new \Exception('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
             }
 
@@ -188,7 +188,7 @@ class ProcessInvoice implements ShouldQueue
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'response' => $customerResult
                 ]);
-                
+
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
                     'rain_sale_response' => [
@@ -199,7 +199,7 @@ class ProcessInvoice implements ShouldQueue
                     'is_synced' => false,
                     'sync_error' => 'پاسخ نامعتبر از RainSale برای اطلاعات مشتری'
                 ]);
-                
+
                 throw new \Exception('پاسخ نامعتبر از RainSale برای اطلاعات مشتری');
             }
 
@@ -217,42 +217,14 @@ class ProcessInvoice implements ShouldQueue
             foreach ($this->invoice->order_data['items'] as $item) {
                 // دریافت اطلاعات محصول از دیتابیس
                 // بررسی ساختار unique_id (رشته یا آرایه)
-                $barcode = is_array($item['unique_id']) ? $item['unique_id']['barcode'] : $item['sku'];
-                
-                $product = \App\Models\Product::where('license_id', $this->license->license_key)
-                    ->where('barcode', $barcode)
-                    ->first();
-
-                if (!$product) {
-                    Log::error('محصول در دیتابیس یافت نشد', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'barcode' => $barcode
-                    ]);
-                    
-                    // ذخیره خطا در ستون rain_sale_response
-                    $this->invoice->update([
-                        'rain_sale_response' => [
-                            'function' => 'ProductLookup',
-                            'request' => [
-                                'barcode' => $barcode
-                            ],
-                            'error' => 'محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد',
-                            'status' => 'error'
-                        ],
-                        'is_synced' => false,
-                        'sync_error' => 'محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد'
-                    ]);
-                    
-                    throw new \Exception('محصول با بارکد ' . $barcode . ' در دیتابیس یافت نشد');
-                }
+                $barcode = $item['sku'];
 
                 // آماده‌سازی مقادیر ItemId و Barcode با توجه به ساختار unique_id
-                $itemId = is_array($item['unique_id']) ? $item['unique_id']['unique_id'] : $item['unique_id'];
-                
+                $itemId = $item['unique_id'];
+
                 // محاسبه مقدار total در صورت عدم وجود
                 $total = isset($item['total']) ? $item['total'] : ($item['price'] * $item['quantity']);
-                
+
                 $items[] = [
                     'IsPriceWithTax' => true,
                     'ItemId' => $itemId,
@@ -263,7 +235,7 @@ class ProcessInvoice implements ShouldQueue
                     'Price' => $item['price'],
                     'Quantity' => $item['quantity'],
                     'Tax' => $item['tax'] ?? 0,
-                    'StockId' => $product->stock_id,
+                    //'StockId' => $product->stock_id,
                     'Type' => 302
                 ];
 
@@ -271,7 +243,7 @@ class ProcessInvoice implements ShouldQueue
                     'invoice_id' => $this->invoice->id,
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'barcode' => $barcode,
-                    'stock_id' => $product->stock_id
+                    //'stock_id' => $product->stock_id
                 ]);
             }
 
@@ -313,7 +285,11 @@ class ProcessInvoice implements ShouldQueue
             ]);
 
             // ارسال فاکتور به RainSale
-            $response = Http::withHeaders([
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60
+            ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
             ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveSaleInvoiceByOrder', $invoiceRequestData);
@@ -325,7 +301,7 @@ class ProcessInvoice implements ShouldQueue
                     'response' => $response->body(),
                     'status_code' => $response->status()
                 ]);
-                
+
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
                     'rain_sale_response' => [
@@ -339,7 +315,7 @@ class ProcessInvoice implements ShouldQueue
                     'is_synced' => false,
                     'sync_error' => 'خطا در ثبت فاکتور در RainSale: ' . $response->body()
                 ]);
-                
+
                 throw new \Exception('خطا در ثبت فاکتور در RainSale: ' . $response->body());
             }
 
@@ -350,7 +326,7 @@ class ProcessInvoice implements ShouldQueue
                     'order_id' => $this->invoice->woocommerce_order_id,
                     'response' => $responseData
                 ]);
-                
+
                 // ذخیره پاسخ سرویس باران در ستون rain_sale_response
                 $this->invoice->update([
                     'rain_sale_response' => [
@@ -363,7 +339,7 @@ class ProcessInvoice implements ShouldQueue
                     'is_synced' => false,
                     'sync_error' => 'خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر'
                 ]);
-                
+
                 throw new \Exception('خطا در ثبت فاکتور در RainSale: پاسخ نامعتبر');
             }
 
