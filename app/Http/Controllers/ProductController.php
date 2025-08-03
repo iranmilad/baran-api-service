@@ -374,6 +374,7 @@ class ProductController extends Controller
             }
 
             $sku = $request->input('sku');
+            log::info("SKU received for unique ID lookup:", [$sku]);
 
             $response = Http::withOptions([
                 'verify' => false,
@@ -415,6 +416,107 @@ class ProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'خطا در دریافت کد یکتا: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getUniqueIdsBySkus(Request $request)
+    {
+        try {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No token provided'
+                ], 401);
+            }
+
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid token - license not found'
+                ], 401);
+            }
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
+            if (!$user) {
+                Log::error('User not found for license', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Validate input
+            $request->validate([
+                'barcodes' => 'required|array|min:1',
+                'barcodes.*' => 'required|string'
+            ]);
+
+            $barcodes = $request->input('barcodes');
+
+            // Call external API with array of barcodes
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60
+            ])->withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
+            ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfos', [
+                'barcodes' => $barcodes
+            ]);
+
+            if (!$response->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'خطا در ارتباط با وب‌سرویس باران: ' . $response->status()
+                ], 500);
+            }
+
+            $body = $response->json();
+            $results = $body['GetItemInfosResult'] ?? [];
+
+            // Transform response to return only barcode and ItemID mapping
+            $mappedResults = [];
+            foreach ($results as $item) {
+                $barcode = $item['Barcode'] ?? null;
+                $itemId = $item['ItemID'] ?? null;
+
+                if ($barcode && $itemId && $itemId !== '00000000-0000-0000-0000-000000000000') {
+                    $mappedResults[] = [
+                        'barcode' => $barcode,
+                        'unique_id' => $itemId
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $mappedResults
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'خطا در دریافت کدهای یکتا: ' . $e->getMessage()
             ], 500);
         }
     }

@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../wordpress/wp-content/plugins/baran-inventory-manager"
+		},
+		{
+			"path": "../baran-sync"
 		}
 	],
 	"settings": {}
