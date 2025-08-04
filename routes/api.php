@@ -107,6 +107,9 @@ Route::prefix('v1')->group(function () {
             // Get unique IDs by multiple SKUs/barcodes
             Route::post('/unique-by-skus', [ProductController::class, 'getUniqueIdsBySkus']);
 
+            // Sync unique IDs for products
+            Route::post('/sync-unique-ids', [ProductController::class, 'syncUniqueIds']);
+
             // Sync categories
             Route::post('/sync-categories', [ProductController::class, 'syncCategories']);
         });

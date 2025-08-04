@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\UpdateWooCommerceProducts;
+use App\Jobs\SyncUniqueIds;
 use App\Models\UserSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -517,6 +518,106 @@ class ProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'خطا در دریافت کدهای یکتا: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function syncUniqueIds(Request $request)
+    {
+        try {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No token provided'
+                ], 401);
+            }
+
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid token - license not found'
+                ], 401);
+            }
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
+            if (!$user) {
+                Log::error('User not found for license', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Validate input
+            $request->validate([
+                'products' => 'required|array|min:1',
+                'products.*.unique_id' => 'required|string',
+                'products.*.product_id' => 'required|integer',
+                'products.*.variation_id' => 'nullable|integer',
+                'products.*.sku' => 'nullable|string'
+            ]);
+
+            $products = $request->input('products');
+
+            // Log the sync request
+            Log::info('Unique IDs sync request received', [
+                'license_id' => $license->id,
+                'user_id' => $user->id,
+                'products_count' => count($products),
+                'timestamp' => now()->toDateTimeString()
+            ]);
+
+            // All products should have unique_id (as per requirement)
+            // No need to separate products without unique_id
+
+            // Prepare job data
+            $syncData = [
+                'products_with_unique_id' => $products, // All products have unique_id
+                'license_id' => $license->id,
+                'user_id' => $user->id,
+                'timestamp' => now()->timestamp
+            ];
+
+            // Queue the sync job
+            SyncUniqueIds::dispatch($syncData)
+                ->onQueue('unique-ids-sync')
+                ->delay(now()->addSeconds(2));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'درخواست همگام‌سازی کدهای یکتا با موفقیت ثبت شد',
+                'data' => [
+                    'total_products' => count($products),
+                    'queue_status' => 'processing'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Sync unique IDs error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'خطا در ثبت درخواست همگام‌سازی کدهای یکتا: ' . $e->getMessage()
             ], 500);
         }
     }
