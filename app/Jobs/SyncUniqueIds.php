@@ -33,8 +33,7 @@ class SyncUniqueIds implements ShouldQueue
         try {
             Log::info('Starting unique IDs sync job', [
                 'license_id' => $this->syncData['license_id'],
-                'products_with_unique_id_count' => count($this->syncData['products_with_unique_id']),
-                'products_without_unique_id_count' => count($this->syncData['products_without_unique_id'])
+                'products_with_unique_id_count' => count($this->syncData['products_with_unique_id'])
             ]);
 
             $license = License::find($this->syncData['license_id']);
