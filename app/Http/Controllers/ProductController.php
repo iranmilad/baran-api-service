@@ -23,6 +23,7 @@ class ProductController extends Controller
 
         //example input request format: {"update":[{"ItemName":"گاباردين راسته 263","ItemId": "B6A449EE-5D8E-41E7-BD7B-00B8D2D53EEB","Barcode":"TRS18263NANA","PriceAmount":1290000,"PriceAfterDiscount":1290000,"TotalCount":0,"StockID":null,"DepartmentName":"داروخانه"},"insert":[{"ItemName":"گاباردين  ","ItemId": "B6A449EE-5D8E-41E7-3421-00B8D2D53EEB","Barcode":"TRS1845NANA","PriceAmount":1290000,"PriceAfterDiscount":1290000,"TotalCount":0,"StockID":null,"DepartmentName":"داروخانه"}]}
         try {
+
             // Get and validate JWT token
             $token = $request->bearerToken();
             if (!$token) {
@@ -43,6 +44,13 @@ class ProductController extends Controller
                         'message' => 'Invalid token - license not found'
                     ], 401);
                 }
+
+                // ذخیره وبهوک دریافتی در جدول webhook_logs
+                \App\Models\WebhookLog::create([
+                    'license_id' => $license->id,
+                    'logged_at' => now(),
+                    'payload' => $request->all()
+                ]);
 
                 if (!$license->isActive()) {
                     Log::error('License is not active', [
