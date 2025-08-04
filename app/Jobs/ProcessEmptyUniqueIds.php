@@ -353,7 +353,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
 
                     if ($barcode && $itemId && $itemId !== '00000000-0000-0000-0000-000000000000') {
                         $uniqueIdMapping[] = [
-                            'unique_id' => $itemId,
+                            'bim_unique_id' => $itemId,
                             'sku' => $barcode
                         ];
                     }
@@ -415,7 +415,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
                             'product_id' => $success['product_id'],
                             'variation_id' => $success['variation_id'] ?? null,
                             'sku' => $success['sku'],
-                            'bim_unique_id' => $success['bim_unique_id']
+                            'bim_unique_id' => $success['bim_unique_id'] ?? $success['unique_id'] ?? null
                         ]);
                     }
                 }
@@ -425,7 +425,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
                     foreach ($result['results']['failed'] as $failed) {
                         Log::warning('Product bim_unique_id update failed', [
                             'sku' => $failed['sku'] ?? null,
-                            'bim_unique_id' => $failed['bim_unique_id'] ?? null,
+                            'bim_unique_id' => $failed['bim_unique_id'] ?? $failed['unique_id'] ?? null,
                             'error' => $failed['message'] ?? 'Unknown error'
                         ]);
                     }
