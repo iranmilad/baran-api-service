@@ -10,6 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use App\Models\License;
+use Exception;
 
 class ProcessEmptyUniqueIds implements ShouldQueue
 {
@@ -77,61 +78,56 @@ class ProcessEmptyUniqueIds implements ShouldQueue
     }
 
     /**
-     * Process products that have empty unique_id but have SKU
+     * Process products that have empty bim_unique_id but have SKU
      */
     private function processEmptyUniqueIdProducts($license, $wooApiKey, $user)
     {
         try {
-            Log::info('Starting to process products with empty unique IDs');
+            Log::info('Starting to process products with empty bim_unique_id');
 
-            $websiteUrl = rtrim($license->website_url, '/');
-            $page = 1;
-            $perPage = 100;
-            $hasMore = true;
+            // Get all products with empty bim_unique_id
+            $productsWithEmptyUniqueId = $this->getProductsWithEmptyUniqueId($license);
 
-            while ($hasMore) {
-                Log::info("Processing page {$page} of products with empty unique IDs");
+            if (empty($productsWithEmptyUniqueId)) {
+                Log::info('No products with empty bim_unique_id found');
+                return;
+            }
 
-                // Get products with empty bim_unique_id using the new endpoint
-                $productsWithEmptyUniqueId = $this->getProductsWithEmptyUniqueId($websiteUrl, $wooApiKey, $page, $perPage);
-
-                if (empty($productsWithEmptyUniqueId)) {
-                    $hasMore = false;
-                    continue;
-                }
-
-                // Extract SKUs from products that have them
-                $skus = [];
-                foreach ($productsWithEmptyUniqueId as $product) {
-                    if (!empty($product['sku'])) {
-                        $skus[] = $product['sku'];
-                    }
-                }
-
-                if (!empty($skus)) {
-                    Log::info("Found {count} products with SKUs for unique ID lookup", ['count' => count($skus)]);
-
-                    // Get unique IDs from Baran API
-                    $uniqueIdMapping = $this->getUniqueIdsBySkusFromBaran($skus, $user);
-
-                    if (!empty($uniqueIdMapping)) {
-                        // Update products with unique IDs using the new endpoint
-                        $this->batchUpdateUniqueIds($websiteUrl, $wooApiKey, $uniqueIdMapping);
-                    }
-                }
-
-                $page++;
-
-                // If we got less than perPage products, we're done
-                if (count($productsWithEmptyUniqueId) < $perPage) {
-                    $hasMore = false;
+            // Extract SKUs from products that have them
+            $skus = [];
+            foreach ($productsWithEmptyUniqueId as $product) {
+                if (!empty($product['sku'])) {
+                    $skus[] = $product['sku'];
                 }
             }
 
-            Log::info('Completed processing products with empty unique IDs');
+            if (!empty($skus)) {
+                Log::info("Found {count} products with SKUs for unique ID lookup", ['count' => count($skus)]);
+
+                // Process SKUs in batches of 100
+                $skuBatches = array_chunk($skus, 100);
+
+                foreach ($skuBatches as $batchIndex => $skuBatch) {
+                    Log::info("Processing SKU batch {batch} with {count} items", [
+                        'batch' => $batchIndex + 1,
+                        'count' => count($skuBatch)
+                    ]);
+
+                    // Get unique IDs from Baran API
+                    $uniqueIdMapping = $this->getUniqueIdsBySkusFromBaran($skuBatch, $user);
+
+                    if (!empty($uniqueIdMapping)) {
+                        // Update products with unique IDs using the new endpoint
+                        $websiteUrl = rtrim($license->website_url, '/');
+                        $this->batchUpdateUniqueIds($websiteUrl, $wooApiKey, $uniqueIdMapping);
+                    }
+                }
+            }
+
+            Log::info('Completed processing products with empty bim_unique_id');
 
         } catch (\Exception $e) {
-            Log::error('Error processing empty unique ID products', [
+            Log::error('Error processing empty bim_unique_id products', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -139,63 +135,193 @@ class ProcessEmptyUniqueIds implements ShouldQueue
     }
 
     /**
-     * Get products with empty unique_id using the new WooCommerce endpoint
+     * Get products with empty bim_unique_id using WooCommerce filter
      */
-    private function getProductsWithEmptyUniqueId($websiteUrl, $wooApiKey, $page, $perPage)
+    private function getProductsWithEmptyUniqueId($license)
     {
-        $productsWithEmptyUniqueId = [];
+        $allProducts = [];
+        $page = 1;
+        $hasMore = true;
 
         try {
-            $url = $websiteUrl . '/wp-json/wc/v3/products';
+            while ($hasMore) {
+                Log::info("Fetching products with empty bim_unique_id - page: {page}", ['page' => $page]);
 
-            $response = Http::withBasicAuth($wooApiKey->api_key, $wooApiKey->api_secret)
-                ->withHeaders(['Content-Type' => 'application/json'])
-                ->withOptions([
+                $websiteUrl = rtrim($license->website_url, '/');
+                $url = $websiteUrl . '/wp-json/wc/v3/products';
+
+                $wooApiKey = $license->woocommerceApiKey;
+                if (!$wooApiKey) {
+                    Log::error('WooCommerce API key not found for license', [
+                        'license_id' => $license->id
+                    ]);
+                    break;
+                }
+
+                $response = Http::withOptions([
                     'verify' => false,
                     'timeout' => 180,
-                    'connect_timeout' => 60
-                ])
-                ->get($url, [
+                    'connect_timeout' => 60,
+                ])->get($url, [
+                    'consumer_key' => $wooApiKey->api_key,
+                    'consumer_secret' => $wooApiKey->api_secret,
                     'page' => $page,
-                    'per_page' => $perPage,
+                    'per_page' => 100,
                     'bim_unique_id_empty' => 'true'
                 ]);
 
-            if ($response->successful()) {
+                if ($response->failed()) {
+                    Log::error("WooCommerce API request failed", [
+                        'status' => $response->status(),
+                        'response' => $response->body()
+                    ]);
+                    break;
+                }
+
                 $products = $response->json();
+                $productsWithEmptyUniqueId = [];
+
+                if (empty($products) || count($products) === 0) {
+                    Log::info("No more products found on page {page}", ['page' => $page]);
+                    $hasMore = false;
+                    break;
+                }
 
                 foreach ($products as $product) {
-                    if (!empty($product['sku'])) {
-                        $productsWithEmptyUniqueId[] = [
-                            'product_id' => $product['id'],
-                            'variation_id' => isset($product['parent_id']) && $product['parent_id'] > 0 ? $product['id'] : null,
-                            'sku' => $product['sku'],
-                            'type' => $product['type'] ?? 'simple'
-                        ];
+                    // Server already filtered products with empty bim_unique_id
+                    $productsWithEmptyUniqueId[] = $product;
+
+                    // Handle variations for variable products
+                    if ($product['type'] === 'variable') {
+                        $variations = $this->getVariationsWithEmptyUniqueId($license, $product['id']);
+                        $productsWithEmptyUniqueId = array_merge($productsWithEmptyUniqueId, $variations);
                     }
                 }
 
-                Log::info("Fetched {count} products with empty unique IDs from page {page}", [
-                    'count' => count($productsWithEmptyUniqueId),
+                Log::info("Fetched {count} products with empty bim_unique_id from page {page}", [
+                    'count' => count($products),
                     'page' => $page
                 ]);
 
-            } else {
-                Log::warning('Failed to fetch products with empty unique IDs', [
-                    'status' => $response->status(),
+                Log::info("Total items (products + variations) with empty bim_unique_id from page {page}: {total}", [
                     'page' => $page,
-                    'response' => $response->body()
+                    'total' => count($productsWithEmptyUniqueId)
                 ]);
+
+                $allProducts = array_merge($allProducts, $productsWithEmptyUniqueId);
+
+                // Check if we have more pages
+                if (count($products) < 100) {
+                    $hasMore = false;
+                    Log::info("Reached last page of products at page {page}", ['page' => $page]);
+                } else {
+                    $page++;
+                }
             }
 
-        } catch (\Exception $e) {
-            Log::error('Error fetching products with empty unique ID', [
+        } catch (Exception $e) {
+            Log::error("Error fetching products with empty bim_unique_id", [
                 'error' => $e->getMessage(),
                 'page' => $page
             ]);
         }
 
-        return $productsWithEmptyUniqueId;
+        Log::info("Total products with empty bim_unique_id: {total}", ['total' => count($allProducts)]);
+        return $allProducts;
+    }
+
+    /**
+     * Get variations with empty bim_unique_id for a variable product
+     */
+    private function getVariationsWithEmptyUniqueId($license, $productId)
+    {
+        $variationsWithEmptyUniqueId = [];
+        $page = 1;
+        $perPage = 100;
+        $hasMore = true;
+
+        try {
+            $wooApiKey = $license->woocommerceApiKey;
+            if (!$wooApiKey) {
+                Log::error('WooCommerce API key not found for license in variations fetch', [
+                    'license_id' => $license->id,
+                    'product_id' => $productId
+                ]);
+                return $variationsWithEmptyUniqueId;
+            }
+
+            while ($hasMore) {
+                Log::info("Processing page {$page} of variations for product {$productId}");
+
+                $websiteUrl = rtrim($license->website_url, '/');
+                $url = $websiteUrl . "/wp-json/wc/v3/products/{$productId}/variations";
+
+                $response = Http::withOptions([
+                    'verify' => false,
+                    'timeout' => 180,
+                    'connect_timeout' => 60,
+                ])->get($url, [
+                    'consumer_key' => $wooApiKey->api_key,
+                    'consumer_secret' => $wooApiKey->api_secret,
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'bim_unique_id_empty' => 'true'
+                ]);
+
+                if ($response->successful()) {
+                    $variations = $response->json();
+
+                    if (empty($variations)) {
+                        $hasMore = false;
+                        continue;
+                    }
+
+                    foreach ($variations as $variation) {
+                        // Server already filtered variations with empty bim_unique_id
+                        // Only add if it has a SKU
+                        if (!empty($variation['sku'])) {
+                            $variationsWithEmptyUniqueId[] = $variation;
+                        }
+                    }
+
+                    Log::info("Fetched {count} variations with empty bim_unique_id from page {page} for product {product_id}", [
+                        'count' => count($variations),
+                        'page' => $page,
+                        'product_id' => $productId
+                    ]);
+
+                    $page++;
+
+                    // If we got less than perPage variations, we're done
+                    if (count($variations) < $perPage) {
+                        $hasMore = false;
+                    }
+
+                } else {
+                    Log::warning('Failed to fetch variations with empty bim_unique_id', [
+                        'status' => $response->status(),
+                        'product_id' => $productId,
+                        'page' => $page,
+                        'response' => $response->body()
+                    ]);
+                    $hasMore = false;
+                }
+            }
+
+            Log::info("Total variations with empty bim_unique_id found for product {product_id}: {total}", [
+                'product_id' => $productId,
+                'total' => count($variationsWithEmptyUniqueId)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching variations with empty bim_unique_id', [
+                'error' => $e->getMessage(),
+                'product_id' => $productId,
+                'page' => $page
+            ]);
+        }
+
+        return $variationsWithEmptyUniqueId;
     }
 
     /**
@@ -250,7 +376,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
     }
 
     /**
-     * Batch update unique IDs in WooCommerce
+     * Batch update bim_unique_id in WooCommerce
      */
     private function batchUpdateUniqueIds($websiteUrl, $wooApiKey, $uniqueIdMapping)
     {
@@ -261,21 +387,22 @@ class ProcessEmptyUniqueIds implements ShouldQueue
 
             $url = $websiteUrl . '/wp-json/wc/v3/products/unique/batch-update-sku';
 
-            $response = Http::withBasicAuth($wooApiKey->api_key, $wooApiKey->api_secret)
-                ->withHeaders(['Content-Type' => 'application/json'])
-                ->withOptions([
-                    'verify' => false,
-                    'timeout' => 180,
-                    'connect_timeout' => 60
-                ])
-                ->post($url, [
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60,
+                'http_errors' => false
+            ])->send('POST', $url, [
+                'json' => [
                     'products' => $uniqueIdMapping
-                ]);
+                ],
+                'auth' => [$wooApiKey->api_key, $wooApiKey->api_secret]
+            ]);
 
             if ($response->successful()) {
                 $result = $response->json();
 
-                Log::info('Batch unique ID update completed', [
+                Log::info('Batch bim_unique_id update completed', [
                     'updated_count' => $result['updated_count'] ?? 0,
                     'failed_count' => $result['failed_count'] ?? 0,
                     'total_sent' => count($uniqueIdMapping)
@@ -284,11 +411,11 @@ class ProcessEmptyUniqueIds implements ShouldQueue
                 // Log successful updates
                 if (isset($result['results']['success'])) {
                     foreach ($result['results']['success'] as $success) {
-                        Log::info('Product unique ID updated successfully', [
+                        Log::info('Product bim_unique_id updated successfully', [
                             'product_id' => $success['product_id'],
                             'variation_id' => $success['variation_id'] ?? null,
                             'sku' => $success['sku'],
-                            'unique_id' => $success['unique_id']
+                            'bim_unique_id' => $success['bim_unique_id']
                         ]);
                     }
                 }
@@ -296,16 +423,16 @@ class ProcessEmptyUniqueIds implements ShouldQueue
                 // Log failed updates
                 if (isset($result['results']['failed'])) {
                     foreach ($result['results']['failed'] as $failed) {
-                        Log::warning('Product unique ID update failed', [
+                        Log::warning('Product bim_unique_id update failed', [
                             'sku' => $failed['sku'] ?? null,
-                            'unique_id' => $failed['unique_id'] ?? null,
+                            'bim_unique_id' => $failed['bim_unique_id'] ?? null,
                             'error' => $failed['message'] ?? 'Unknown error'
                         ]);
                     }
                 }
 
             } else {
-                Log::error('Failed to batch update unique IDs', [
+                Log::error('Failed to batch update bim_unique_id', [
                     'status' => $response->status(),
                     'response' => $response->body(),
                     'sent_data' => $uniqueIdMapping
@@ -313,7 +440,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
             }
 
         } catch (\Exception $e) {
-            Log::error('Error in batch update unique IDs', [
+            Log::error('Error in batch update bim_unique_id', [
                 'error' => $e->getMessage(),
                 'unique_id_mapping' => $uniqueIdMapping
             ]);
