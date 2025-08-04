@@ -159,24 +159,110 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     'endpoint' => $license->website_url . '/wp-json/wc/v3/products/unique/batch'
                 ]);
 
-                $response = Http::withOptions([
-                    'verify' => false,
-                    'timeout' => 180,
-                    'connect_timeout' => 60
-                ])->retry(3, 300, function ($exception, $request) {
-                    return $exception instanceof \Illuminate\Http\Client\ConnectionException ||
-                           $exception->response->status() >= 500;
-                })->withHeaders([
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ])->withBasicAuth(
-                    $wooCommerceApiKey->api_key,
-                    $wooCommerceApiKey->api_secret
-                )->post($license->website_url . '/wp-json/wc/v3/products/unique/batch', [
-                    'products' => $productsToCreate
+                Log::info('درج محصولات جدید:', [
+                    'license_id' => $this->license_id,
+                    'unique_ids' => collect($productsToCreate)->pluck('unique_id')->take(10)->toArray(), // نمایش 10 آیتم اول
+                    'total_count' => count($productsToCreate),
+                    'batch_size' => $this->batchSize
                 ]);
 
-                $this->handleResponse($response, $productsToCreate, 'insert');
+                // تقسیم محصولات به دسته‌های کوچکتر برای جلوگیری از خطاهای JSON
+                $chunks = array_chunk($productsToCreate, $this->batchSize);
+                $totalChunks = count($chunks);
+
+                Log::info('تقسیم محصولات به دسته‌های کوچکتر برای درج', [
+                    'total_products' => count($productsToCreate),
+                    'batch_size' => $this->batchSize,
+                    'total_chunks' => $totalChunks,
+                    'license_id' => $this->license_id
+                ]);
+
+                $successfulInserts = 0;
+                $failedInserts = 0;
+                $errors = [];
+
+                foreach ($chunks as $index => $chunk) {
+                    try {
+                        Log::info('درج دسته محصولات', [
+                            'chunk_index' => $index + 1,
+                            'total_chunks' => $totalChunks,
+                            'chunk_size' => count($chunk),
+                            'license_id' => $this->license_id
+                        ]);
+
+                        $response = Http::withOptions([
+                            'verify' => false,
+                            'timeout' => 180,
+                            'connect_timeout' => 60
+                        ])->retry(3, 300, function ($exception, $request) {
+                            return $exception instanceof \Illuminate\Http\Client\ConnectionException ||
+                                   $exception->response->status() >= 500;
+                        })->withHeaders([
+                            'Content-Type' => 'application/json',
+                            'Accept' => 'application/json'
+                        ])->withBasicAuth(
+                            $wooCommerceApiKey->api_key,
+                            $wooCommerceApiKey->api_secret
+                        )->post($license->website_url . '/wp-json/wc/v3/products/unique/batch', [
+                            'products' => $chunk
+                        ]);
+
+                        // پردازش پاسخ برای این دسته
+                        $chunkResult = $this->processChunkResponse($response, $chunk, 'insert');
+                        $successfulInserts += $chunkResult['successful'];
+                        $failedInserts += $chunkResult['failed'];
+
+                        if (!empty($chunkResult['errors'])) {
+                            $errors = array_merge($errors, $chunkResult['errors']);
+                        }
+
+                        // اضافه کردن تاخیر بین درخواست‌ها برای جلوگیری از اورلود سرور
+                        if ($index < $totalChunks - 1) {
+                            sleep(2); // 2 ثانیه تاخیر بین هر درخواست
+                        }
+
+                    } catch (\Exception $e) {
+                        $failedInserts += count($chunk);
+                        $errors[] = [
+                            'chunk_index' => $index + 1,
+                            'error_message' => $e->getMessage(),
+                            'products_count' => count($chunk),
+                            'first_few_skus' => array_slice(array_column($chunk, 'sku'), 0, 5) // نمایش 5 بارکد اول برای تشخیص
+                        ];
+
+                        Log::error('خطا در درج دسته محصولات: ' . $e->getMessage(), [
+                            'chunk_index' => $index + 1,
+                            'products_count' => count($chunk),
+                            'license_id' => $this->license_id,
+                            'error_code' => $e->getCode()
+                        ]);
+
+                        // ادامه اجرا با دسته بعدی، بدون توقف کامل فرآیند
+                        continue;
+                    }
+                }
+
+                // گزارش نهایی درج
+                Log::info('پایان فرآیند درج محصولات', [
+                    'total_products' => count($productsToCreate),
+                    'successful_inserts' => $successfulInserts,
+                    'failed_inserts' => $failedInserts,
+                    'total_chunks' => $totalChunks,
+                    'errors_count' => count($errors),
+                    'license_id' => $this->license_id
+                ]);
+
+                // اگر خطایی رخ داده باشد ولی بعضی موارد با موفقیت انجام شده باشند
+                if (!empty($errors) && $successfulInserts > 0) {
+                    Log::warning('درج با برخی خطاها انجام شد', [
+                        'errors' => $errors,
+                        'license_id' => $this->license_id
+                    ]);
+                }
+                // اگر همه موارد با خطا مواجه شدند، استثنا پرتاب می‌کنیم
+                else if (count($errors) === $totalChunks) {
+                    throw new \Exception('تمام دسته‌های درج با خطا مواجه شدند');
+                }
             } else {
                 Log::info('هیچ محصول جدیدی برای درج وجود ندارد', [
                     'license_id' => $this->license_id,
@@ -271,6 +357,73 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
     /**
      * پردازش پاسخ API
      */
+    /**
+     * پردازش پاسخ برای یک دسته از محصولات
+     *
+     * @param \Illuminate\Http\Client\Response $response
+     * @param array $products
+     * @param string $operation
+     * @return array
+     */
+    protected function processChunkResponse($response, $products, $operation)
+    {
+        $result = [
+            'successful' => 0,
+            'failed' => 0,
+            'errors' => []
+        ];
+
+        if (!$response->successful()) {
+            $errorData = json_decode($response->body(), true);
+            $errorMessage = 'خطا در ' . ($operation === 'insert' ? 'درج' : 'به‌روزرسانی') . ' محصولات: ';
+
+            if (isset($errorData['failed']) && is_array($errorData['failed'])) {
+                foreach ($errorData['failed'] as $failed) {
+                    $result['errors'][] = [
+                        'unique_id' => $failed['unique_id'] ?? 'نامشخص',
+                        'error' => $failed['error'] ?? 'خطای نامشخص'
+                    ];
+                    $result['failed']++;
+                }
+            } else {
+                $result['errors'][] = [
+                    'error' => $response->body(),
+                    'status' => $response->status()
+                ];
+                $result['failed'] = count($products);
+            }
+
+            return $result;
+        }
+
+        // پردازش پاسخ موفق
+        $responseData = json_decode($response->body(), true);
+
+        if (isset($responseData['success']) && is_array($responseData['success'])) {
+            $result['successful'] = count($responseData['success']);
+        }
+
+        if (isset($responseData['failed']) && is_array($responseData['failed'])) {
+            foreach ($responseData['failed'] as $failed) {
+                $result['errors'][] = [
+                    'unique_id' => $failed['unique_id'] ?? 'نامشخص',
+                    'error' => $failed['error'] ?? 'خطای نامشخص'
+                ];
+                $result['failed']++;
+            }
+        }
+
+        Log::info('نتیجه ' . ($operation === 'insert' ? 'درج' : 'به‌روزرسانی') . ' دسته محصولات:', [
+            'license_id' => $this->license_id,
+            'total_count' => count($products),
+            'successful_count' => $result['successful'],
+            'failed_count' => $result['failed'],
+            'response_time' => $response->transferStats->getTransferTime()
+        ]);
+
+        return $result;
+    }
+
     protected function handleResponse($response, $products, $operation)
     {
         if (!$response->successful()) {

@@ -31,11 +31,12 @@ class UpdateWooCommerceProducts implements ShouldQueue
     protected $barcodes;
     protected $batchSize = 10; // تنظیم اندازه بسته به 10
 
-    public function __construct($license_id, $operation, $barcodes = [])
+    public function __construct($license_id, $operation, $barcodes = [], $batchSize = 10)
     {
         $this->license_id = $license_id;
         $this->operation = $operation;
         $this->barcodes = $barcodes;
+        $this->batchSize = $batchSize;
     }
 
     public function handle()
@@ -312,29 +313,100 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 ];
             }, $products);
 
-            //log::info(json_encode($products));
-            $response = $woocommerce->put('products/unique/batch/update', [
-                'products' => $products
+            // تقسیم محصولات به دسته‌های کوچکتر برای جلوگیری از خطاهای JSON
+            $chunks = array_chunk($products, $this->batchSize);
+            $totalChunks = count($chunks);
+
+            Log::info('تقسیم محصولات به دسته‌های کوچکتر برای به‌روزرسانی', [
+                'total_products' => count($products),
+                'batch_size' => $this->batchSize,
+                'total_chunks' => $totalChunks,
+                'license_id' => $this->license_id
             ]);
 
-            // تهیه خلاصه پاسخ دریافتی از API
-            $responseData = [
-                'status' => $response->status ?? null,
-                'success' => $response->success ?? false,
-                'message' => $response->message ?? null,
-                'updated_count' => isset($response->data) ? count($response->data) : 0,
-                'response_data' => $response->data ?? null
-            ];
+            $successfulUpdates = 0;
+            $failedUpdates = 0;
+            $errors = [];
 
-            Log::info('محصولات با موفقیت به‌روزرسانی شدند', [
-                'count' => count($products),
-                'updated_products' => $productsInfo,
-                'api_response' => $responseData,
+            foreach ($chunks as $index => $chunk) {
+                try {
+                    Log::info('به‌روزرسانی دسته محصولات', [
+                        'chunk_index' => $index + 1,
+                        'total_chunks' => $totalChunks,
+                        'chunk_size' => count($chunk),
+                        'license_id' => $this->license_id
+                    ]);
+
+                    $response = $woocommerce->put('products/unique/batch/update', [
+                        'products' => $chunk
+                    ]);
+
+                    // بررسی تعداد محصولات به‌روز شده در این دسته
+                    $updatedInChunk = isset($response->data) ? count($response->data) : 0;
+                    $successfulUpdates += $updatedInChunk;
+
+                    Log::info('دسته محصولات با موفقیت به‌روزرسانی شد', [
+                        'chunk_index' => $index + 1,
+                        'updated_count' => $updatedInChunk,
+                        'license_id' => $this->license_id
+                    ]);
+
+                    // اضافه کردن تاخیر بین درخواست‌ها برای جلوگیری از اورلود سرور
+                    if ($index < $totalChunks - 1) {
+                        sleep(2); // 2 ثانیه تاخیر بین هر درخواست
+                    }
+
+                } catch (\Exception $e) {
+                    $failedUpdates += count($chunk);
+                    $errors[] = [
+                        'chunk_index' => $index + 1,
+                        'error_message' => $e->getMessage(),
+                        'products_count' => count($chunk),
+                        'first_few_skus' => array_slice(array_column($chunk, 'sku'), 0, 5) // نمایش 5 بارکد اول برای تشخیص
+                    ];
+
+                    Log::error('خطا در به‌روزرسانی دسته محصولات: ' . $e->getMessage(), [
+                        'chunk_index' => $index + 1,
+                        'products_count' => count($chunk),
+                        'license_id' => $this->license_id,
+                        'error_code' => $e->getCode()
+                    ]);
+
+                    // ادامه اجرا با دسته بعدی، بدون توقف کامل فرآیند
+                    continue;
+                }
+            }
+
+            // گزارش نهایی به‌روزرسانی
+            Log::info('پایان فرآیند به‌روزرسانی محصولات', [
+                'total_products' => count($products),
+                'successful_updates' => $successfulUpdates,
+                'failed_updates' => $failedUpdates,
+                'total_chunks' => $totalChunks,
+                'errors_count' => count($errors),
                 'timestamp' => now()->toDateTimeString(),
                 'license_id' => $this->license_id
             ]);
 
-            return $response;
+            // اگر خطایی رخ داده باشد ولی بعضی موارد با موفقیت انجام شده باشند
+            if (!empty($errors) && $successfulUpdates > 0) {
+                Log::warning('به‌روزرسانی با برخی خطاها انجام شد', [
+                    'errors' => $errors,
+                    'license_id' => $this->license_id
+                ]);
+            }
+            // اگر همه موارد با خطا مواجه شدند، استثنا پرتاب می‌کنیم
+            else if (count($errors) === $totalChunks) {
+                throw new \Exception('تمام دسته‌های به‌روزرسانی با خطا مواجه شدند');
+            }
+
+            return [
+                'success' => $successfulUpdates > 0,
+                'total' => count($products),
+                'updated' => $successfulUpdates,
+                'failed' => $failedUpdates
+            ];
+
         } catch (\Exception $e) {
             Log::error('خطا در به‌روزرسانی محصولات در ووکامرس: ' . $e->getMessage(), [
                 'products_count' => count($products),
