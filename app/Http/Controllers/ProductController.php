@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\UpdateWooCommerceProducts;
 use App\Jobs\SyncUniqueIds;
+use App\Jobs\ProcessEmptyUniqueIds;
 use App\Models\UserSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -645,6 +646,83 @@ class ProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'خطا در ثبت درخواست همگام‌سازی دسته‌بندی‌ها: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function processEmptyUniqueIds(Request $request)
+    {
+        try {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No token provided'
+                ], 401);
+            }
+
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid token - license not found'
+                ], 401);
+            }
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
+            if (!$user) {
+                Log::error('User not found for license', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Log the process request
+            Log::info('Empty unique IDs processing request received', [
+                'license_id' => $license->id,
+                'user_id' => $user->id,
+                'timestamp' => now()->toDateTimeString()
+            ]);
+
+            // Queue the process job
+            ProcessEmptyUniqueIds::dispatch($license->id)
+                ->onQueue('empty-unique-ids')
+                ->delay(now()->addSeconds(2));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'درخواست پردازش محصولات بدون کد یکتا با موفقیت ثبت شد',
+                'data' => [
+                    'queue_status' => 'processing',
+                    'job_type' => 'empty_unique_ids_processing'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Process empty unique IDs error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'خطا در ثبت درخواست پردازش محصولات بدون کد یکتا: ' . $e->getMessage()
             ], 500);
         }
     }

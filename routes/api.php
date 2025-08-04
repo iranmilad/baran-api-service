@@ -110,6 +110,9 @@ Route::prefix('v1')->group(function () {
             // Sync unique IDs for products
             Route::post('/sync-unique-ids', [ProductController::class, 'syncUniqueIds']);
 
+            // Process products with empty unique IDs
+            Route::post('/process-empty-unique-ids', [ProductController::class, 'processEmptyUniqueIds']);
+
             // Sync categories
             Route::post('/sync-categories', [ProductController::class, 'syncCategories']);
         });
