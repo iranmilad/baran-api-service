@@ -353,7 +353,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
 
                     if ($barcode && $itemId && $itemId !== '00000000-0000-0000-0000-000000000000') {
                         $uniqueIdMapping[] = [
-                            'bim_unique_id' => $itemId,
+                            'unique_id' => $itemId,
                             'sku' => $barcode
                         ];
                     }
@@ -387,16 +387,16 @@ class ProcessEmptyUniqueIds implements ShouldQueue
 
             $url = $websiteUrl . '/wp-json/wc/v3/products/unique/batch-update-sku';
 
-            $response = Http::withOptions([
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($wooApiKey->api_key . ':' . $wooApiKey->api_secret)
+            ])->withOptions([
                 'verify' => false,
                 'timeout' => 180,
                 'connect_timeout' => 60,
                 'http_errors' => false
-            ])->send('POST', $url, [
-                'json' => [
-                    'products' => $uniqueIdMapping
-                ],
-                'auth' => [$wooApiKey->api_key, $wooApiKey->api_secret]
+            ])->post($url, [
+                'products' => $uniqueIdMapping
             ]);
 
             if ($response->successful()) {
@@ -415,7 +415,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
                             'product_id' => $success['product_id'],
                             'variation_id' => $success['variation_id'] ?? null,
                             'sku' => $success['sku'],
-                            'bim_unique_id' => $success['bim_unique_id'] ?? $success['unique_id'] ?? null
+                            'unique_id' => $success['unique_id'] ?? null
                         ]);
                     }
                 }
@@ -425,7 +425,7 @@ class ProcessEmptyUniqueIds implements ShouldQueue
                     foreach ($result['results']['failed'] as $failed) {
                         Log::warning('Product bim_unique_id update failed', [
                             'sku' => $failed['sku'] ?? null,
-                            'bim_unique_id' => $failed['bim_unique_id'] ?? $failed['unique_id'] ?? null,
+                            'unique_id' => $failed['unique_id'] ?? null,
                             'error' => $failed['message'] ?? 'Unknown error'
                         ]);
                     }
