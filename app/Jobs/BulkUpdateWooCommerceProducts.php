@@ -123,24 +123,49 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                             'license_id' => $this->license_id
                         ]);
 
-                        $response = Http::withOptions([
-                            'verify' => false,
-                            'timeout' => 180,
-                            'connect_timeout' => 60
-                        ])->retry(3, 300, function ($exception, $request) {
-                            return $exception instanceof \Illuminate\Http\Client\ConnectionException ||
-                                   $exception->response->status() >= 500;
-                        })->withHeaders([
-                            'Content-Type' => 'application/json',
-                            'Accept' => 'application/json'
-                        ])->withBasicAuth(
-                            $wooCommerceApiKey->api_key,
-                            $wooCommerceApiKey->api_secret
-                        )->put($license->website_url . '/wp-json/wc/v3/products/unique/batch/update', [
-                            'products' => $chunk
-                        ]);
+                        try {
+                            $response = Http::withOptions([
+                                'verify' => false,
+                                'timeout' => 180,
+                                'connect_timeout' => 60
+                            ])->retry(3, 300, function ($exception, $request) {
+                                // لاگ کردن خطاهای شبکه برای کمک به تشخیص مشکلات
+                                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                                    Log::error('خطای اتصال به وب‌سرویس ووکامرس (تلاش مجدد):', [
+                                        'error' => $exception->getMessage(),
+                                        'license_id' => $this->license_id
+                                    ]);
+                                } elseif (isset($exception->response)) {
+                                    Log::error('خطای سرور در وب‌سرویس ووکامرس (تلاش مجدد):', [
+                                        'status' => $exception->response->status(),
+                                        'body' => $exception->response->body(),
+                                        'license_id' => $this->license_id
+                                    ]);
+                                }
 
-                        // پردازش پاسخ برای این دسته
+                                return $exception instanceof \Illuminate\Http\Client\ConnectionException ||
+                                       (isset($exception->response) && $exception->response->status() >= 500);
+                            })->withHeaders([
+                                'Content-Type' => 'application/json',
+                                'Accept' => 'application/json'
+                            ])->withBasicAuth(
+                                $wooCommerceApiKey->api_key,
+                                $wooCommerceApiKey->api_secret
+                            )->put($license->website_url . '/wp-json/wc/v3/products/unique/batch/update', [
+                                'products' => $chunk
+                            ]);
+                        } catch (\Exception $connectionException) {
+                            // ثبت جزئیات خطای اتصال
+                            Log::error('خطای اتصال به وب‌سرویس ووکامرس:', [
+                                'exception' => get_class($connectionException),
+                                'message' => $connectionException->getMessage(),
+                                'chunk_index' => $index + 1,
+                                'license_id' => $this->license_id,
+                                'website_url' => $license->website_url
+                            ]);
+
+                            throw $connectionException;
+                        }                        // پردازش پاسخ برای این دسته
                         $chunkResult = $this->processChunkResponse($response, $chunk, 'update');
                         $successfulUpdates += $chunkResult['successful'];
                         $failedUpdates += $chunkResult['failed'];
@@ -185,16 +210,29 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                     'license_id' => $this->license_id
                 ]);
 
-                // اگر خطایی رخ داده باشد ولی بعضی موارد با موفقیت انجام شده باشند
-                if (!empty($errors) && $successfulUpdates > 0) {
-                    Log::warning('به‌روزرسانی با برخی خطاها انجام شد', [
-                        'errors' => $errors,
-                        'license_id' => $this->license_id
-                    ]);
-                }
-                // اگر همه موارد با خطا مواجه شدند، استثنا پرتاب می‌کنیم
-                else if (count($errors) === $totalChunks) {
-                    throw new \Exception('تمام دسته‌های به‌روزرسانی با خطا مواجه شدند');
+                // اگر خطایی رخ داده باشد، گزارش آن را ثبت می‌کنیم
+                if (!empty($errors)) {
+                    if ($successfulUpdates > 0) {
+                        // برخی موارد با موفقیت انجام شده‌اند
+                        Log::warning('به‌روزرسانی با برخی خطاها انجام شد', [
+                            'errors_sample' => array_slice($errors, 0, 5), // نمایش 5 خطای اول
+                            'total_errors' => count($errors),
+                            'license_id' => $this->license_id
+                        ]);
+                    } else {
+                        // هیچ موردی با موفقیت انجام نشده است
+                        Log::error('هیچ یک از محصولات با موفقیت به‌روزرسانی نشدند', [
+                            'errors_sample' => array_slice($errors, 0, 5), // نمایش 5 خطای اول
+                            'total_errors' => count($errors),
+                            'license_id' => $this->license_id
+                        ]);
+
+                        // به جای پرتاب استثنا، فقط لاگ می‌کنیم و ادامه می‌دهیم
+                        // این باعث می‌شود حتی اگر به‌روزرسانی با شکست مواجه شود، پردازش ادامه یابد
+                        Log::warning('علی‌رغم خطاها، پردازش ادامه می‌یابد', [
+                            'license_id' => $this->license_id
+                        ]);
+                    }
                 }
             }
 
@@ -321,55 +359,151 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
             'errors' => []
         ];
 
-        if (!$response->successful()) {
-            $errorData = json_decode($response->body(), true);
-            $errorMessage = 'خطا در ' . ($operation === 'insert' ? 'درج' : 'به‌روزرسانی') . ' محصولات: ';
+        try {
+            // پردازش پاسخ موفق یا ناموفق
+            if (!$response->successful()) {
+                // لاگ کردن کد وضعیت و متن پاسخ
+                Log::error('پاسخ ناموفق از API ووکامرس دریافت شد', [
+                    'status_code' => $response->status(),
+                    'response_body' => $response->body(),
+                    'license_id' => $this->license_id,
+                    'operation' => $operation
+                ]);
 
-            if (isset($errorData['failed']) && is_array($errorData['failed'])) {
-                foreach ($errorData['failed'] as $failed) {
+                // تلاش برای رمزگشایی پاسخ JSON
+                $errorData = null;
+                try {
+                    $errorData = json_decode($response->body(), true);
+                } catch (\Exception $jsonError) {
+                    Log::error('خطا در رمزگشایی پاسخ JSON: ' . $jsonError->getMessage(), [
+                        'response_body' => $response->body()
+                    ]);
+                }
+
+                if (isset($errorData['failed']) && is_array($errorData['failed'])) {
+                    foreach ($errorData['failed'] as $failed) {
+                        $result['errors'][] = [
+                            'unique_id' => $failed['unique_id'] ?? 'نامشخص',
+                            'error' => $failed['error'] ?? 'خطای نامشخص'
+                        ];
+                        $result['failed']++;
+                    }
+                } else {
+                    // اگر ساختار خطا متفاوت است، کل پاسخ را به عنوان خطا در نظر می‌گیریم
+                    $result['errors'][] = [
+                        'error' => $response->body(),
+                        'status' => $response->status()
+                    ];
+                    $result['failed'] = count($products);
+                }
+
+                return $result;
+            }
+
+            // تلاش برای رمزگشایی پاسخ JSON
+            $responseData = null;
+            try {
+                $responseData = json_decode($response->body(), true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    throw new \Exception('JSON error: ' . json_last_error_msg());
+                }
+            } catch (\Exception $jsonError) {
+                Log::error('خطا در رمزگشایی پاسخ JSON: ' . $jsonError->getMessage(), [
+                    'response_body' => substr($response->body(), 0, 1000), // فقط 1000 کاراکتر اول
+                    'license_id' => $this->license_id
+                ]);
+
+                $result['errors'][] = [
+                    'error' => 'خطا در رمزگشایی پاسخ JSON: ' . $jsonError->getMessage(),
+                    'partial_response' => substr($response->body(), 0, 1000)
+                ];
+                $result['failed'] = count($products);
+
+                return $result;
+            }
+
+            // بررسی ساختار پاسخ
+            if (!is_array($responseData)) {
+                Log::error('پاسخ API ووکامرس به فرمت مورد انتظار نیست', [
+                    'response_type' => gettype($responseData),
+                    'partial_response' => substr($response->body(), 0, 1000),
+                    'license_id' => $this->license_id
+                ]);
+
+                $result['errors'][] = [
+                    'error' => 'پاسخ API ووکامرس به فرمت مورد انتظار نیست',
+                    'response_type' => gettype($responseData)
+                ];
+                $result['failed'] = count($products);
+
+                return $result;
+            }
+
+            // پردازش موارد موفق
+            if (isset($responseData['success']) && is_array($responseData['success'])) {
+                $result['successful'] = count($responseData['success']);
+
+                // لاگ جزئیات موارد موفق
+                Log::info('محصولات با موفقیت به‌روزرسانی شدند', [
+                    'count' => $result['successful'],
+                    'first_few' => array_slice($responseData['success'], 0, 5),
+                    'license_id' => $this->license_id
+                ]);
+            } else {
+                Log::warning('کلید "success" در پاسخ API ووکامرس وجود ندارد یا آرایه نیست', [
+                    'license_id' => $this->license_id,
+                    'response_keys' => array_keys($responseData)
+                ]);
+            }
+
+            // پردازش موارد ناموفق
+            if (isset($responseData['failed']) && is_array($responseData['failed'])) {
+                foreach ($responseData['failed'] as $failed) {
                     $result['errors'][] = [
                         'unique_id' => $failed['unique_id'] ?? 'نامشخص',
                         'error' => $failed['error'] ?? 'خطای نامشخص'
                     ];
                     $result['failed']++;
                 }
-            } else {
-                $result['errors'][] = [
-                    'error' => $response->body(),
-                    'status' => $response->status()
-                ];
-                $result['failed'] = count($products);
+
+                // لاگ جزئیات موارد ناموفق
+                if ($result['failed'] > 0) {
+                    Log::warning('برخی محصولات به‌روزرسانی نشدند', [
+                        'count' => $result['failed'],
+                        'errors' => array_slice($result['errors'], 0, 5), // نمایش 5 خطای اول
+                        'license_id' => $this->license_id
+                    ]);
+                }
             }
+
+            // ثبت اطلاعات زمان پاسخگویی
+            $responseTime = $response->transferStats ? $response->transferStats->getTransferTime() : null;
+
+            Log::info('نتیجه ' . ($operation === 'insert' ? 'درج' : 'به‌روزرسانی') . ' دسته محصولات:', [
+                'license_id' => $this->license_id,
+                'total_count' => count($products),
+                'successful_count' => $result['successful'],
+                'failed_count' => $result['failed'],
+                'response_time' => $responseTime
+            ]);
+
+            return $result;
+
+        } catch (\Exception $e) {
+            // در صورت بروز هر گونه خطا در پردازش پاسخ
+            Log::error('خطا در پردازش پاسخ API: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+                'license_id' => $this->license_id
+            ]);
+
+            $result['errors'][] = [
+                'error' => 'خطا در پردازش پاسخ: ' . $e->getMessage()
+            ];
+            $result['failed'] = count($products);
 
             return $result;
         }
-
-        // پردازش پاسخ موفق
-        $responseData = json_decode($response->body(), true);
-
-        if (isset($responseData['success']) && is_array($responseData['success'])) {
-            $result['successful'] = count($responseData['success']);
-        }
-
-        if (isset($responseData['failed']) && is_array($responseData['failed'])) {
-            foreach ($responseData['failed'] as $failed) {
-                $result['errors'][] = [
-                    'unique_id' => $failed['unique_id'] ?? 'نامشخص',
-                    'error' => $failed['error'] ?? 'خطای نامشخص'
-                ];
-                $result['failed']++;
-            }
-        }
-
-        Log::info('نتیجه ' . ($operation === 'insert' ? 'درج' : 'به‌روزرسانی') . ' دسته محصولات:', [
-            'license_id' => $this->license_id,
-            'total_count' => count($products),
-            'successful_count' => $result['successful'],
-            'failed_count' => $result['failed'],
-            'response_time' => $response->transferStats->getTransferTime()
-        ]);
-
-        return $result;
     }
 
     protected function handleResponse($response, $products, $operation)
