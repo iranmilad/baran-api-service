@@ -191,6 +191,18 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                         ]);
 
                         try {
+                            // اطمینان از وجود فیلدهای اجباری قبل از ارسال به API
+                            foreach ($chunk as $index => $product) {
+                                if (empty($product['name'])) {
+                                    Log::warning('محصول بدون نام یافت شد - اضافه کردن نام پیش‌فرض', [
+                                        'product_sku' => $product['sku'] ?? 'unknown',
+                                        'license_id' => $this->license_id
+                                    ]);
+                                    // اضافه کردن نام پیش‌فرض برای جلوگیری از خطای API
+                                    $chunk[$index]['name'] = 'محصول ' . ($product['sku'] ?? 'بدون بارکد');
+                                }
+                            }
+
                             $response = Http::withOptions([
                                 'verify' => false,
                                 'timeout' => 180,
@@ -336,9 +348,14 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             'stock_status' => ($productData['total_count'] ?? 0) > 0 ? 'instock' : 'outofstock'
         ];
 
-        if ($userSetting->enable_name_update) {
-            $data['name'] = $productData['item_name'];
-        }
+        // name is a required field for WooCommerce API product creation
+        $data['name'] = !empty($productData['item_name']) ?
+            $productData['item_name'] :
+            'محصول ' . $productData['barcode']; // Default name if missing
+
+        // We'll still respect the setting for updates, but for inserts, name is required
+        // This just adds a flag to track if name updates are enabled
+        $enableNameUpdate = $userSetting->enable_name_update;
 
         if ($userSetting->enable_price_update) {
             $regularPrice = $this->calculateFinalPrice(
@@ -428,6 +445,21 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 $errorData = null;
                 try {
                     $errorData = json_decode($response->body(), true);
+
+                    // بررسی خطاهای مربوط به فیلدهای ضروری
+                    if ($response->status() === 400 && isset($errorData['message'])) {
+                        $errorMessage = $errorData['message'];
+                        // چک کردن خطاهای مربوط به فیلدهای اجباری
+                        if (strpos($errorMessage, 'یکی از ویژگی‌های لازم') !== false ||
+                            strpos($errorMessage, 'required property') !== false) {
+
+                            Log::error('خطای فیلد اجباری در درخواست API:', [
+                                'message' => $errorMessage,
+                                'products_sample' => array_slice($products, 0, 3),
+                                'license_id' => $this->license_id
+                            ]);
+                        }
+                    }
                 } catch (\Exception $jsonError) {
                     Log::error('خطا در رمزگشایی پاسخ JSON: ' . $jsonError->getMessage(), [
                         'response_body' => $response->body()
@@ -444,8 +476,23 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     }
                 } else {
                     // اگر ساختار خطا متفاوت است، کل پاسخ را به عنوان خطا در نظر می‌گیریم
+                    $errorMessage = $response->body();
+
+                    // بررسی خطاهای خاص و قابل شناسایی
+                    if ($response->status() === 400 && isset($errorData['message'])) {
+                        $errorMessage = $errorData['message'];
+
+                        // خطای فیلدهای اجباری
+                        if (strpos($errorMessage, 'یکی از ویژگی‌های لازم') !== false ||
+                            strpos($errorMessage, 'required property') !== false) {
+
+                            // اضافه کردن اطلاعات تشخیصی بیشتر
+                            $errorMessage .= ' - بررسی کنید تمامی فیلدهای اجباری مانند name وجود داشته باشند';
+                        }
+                    }
+
                     $result['errors'][] = [
-                        'error' => $response->body(),
+                        'error' => $errorMessage,
                         'status' => $response->status()
                     ];
                     $result['failed'] = count($products);
