@@ -33,6 +33,17 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         $this->license_id = $license_id;
         $this->batchSize = $batchSize;
         $this->onQueue('woocommerce-insert');
+
+        // فیلدهای یک محصول نمونه را لاگ می‌کنیم برای عیب‌یابی
+        if (count($products) > 0) {
+            Log::info('نمونه محصول دریافتی در job', [
+                'field_keys' => array_keys($products[0]),
+                'has_ItemName' => isset($products[0]['ItemName']),
+                'has_item_name' => isset($products[0]['item_name']),
+                'ItemName_value' => $products[0]['ItemName'] ?? 'not set',
+                'license_id' => $license_id
+            ]);
+        }
     }
 
     public function handle()
@@ -187,19 +198,35 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                             'chunk_index' => $index + 1,
                             'total_chunks' => $totalChunks,
                             'chunk_size' => count($chunk),
-                            'license_id' => $this->license_id
+                            'license_id' => $this->license_id,
+                            'sample_product' => count($chunk) > 0 ? [
+                                'ItemName' => $chunk[0]['ItemName'] ?? 'not set',
+                                'item_name' => $chunk[0]['item_name'] ?? 'not set',
+                                'Barcode' => $chunk[0]['Barcode'] ?? 'not set',
+                                'barcode' => $chunk[0]['barcode'] ?? 'not set'
+                            ] : []
                         ]);
 
                         try {
                             // اطمینان از وجود فیلدهای اجباری قبل از ارسال به API
                             foreach ($chunk as $index => $product) {
-                                if (empty($product['name'])) {
+                                // بررسی وجود نام - در هر دو حالت نام‌گذاری فیلدها
+                                $hasName = !empty($product['name']) || !empty($product['ItemName']) || !empty($product['item_name']);
+
+                                if (!$hasName) {
+                                    // تعیین بارکد برای استفاده در نام پیش‌فرض
+                                    $sku = $product['sku'] ?? $product['Barcode'] ?? 'unknown';
+
                                     Log::warning('محصول بدون نام یافت شد - اضافه کردن نام پیش‌فرض', [
-                                        'product_sku' => $product['sku'] ?? 'unknown',
+                                        'product_sku' => $sku,
                                         'license_id' => $this->license_id
                                     ]);
+
                                     // اضافه کردن نام پیش‌فرض برای جلوگیری از خطای API
-                                    $chunk[$index]['name'] = 'محصول ' . ($product['sku'] ?? 'بدون بارکد');
+                                    $chunk[$index]['name'] = 'محصول ' . $sku;
+                                } else if (empty($product['name']) && (!empty($product['ItemName']) || !empty($product['item_name']))) {
+                                    // اگر نام به فرمت کیمل‌کیس یا اندراسکور وجود دارد اما در فیلد 'name' نیست
+                                    $chunk[$index]['name'] = $product['ItemName'] ?? $product['item_name'];
                                 }
                             }
 
@@ -339,19 +366,29 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // تبدیل به آرایه اگر آبجکت است
         $productData = is_array($product) ? $product : (array)$product;
 
+        // مپینگ نام‌های مختلف فیلدها (کیمل کیس و آندراسکور)
+        $itemId = $productData['item_id'] ?? $productData['ItemId'] ?? null;
+        $barcode = $productData['barcode'] ?? $productData['Barcode'] ?? '';
+        $itemName = $productData['item_name'] ?? $productData['ItemName'] ?? '';
+        $totalCount = $productData['total_count'] ?? $productData['TotalCount'] ?? 0;
+        $departmentName = $productData['department_name'] ?? $productData['DepartmentName'] ?? null;
+        $priceAmount = $productData['price_amount'] ?? $productData['PriceAmount'] ?? 0;
+        $discountPercentage = $productData['discount_percentage'] ?? $productData['DiscountPercentage'] ?? 0;
+        $priceIncreasePercentage = $productData['price_increase_percentage'] ?? $productData['PriceIncreasePercentage'] ?? 0;
+
         $data = [
-            'unique_id' => (string)$productData['item_id'],
-            'sku' => (string)$productData['barcode'],
+            'unique_id' => (string)$itemId,
+            'sku' => (string)$barcode,
             'status' => 'draft',
             'manage_stock' => true,
-            'stock_quantity' => (int)($productData['total_count'] ?? 0),
-            'stock_status' => ($productData['total_count'] ?? 0) > 0 ? 'instock' : 'outofstock'
+            'stock_quantity' => (int)$totalCount,
+            'stock_status' => (int)$totalCount > 0 ? 'instock' : 'outofstock'
         ];
 
         // name is a required field for WooCommerce API product creation
-        $data['name'] = !empty($productData['item_name']) ?
-            $productData['item_name'] :
-            'محصول ' . $productData['barcode']; // Default name if missing
+        $data['name'] = !empty($itemName) ?
+            $itemName :
+            'محصول ' . $barcode; // Default name if missing
 
         // We'll still respect the setting for updates, but for inserts, name is required
         // This just adds a flag to track if name updates are enabled
@@ -359,15 +396,15 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
         if ($userSetting->enable_price_update) {
             $regularPrice = $this->calculateFinalPrice(
-                (float)($productData['price_amount'] ?? 0),
+                (float)$priceAmount,
                 0,
-                (float)($productData['price_increase_percentage'] ?? 0)
+                (float)$priceIncreasePercentage
             );
 
             $salePrice = $this->calculateFinalPrice(
-                (float)($productData['price_amount'] ?? 0),
-                (float)($productData['discount_percentage'] ?? 0),
-                (float)($productData['price_increase_percentage'] ?? 0)
+                (float)$priceAmount,
+                (float)$discountPercentage,
+                (float)$priceIncreasePercentage
             );
 
             $data['regular_price'] = (string)$this->convertPriceUnit(
@@ -376,7 +413,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 $userSetting->woocommerce_price_unit
             );
 
-            if (($productData['discount_percentage'] ?? 0) > 0) {
+            if ($discountPercentage > 0) {
                 $data['sale_price'] = (string)$this->convertPriceUnit(
                     $salePrice,
                     $userSetting->rain_sale_price_unit,
@@ -386,7 +423,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         }
 
         // اضافه کردن دسته‌بندی ووکامرس بر اساس department_name
-        if (!empty($productData['department_name']) && !empty($productData['category_id'])) {
+        if (!empty($departmentName) && !empty($productData['category_id'])) {
             $data['categories'] = [['id' => $productData['category_id']]];
         }
 
