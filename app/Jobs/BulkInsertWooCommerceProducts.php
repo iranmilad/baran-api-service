@@ -58,6 +58,21 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 return;
             }
 
+            // یک بررسی اضافه میکنیم برای تشخیص محصولات بدون نام
+            // و ثبت در لاگ جهت عیب‌یابی
+            if (count($this->products) > 0) {
+                foreach ($this->products as $index => $product) {
+                    // Check if we need to recover item name from the original products array
+                    if (!isset($product['name']) && !isset($product['ItemName']) && !isset($product['item_name'])) {
+                        Log::warning('محصول بدون نام در ابتدای پردازش - بررسی مقادیر تمام فیلدها:', [
+                            'product_sku' => $product['sku'] ?? $product['Barcode'] ?? 'unknown',
+                            'all_fields' => array_keys($product),
+                            'license_id' => $this->license_id
+                        ]);
+                    }
+                }
+            }
+
             $userSetting = $license->userSetting;
             if (!$userSetting) {
                 throw new \Exception('تنظیمات کاربر یافت نشد');

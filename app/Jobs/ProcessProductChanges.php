@@ -379,7 +379,7 @@ class ProcessProductChanges implements ShouldQueue
                 ]);
 
                 // آماده‌سازی داده‌ها برای ارسال به API
-                $preparedProducts = collect($chunk)->map(function ($item) use ($userSettings) {
+                $preparedProducts = collect($chunk)->map(function ($item) use ($userSettings, $operation) {
                     if (empty($item['barcode'])) {
                         Log::warning('فیلد barcode برای محصول وجود ندارد', [
                             'item' => $item
@@ -395,8 +395,18 @@ class ProcessProductChanges implements ShouldQueue
                         'barcode' => $item['barcode']
                     ];
 
-                    if ($userSettings->enable_name_update) {
+                    // For inserts, name is always required by WooCommerce API
+                    // For updates, we respect the enable_name_update setting
+                    if ($operation === 'insert' || $userSettings->enable_name_update) {
                         $data['name'] = $item['name'] ?? $item['item_name'];
+
+                        // Log name value for debugging
+                        Log::info('Setting product name for ' . $operation, [
+                            'operation' => $operation,
+                            'name_value' => $data['name'],
+                            'enable_name_update' => $userSettings->enable_name_update,
+                            'barcode' => $item['barcode']
+                        ]);
                     }
 
                     if ($userSettings->enable_price_update) {
