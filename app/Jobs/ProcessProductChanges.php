@@ -98,7 +98,7 @@ class ProcessProductChanges implements ShouldQueue
                         $updateIds[] = $existingProduct->id;
 
                         if (!empty($productData['Attributes'])) {
-                            $variantsToDelete[] = $existingProduct->id;
+                            $variantsToDelete[] = $existingProduct->item_id;
                         }
                     }
                 } else {
@@ -109,7 +109,7 @@ class ProcessProductChanges implements ShouldQueue
                         $updateIds[] = $existingProduct->id;
 
                         if (!empty($productData['Attributes'])) {
-                            $variantsToDelete[] = $existingProduct->id;
+                            $variantsToDelete[] = $existingProduct->item_id;
                         }
                     } else {
                         // اگر محصول برای به‌روزرسانی یافت نشد، به insert تغییر می‌دهیم
@@ -132,7 +132,7 @@ class ProcessProductChanges implements ShouldQueue
                             'price_after_discount' => (int)($variant['PriceAfterDiscount'] ?? 0),
                             'total_count' => (int)($variant['TotalCount'] ?? 0),
                             'stock_id' => $variant['StockID'] ?? null,
-                            'parent_id' => $changeType === 'update' ? $existingProduct->id : null,
+                            'parent_id' => !empty($productData['item_id']) ? $productData['item_id'] : null,
                             'is_variant' => true,
                             'last_sync_at' => $now,
                             'license_id' => $this->license_id,
@@ -146,23 +146,19 @@ class ProcessProductChanges implements ShouldQueue
                 // اگر is_variant=true و parent_id خالی یا null باشد، این یک محصول مادر است
                 // اگر is_variant=true و parent_id پر باشد، این یک محصول متغیر است که به محصول مادر وابسته است
                 if ($productData['is_variant'] && !empty($productData['parent_id'])) {
-                    // یافتن محصول مادر بر اساس item_id
-                    $parentProduct = Product::where('item_id', $productData['parent_id'])
+                    // بررسی وجود محصول مادر
+                    $parentExists = Product::where('item_id', $productData['parent_id'])
                         ->where('license_id', $this->license_id)
-                        ->first();
+                        ->exists();
 
-                    if ($parentProduct) {
-                        // ذخیره شناسه محصول مادر برای ایجاد رابطه
-                        $productData['parent_id'] = $parentProduct->id;
-                        Log::info("محصول متغیر یافت شد - parent_id به ID داخلی تبدیل شد", [
+                    if (!$parentExists) {
+                        // اگر محصول مادر هنوز در پایگاه داده وجود ندارد، لاگ هشدار می‌گذاریم
+                        Log::warning("محصول مادر با item_id = {$productData['parent_id']} یافت نشد", [
                             'barcode' => $productData['barcode'],
-                            'parent_item_id' => $productData['parent_id'],
-                            'parent_db_id' => $parentProduct->id
+                            'parent_item_id' => $productData['parent_id']
                         ]);
                     } else {
-                        // اگر محصول مادر هنوز در پایگاه داده وجود ندارد، آن را به صورت موقت null قرار می‌دهیم
-                        // و لاگ هشدار می‌گذاریم
-                        Log::warning("محصول مادر با item_id = {$productData['parent_id']} یافت نشد", [
+                        Log::info("محصول متغیر با محصول مادر مرتبط شد", [
                             'barcode' => $productData['barcode'],
                             'parent_item_id' => $productData['parent_id']
                         ]);
@@ -173,7 +169,9 @@ class ProcessProductChanges implements ShouldQueue
             try {
                 // حذف واریانت‌های قدیمی در یک عملیات
                 if (!empty($variantsToDelete)) {
-                    Product::whereIn('parent_id', $variantsToDelete)->delete();
+                    Product::whereIn('parent_id', $variantsToDelete)
+                           ->where('is_variant', true)
+                           ->delete();
                     Log::info('واریانت‌های قدیمی حذف شدند', [
                         'count' => count($variantsToDelete)
                     ]);

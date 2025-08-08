@@ -17,7 +17,7 @@ class CreateProductsTable extends Migration
             $table->bigInteger('price_after_discount')->default(0);
             $table->integer('total_count')->default(0);
             $table->string('stock_id')->nullable();
-            $table->foreignId('parent_id')->nullable()->constrained('products')->onDelete('cascade');
+            $table->string('parent_id', 100)->nullable()->index();
             $table->boolean('is_variant')->default(false);
             $table->foreignId('license_id')->constrained()->onDelete('cascade');
             $table->timestamp('last_sync_at')->nullable();
@@ -25,7 +25,6 @@ class CreateProductsTable extends Migration
 
             $table->index('barcode');
             $table->index('license_id');
-            $table->index('parent_id');
             $table->index('stock_id');
         });
     }
