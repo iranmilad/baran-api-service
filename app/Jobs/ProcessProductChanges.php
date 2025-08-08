@@ -81,7 +81,7 @@ class ProcessProductChanges implements ShouldQueue
                     'stock_id' => $productData['StockID'] ?? null,
                     'department_name' => $productData['DepartmentName'] ?? null,
                     'is_variant' => isset($productData['is_variant']) ? (bool)$productData['is_variant'] : false,
-                    'parent_id' => $productData['parent_id'] ?? null,
+                    'parent_id' => (!empty($productData['parent_id']) && $productData['parent_id'] !== '') ? $productData['parent_id'] : null,
                     'last_sync_at' => $now,
                     'license_id' => $this->license_id,
                     'updated_at' => $now,
@@ -143,6 +143,33 @@ class ProcessProductChanges implements ShouldQueue
                         ];
                     }
                 }
+
+                // پردازش محصولات متغیر بر اساس فیلدهای is_variant و parent_id
+                // اگر is_variant=true و parent_id خالی یا null باشد، این یک محصول مادر است
+                // اگر is_variant=true و parent_id پر باشد، این یک محصول متغیر است که به محصول مادر وابسته است
+                if ($productData['is_variant'] && !empty($productData['parent_id'])) {
+                    // یافتن محصول مادر بر اساس item_id
+                    $parentProduct = Product::where('item_id', $productData['parent_id'])
+                        ->where('license_id', $this->license_id)
+                        ->first();
+
+                    if ($parentProduct) {
+                        // ذخیره شناسه محصول مادر برای ایجاد رابطه
+                        $productData['parent_id'] = $parentProduct->id;
+                        Log::info("محصول متغیر یافت شد - parent_id به ID داخلی تبدیل شد", [
+                            'barcode' => $productData['barcode'],
+                            'parent_item_id' => $productData['parent_id'],
+                            'parent_db_id' => $parentProduct->id
+                        ]);
+                    } else {
+                        // اگر محصول مادر هنوز در پایگاه داده وجود ندارد، آن را به صورت موقت null قرار می‌دهیم
+                        // و لاگ هشدار می‌گذاریم
+                        Log::warning("محصول مادر با item_id = {$productData['parent_id']} یافت نشد", [
+                            'barcode' => $productData['barcode'],
+                            'parent_item_id' => $productData['parent_id']
+                        ]);
+                    }
+                }
             }
 
             try {
@@ -162,7 +189,7 @@ class ProcessProductChanges implements ShouldQueue
 
                     // ساخت بخش SET کوئری
                     $fields = ['barcode', 'item_name', 'item_id', 'price_amount', 'price_after_discount',
-                             'total_count', 'stock_id', 'is_variant', 'last_sync_at',
+                             'total_count', 'stock_id', 'is_variant', 'parent_id', 'last_sync_at',
                              'license_id', 'updated_at', 'created_at'];
 
                     foreach ($fields as $field) {
@@ -185,6 +212,7 @@ class ProcessProductChanges implements ShouldQueue
                             $product['total_count'],
                             $product['stock_id'],
                             $product['is_variant'],
+                            $product['parent_id'],
                             $product['last_sync_at'],
                             $product['license_id'],
                             $product['updated_at'],

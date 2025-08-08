@@ -406,8 +406,41 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         if ($isVariant) {
             $data['is_variant'] = true;
             if ($parentId) {
-                $data['parent_id'] = $parentId;
+                // اگر parentId یک شناسه یکتا (ItemId) است
+                if (is_string($parentId) && strlen($parentId) > 10) {
+                    $data['parent_id'] = $parentId;
+                    // لاگ برای بررسی و عیب‌یابی
+                    Log::info('محصول متغیر با شناسه یکتای والد', [
+                        'barcode' => $barcode,
+                        'parent_item_id' => $parentId
+                    ]);
+                } else if (is_numeric($parentId)) {
+                    // اگر parentId یک شناسه عددی است (احتمالاً ID داخلی دیتابیس)
+                    $data['parent_id'] = (int)$parentId;
+                    Log::info('محصول متغیر با شناسه عددی والد', [
+                        'barcode' => $barcode,
+                        'parent_db_id' => $parentId
+                    ]);
+                } else {
+                    $data['parent_id'] = $parentId;
+                }
+            } else {
+                // محصول متغیر بدون والد، احتمالاً خود محصول مادر است
+                Log::info('محصول متغیر مادر (بدون parent_id)', [
+                    'barcode' => $barcode,
+                    'item_id' => $itemId
+                ]);
             }
+
+            // برای محصولات متغیر، نوع محصول در WooCommerce را تنظیم می‌کنیم
+            if ($parentId) {
+                $data['type'] = 'variation';
+            } else {
+                $data['type'] = 'variable';
+            }
+        } else {
+            // محصول عادی (غیر متغیر)
+            $data['type'] = 'simple';
         }
 
         // name is a required field for WooCommerce API product creation
