@@ -45,6 +45,8 @@ class ProcessProductChanges implements ShouldQueue
             $variantsToCreate = [];
             $variantsToDelete = [];
             $updateIds = [];
+            $parentProducts = []; // لیست محصولات مادر
+            $childProducts = []; // لیست محصولات متغیر
 
             // جمع‌آوری تمام بارکدها برای یک کوئری
             $allBarcodes = collect($this->changes)
@@ -86,37 +88,84 @@ class ProcessProductChanges implements ShouldQueue
                     'license_id' => $this->license_id
                 ];
 
-                if ($changeType === 'insert') {
-                    // بررسی وجود محصول قبل از اضافه کردن به لیست insert
-                    if (!$existingProducts->has($barcode)) {
-                        $productsToCreate[] = $productData;
-                    } else {
-                        // اگر محصول وجود داشت، به update تغییر می‌دهیم
-                        $existingProduct = $existingProducts->get($barcode);
-                        $productData['id'] = $existingProduct->id;
-                        $productsToUpdate[] = $productData;
-                        $updateIds[] = $existingProduct->id;
+                // جداسازی محصولات مادر و متغیر برای مرتب‌سازی بعدی
+                if ($productData['is_variant'] === true) {
+                    if (empty($productData['parent_id']) || $productData['parent_id'] === '') {
+                        // این یک محصول مادر است (is_variant=true و parent_id خالی)
+                        $parentProducts[] = $productData;
 
-                        if (!empty($productData['Attributes'])) {
-                            $variantsToDelete[] = $existingProduct->item_id;
+                        if ($changeType === 'insert') {
+                            Log::info("محصول مادر برای درج: {$barcode}");
+                        } else {
+                            // پردازش برای به‌روزرسانی
+                            $existingProduct = $existingProducts->get($barcode);
+                            if ($existingProduct) {
+                                $productData['id'] = $existingProduct->id;
+                                $productsToUpdate[] = $productData;
+                                $updateIds[] = $existingProduct->id;
+
+                                if (!empty($productData['Attributes'])) {
+                                    $variantsToDelete[] = $existingProduct->item_id;
+                                }
+                            } else {
+                                // اگر محصول مادر برای به‌روزرسانی یافت نشد، به لیست درج اضافه می‌کنیم
+                                Log::info("محصول مادر با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                                $parentProducts[] = $productData;
+                            }
+                        }
+                    } else {
+                        // این یک محصول متغیر است (is_variant=true و parent_id پر)
+                        $childProducts[] = $productData;
+
+                        if ($changeType === 'insert') {
+                            Log::info("محصول متغیر برای درج: {$barcode}, parent_id: {$productData['parent_id']}");
+                        } else {
+                            // پردازش برای به‌روزرسانی
+                            $existingProduct = $existingProducts->get($barcode);
+                            if ($existingProduct) {
+                                $productData['id'] = $existingProduct->id;
+                                $productsToUpdate[] = $productData;
+                                $updateIds[] = $existingProduct->id;
+                            } else {
+                                // اگر محصول متغیر برای به‌روزرسانی یافت نشد، به لیست درج اضافه می‌کنیم
+                                Log::info("محصول متغیر با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                                $childProducts[] = $productData;
+                            }
                         }
                     }
                 } else {
-                    $existingProduct = $existingProducts->get($barcode);
-                    if ($existingProduct) {
-                        $productData['id'] = $existingProduct->id;
-                        $productsToUpdate[] = $productData;
-                        $updateIds[] = $existingProduct->id;
+                    // محصول معمولی (is_variant=false)
+                    if ($changeType === 'insert') {
+                        // بررسی وجود محصول قبل از اضافه کردن به لیست insert
+                        if (!$existingProducts->has($barcode)) {
+                            $productsToCreate[] = $productData;
+                        } else {
+                            // اگر محصول وجود داشت، به update تغییر می‌دهیم
+                            $existingProduct = $existingProducts->get($barcode);
+                            $productData['id'] = $existingProduct->id;
+                            $productsToUpdate[] = $productData;
+                            $updateIds[] = $existingProduct->id;
 
-                        if (!empty($productData['Attributes'])) {
-                            $variantsToDelete[] = $existingProduct->item_id;
+                            if (!empty($productData['Attributes'])) {
+                                $variantsToDelete[] = $existingProduct->item_id;
+                            }
                         }
                     } else {
-                        // اگر محصول برای به‌روزرسانی یافت نشد، به insert تغییر می‌دهیم
-                        Log::info("محصول با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
-                        $productsToCreate[] = $productData;
+                        $existingProduct = $existingProducts->get($barcode);
+                        if ($existingProduct) {
+                            $productData['id'] = $existingProduct->id;
+                            $productsToUpdate[] = $productData;
+                            $updateIds[] = $existingProduct->id;
+
+                            if (!empty($productData['Attributes'])) {
+                                $variantsToDelete[] = $existingProduct->item_id;
+                            }
+                        } else {
+                            // اگر محصول برای به‌روزرسانی یافت نشد، به insert تغییر می‌دهیم
+                            Log::info("محصول با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                            $productsToCreate[] = $productData;
+                        }
                     }
-                }
 
                 // آماده‌سازی داده‌های واریانت
                 if (!empty($productData['Attributes'])) {
@@ -228,10 +277,13 @@ class ProcessProductChanges implements ShouldQueue
                 }
 
                 // ایجاد محصولات جدید در یک عملیات
-                if (!empty($productsToCreate)) {
+                if (!empty($parentProducts) || !empty($childProducts) || !empty($productsToCreate)) {
                     try {
+                        // ترکیب همه محصولات برای درج
+                        $allProducts = array_merge($parentProducts, $productsToCreate, $childProducts);
+
                         // مرتب‌سازی محصولات برای اطمینان از ایجاد محصولات مادر قبل از محصولات متغیر
-                        usort($productsToCreate, function($a, $b) {
+                        usort($allProducts, function($a, $b) {
                             // اگر یکی parent_id دارد و دیگری ندارد، آنکه parent_id ندارد اول است
                             if (empty($a['parent_id']) && !empty($b['parent_id'])) return -1;
                             if (!empty($a['parent_id']) && empty($b['parent_id'])) return 1;
@@ -239,7 +291,7 @@ class ProcessProductChanges implements ShouldQueue
                         });
 
                         // درج به صورت تک تک برای اطمینان از ترتیب صحیح
-                        foreach ($productsToCreate as $product) {
+                        foreach ($allProducts as $product) {
                             try {
                                 $createdProduct = Product::updateOrCreate(
                                     [
@@ -264,11 +316,14 @@ class ProcessProductChanges implements ShouldQueue
                         }
 
                         Log::info('محصولات جدید با موفقیت ایجاد شدند', [
-                            'count' => count($productsToCreate)
+                            'count' => count($allProducts),
+                            'parents' => count($parentProducts),
+                            'children' => count($childProducts),
+                            'regular' => count($productsToCreate)
                         ]);
 
                         // ارسال به صف ووکامرس برای درج
-                        $this->dispatchWooCommerceJobs($productsToCreate, 'insert');
+                        $this->dispatchWooCommerceJobs($allProducts, 'insert');
                     } catch (\Exception $e) {
                         Log::error('خطای کلی در ایجاد محصولات جدید: ' . $e->getMessage());
                         throw $e;
