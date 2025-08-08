@@ -32,6 +32,7 @@ class Product extends Model
         'variant_data' => 'array',
         'last_sync_at' => 'datetime',
         'department_name' => 'string',
+
     ];
 
     public function parent(): BelongsTo
@@ -48,4 +49,5 @@ class Product extends Model
     {
         return $this->belongsTo(License::class);
     }
+
 }

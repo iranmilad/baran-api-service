@@ -388,6 +388,8 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         $totalCount = $productData['total_count'] ?? $productData['TotalCount'] ?? 0;
         $departmentName = $productData['department_name'] ?? $productData['DepartmentName'] ?? null;
         $priceAmount = $productData['price_amount'] ?? $productData['PriceAmount'] ?? 0;
+        $isVariant = $productData['is_variant'] ?? $productData['IsVariant'] ?? false;
+        $parentId = $productData['parent_id'] ?? $productData['ParentId'] ?? null;
         $discountPercentage = $productData['discount_percentage'] ?? $productData['DiscountPercentage'] ?? 0;
         $priceIncreasePercentage = $productData['price_increase_percentage'] ?? $productData['PriceIncreasePercentage'] ?? 0;
 
@@ -400,12 +402,18 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             'stock_status' => (int)$totalCount > 0 ? 'instock' : 'outofstock'
         ];
 
+        // اضافه کردن اطلاعات واریانت اگر موجود باشد
+        if ($isVariant) {
+            $data['is_variant'] = true;
+            if ($parentId) {
+                $data['parent_id'] = $parentId;
+            }
+        }
+
         // name is a required field for WooCommerce API product creation
         $data['name'] = !empty($itemName) ?
             $itemName :
-            'محصول ' . $barcode; // Default name if missing
-
-        // We'll still respect the setting for updates, but for inserts, name is required
+            'محصول ' . $barcode; // Default name if missing        // We'll still respect the setting for updates, but for inserts, name is required
         // This just adds a flag to track if name updates are enabled
         $enableNameUpdate = $userSetting->enable_name_update;
 

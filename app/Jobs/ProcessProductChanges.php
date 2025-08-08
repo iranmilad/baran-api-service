@@ -80,7 +80,8 @@ class ProcessProductChanges implements ShouldQueue
                     'total_count' => (int)($productData['TotalCount'] ?? 0),
                     'stock_id' => $productData['StockID'] ?? null,
                     'department_name' => $productData['DepartmentName'] ?? null,
-                    'is_variant' => !empty($productData['Attributes']),
+                    'is_variant' => isset($productData['is_variant']) ? (bool)$productData['is_variant'] : false,
+                    'parent_id' => $productData['parent_id'] ?? null,
                     'last_sync_at' => $now,
                     'license_id' => $this->license_id,
                     'updated_at' => $now,
@@ -394,6 +395,15 @@ class ProcessProductChanges implements ShouldQueue
                         'status' => 'draft',
                         'barcode' => $item['barcode']
                     ];
+
+                    // Add brand information if available
+                    if (!empty($item['brand_id'])) {
+                        $data['brand_id'] = $item['brand_id'];
+                    }
+
+                    if (!empty($item['brand'])) {
+                        $data['brand'] = $item['brand'];
+                    }
 
                     // For inserts, name is always required by WooCommerce API
                     // For updates, we respect the enable_name_update setting
