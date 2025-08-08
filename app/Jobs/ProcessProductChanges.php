@@ -83,9 +83,7 @@ class ProcessProductChanges implements ShouldQueue
                     'is_variant' => isset($productData['is_variant']) ? (bool)$productData['is_variant'] : false,
                     'parent_id' => (!empty($productData['parent_id']) && $productData['parent_id'] !== '') ? $productData['parent_id'] : null,
                     'last_sync_at' => $now,
-                    'license_id' => $this->license_id,
-                    'updated_at' => $now,
-                    'created_at' => $now
+                    'license_id' => $this->license_id
                 ];
 
                 if ($changeType === 'insert') {
