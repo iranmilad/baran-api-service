@@ -21,7 +21,7 @@ class ProductController extends Controller
     public function sync(Request $request)
     {
 
-        //example input request format: {"update":[{"ItemName":"گاباردين راسته 263","ItemId": "B6A449EE-5D8E-41E7-BD7B-00B8D2D53EEB","Barcode":"TRS18263NANA","PriceAmount":1290000,"PriceAfterDiscount":1290000,"TotalCount":0,"is_variant":true,"parent_id":"","StockID":null,"DepartmentName":"داروخانه"}],"insert":[{"ItemName":"گاباردين  ","ItemId": "B6A449EE-5D8E-41E7-3421-00B8D2D53EEB","Barcode":"TRS1845NANA","PriceAmount":1290000,"PriceAfterDiscount":1290000,"TotalCount":0,"StockID":null,"is_variant":true,"parent_id":"B6A449EE-5D8E-41E7-BD7B-00B8D2D53EEB","DepartmentName":"داروخانه"}]}
+        //example input request format: {"update":[],"insert":[{"ItemName":"شلوار جین آبی","ItemId": "B6A449EE-5D8E-41E7-BD7B-00B8D2D53EEB","Barcode":"JEANS-BLUE-MAIN","PriceAmount":1290000,"PriceAfterDiscount":1190000,"TotalCount":15,"StockID":"ST001","is_variant":true,"parent_id":"","DepartmentName":"پوشاک مردانه"},{"ItemName":"شلوار جین آبی - سایز XL","ItemId": "C7B559FF-6D9F-52E8-CE8C-11C9E3E64FFC","Barcode":"JEANS-BLUE-XL","PriceAmount":1290000,"PriceAfterDiscount":1190000,"TotalCount":5,"StockID":"ST001","is_variant":true,"parent_id":"B6A449EE-5D8E-41E7-BD7B-00B8D2D53EEB","DepartmentName":"پوشاک مردانه"},{"ItemName":"شلوار جین آبی - سایز L","ItemId": "D8C669GG-7E0G-63F9-DF9D-22D0F4F75GGD","Barcode":"JEANS-BLUE-L","PriceAmount":1290000,"PriceAfterDiscount":1190000,"TotalCount":8,"StockID":"ST001","is_variant":true,"parent_id":"B6A449EE-5D8E-41E7-BD7B-00B8D2D53EEB","DepartmentName":"پوشاک مردانه"}]}
         try {
 
             // Get and validate JWT token

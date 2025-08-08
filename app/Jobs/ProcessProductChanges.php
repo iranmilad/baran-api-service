@@ -230,72 +230,91 @@ class ProcessProductChanges implements ShouldQueue
                 // ایجاد محصولات جدید در یک عملیات
                 if (!empty($productsToCreate)) {
                     try {
-                        Product::insert($productsToCreate);
+                        // مرتب‌سازی محصولات برای اطمینان از ایجاد محصولات مادر قبل از محصولات متغیر
+                        usort($productsToCreate, function($a, $b) {
+                            // اگر یکی parent_id دارد و دیگری ندارد، آنکه parent_id ندارد اول است
+                            if (empty($a['parent_id']) && !empty($b['parent_id'])) return -1;
+                            if (!empty($a['parent_id']) && empty($b['parent_id'])) return 1;
+                            return 0;
+                        });
+
+                        // درج به صورت تک تک برای اطمینان از ترتیب صحیح
+                        foreach ($productsToCreate as $product) {
+                            try {
+                                $createdProduct = Product::updateOrCreate(
+                                    [
+                                        'barcode' => $product['barcode'],
+                                        'license_id' => $this->license_id
+                                    ],
+                                    $product
+                                );
+
+                                Log::info('محصول ایجاد شد', [
+                                    'barcode' => $product['barcode'],
+                                    'item_id' => $product['item_id'],
+                                    'is_variant' => $product['is_variant'],
+                                    'parent_id' => $product['parent_id']
+                                ]);
+                            } catch (\Exception $innerException) {
+                                Log::error('خطا در ایجاد محصول', [
+                                    'barcode' => $product['barcode'],
+                                    'error' => $innerException->getMessage()
+                                ]);
+                            }
+                        }
+
                         Log::info('محصولات جدید با موفقیت ایجاد شدند', [
                             'count' => count($productsToCreate)
                         ]);
 
                         // ارسال به صف ووکامرس برای درج
                         $this->dispatchWooCommerceJobs($productsToCreate, 'insert');
-
                     } catch (\Exception $e) {
-                        // اگر خطای duplicate key رخ داد، محصولات را یکی یکی درج می‌کنیم
-                        if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                            Log::warning('خطای duplicate key در درج دسته‌ای، در حال درج تک به تک...');
-                            foreach ($productsToCreate as $product) {
-                                try {
-                                    $createdProduct = Product::updateOrCreate(
-                                        [
-                                            'barcode' => $product['barcode'],
-                                            'item_id' => $product['item_id']
-                                        ],
-                                        $product
-                                    );
-                                    // ارسال به صف ووکامرس برای درج/به‌روزرسانی
-                                    $this->dispatchWooCommerceJob($createdProduct, 'upsert');
-                                } catch (\Exception $innerE) {
-                                    Log::error('خطا در درج محصول: ' . $innerE->getMessage(), [
-                                        'barcode' => $product['barcode'],
-                                        'item_id' => $product['item_id']
-                                    ]);
-                                }
-                            }
-                        } else {
-                            throw $e;
-                        }
+                        Log::error('خطای کلی در ایجاد محصولات جدید: ' . $e->getMessage());
+                        throw $e;
                     }
                 }
 
                 // ایجاد واریانت‌های جدید در یک عملیات
                 if (!empty($variantsToCreate)) {
                     try {
-                        Product::insert($variantsToCreate);
+                        // مرتب‌سازی واریانت‌ها بر اساس parent_id
+                        usort($variantsToCreate, function($a, $b) {
+                            // اگر یکی parent_id دارد و دیگری ندارد، آنکه parent_id ندارد اول است
+                            if (empty($a['parent_id']) && !empty($b['parent_id'])) return -1;
+                            if (!empty($a['parent_id']) && empty($b['parent_id'])) return 1;
+                            return 0;
+                        });
+
+                        // درج به صورت تک تک برای اطمینان از ترتیب صحیح
+                        foreach ($variantsToCreate as $variant) {
+                            try {
+                                $createdVariant = Product::updateOrCreate(
+                                    [
+                                        'barcode' => $variant['barcode'],
+                                        'license_id' => $this->license_id
+                                    ],
+                                    $variant
+                                );
+
+                                Log::info('واریانت ایجاد شد', [
+                                    'barcode' => $variant['barcode'],
+                                    'parent_id' => $variant['parent_id']
+                                ]);
+                            } catch (\Exception $innerException) {
+                                Log::error('خطا در ایجاد واریانت', [
+                                    'barcode' => $variant['barcode'],
+                                    'error' => $innerException->getMessage()
+                                ]);
+                            }
+                        }
+
                         Log::info('واریانت‌های جدید با موفقیت ایجاد شدند', [
                             'count' => count($variantsToCreate)
                         ]);
                     } catch (\Exception $e) {
-                        // اگر خطای duplicate key رخ داد، واریانت‌ها را یکی یکی درج می‌کنیم
-                        if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                            Log::warning('خطای duplicate key در درج دسته‌ای واریانت‌ها، در حال درج تک به تک...');
-                            foreach ($variantsToCreate as $variant) {
-                                try {
-                                    Product::updateOrCreate(
-                                        [
-                                            'barcode' => $variant['barcode'],
-                                            'item_id' => $variant['item_id']
-                                        ],
-                                        $variant
-                                    );
-                                } catch (\Exception $innerE) {
-                                    Log::error('خطا در درج واریانت: ' . $innerE->getMessage(), [
-                                        'barcode' => $variant['barcode'],
-                                        'item_id' => $variant['item_id']
-                                    ]);
-                                }
-                            }
-                        } else {
-                            throw $e;
-                        }
+                        Log::error('خطای کلی در ایجاد واریانت‌ها: ' . $e->getMessage());
+                        throw $e;
                     }
                 }
 
