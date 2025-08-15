@@ -176,45 +176,44 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     'count' => count($productsToCreate)
                 ]);
 
-                // آماده‌سازی و جداسازی محصولات مادر و واریانت‌ها
-                $parentProducts = [];
-                $variationProducts = [];
+                // آماده‌سازی و ترتیب‌دهی محصولات (محصول مادر اول، سپس واریانت‌ها)
+                $allPreparedProducts = [];
 
                 foreach ($productsToCreate as $product) {
                     // ابتدا محصول را آماده کن
                     $preparedProduct = $this->prepareProductData($product, $userSetting);
-
-                    if (isset($preparedProduct['type']) && $preparedProduct['type'] === 'variable') {
-                        $parentProducts[] = $preparedProduct;
-                    } elseif (isset($preparedProduct['type']) && $preparedProduct['type'] === 'variation') {
-                        $variationProducts[] = $preparedProduct;
-                    } else {
-                        $parentProducts[] = $preparedProduct; // محصولات ساده
-                    }
+                    $allPreparedProducts[] = $preparedProduct;
                 }
 
-                Log::info('تقسیم‌بندی محصولات', [
-                    'parent_products' => count($parentProducts),
-                    'variations' => count($variationProducts),
+                // ترتیب‌دهی: محصولات مادر (variable) اول، سپس واریانت‌ها
+                usort($allPreparedProducts, function($a, $b) {
+                    $typeA = $a['type'] ?? 'simple';
+                    $typeB = $b['type'] ?? 'simple';
+
+                    // محصولات variable اول
+                    if ($typeA === 'variable' && $typeB !== 'variable') {
+                        return -1;
+                    }
+                    if ($typeB === 'variable' && $typeA !== 'variable') {
+                        return 1;
+                    }
+
+                    return 0;
+                });
+
+                Log::info('محصولات آماده شده برای درج یکجا', [
+                    'total_products' => count($allPreparedProducts),
                     'license_id' => $this->license_id,
-                    'parent_unique_ids' => collect($parentProducts)->pluck('unique_id')->toArray(),
-                    'variation_unique_ids' => collect($variationProducts)->pluck('unique_id')->toArray()
+                    'product_types' => collect($allPreparedProducts)->groupBy('type')->map(function($items) {
+                        return count($items);
+                    })->toArray()
                 ]);
 
-                // ابتدا محصولات مادر و ساده را درج کن
-                $parentProductsMap = [];
-                if (!empty($parentProducts)) {
-                    $parentProductsMap = $this->insertParentProducts($parentProducts, $license, $wooCommerceApiKey);
-                }
+                // درج همه محصولات در یک batch
+                $this->insertAllProductsBatch($allPreparedProducts, $license, $wooCommerceApiKey);
 
-                // سپس واریانت‌ها را درج کن
-                if (!empty($variationProducts)) {
-                    $this->insertVariations($variationProducts, $parentProductsMap, $license, $wooCommerceApiKey);
-                }
-
-                Log::info('درج محصولات تکمیل شد', [
-                    'parent_products' => count($parentProducts),
-                    'variations' => count($variationProducts),
+                Log::info('درج دسته‌ای محصولات تکمیل شد', [
+                    'total_products' => count($allPreparedProducts),
                     'license_id' => $this->license_id
                 ]);
             } else {
@@ -279,28 +278,17 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             // بررسی parent_id - اگر خالی باشد (null، empty string، یا فقط whitespace) یعنی محصول مادر است
             if (!empty($parentId) && trim($parentId) !== '') {
                 // این یک واریانت است که والد دارد
-                if (is_string($parentId) && strlen($parentId) > 10) {
-                    $data['parent_id'] = $parentId;
-                    $data['type'] = 'variation';
-                    // لاگ برای بررسی و عیب‌یابی
-                    Log::info('محصول متغیر (واریانت) با شناسه یکتای والد', [
-                        'barcode' => $barcode,
-                        'parent_item_id' => $parentId,
-                        'type' => 'variation'
-                    ]);
-                } else if (is_numeric($parentId)) {
-                    // اگر parentId یک شناسه عددی است (احتمالاً ID داخلی دیتابیس)
-                    $data['parent_id'] = (int)$parentId;
-                    $data['type'] = 'variation';
-                    Log::info('محصول متغیر (واریانت) با شناسه عددی والد', [
-                        'barcode' => $barcode,
-                        'parent_db_id' => $parentId,
-                        'type' => 'variation'
-                    ]);
-                } else {
-                    $data['parent_id'] = $parentId;
-                    $data['type'] = 'variation';
-                }
+                $data['parent_unique_id'] = $parentId; // استفاده از parent_unique_id به جای parent_id
+                $data['type'] = 'variation';
+
+                // حذف parent_id چون از parent_unique_id استفاده می‌کنیم
+                unset($data['parent_id']);
+
+                Log::info('محصول متغیر (واریانت) با شناسه یکتای والد', [
+                    'barcode' => $barcode,
+                    'parent_unique_id' => $parentId,
+                    'type' => 'variation'
+                ]);
             } else {
                 // محصول متغیر بدون والد، یعنی خود محصول مادر است (variable product)
                 $data['type'] = 'variable';
@@ -368,17 +356,46 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     'name' => 'Size',
                     'variation' => true,
                     'visible' => true,
-                    'options' => [] // خالی می‌گذاریم، بعداً با واریانت‌ها پر می‌شود
+                    'options' => ['S', 'M', 'L', 'XL'] // گزینه‌های پیش‌فرض
+                ],
+                [
+                    'name' => 'Color',
+                    'variation' => true,
+                    'visible' => true,
+                    'options' => ['قرمز', 'آبی', 'سیاه', 'سفید'] // گزینه‌های پیش‌فرض
                 ]
             ];
         }
+
+        // برای واریانت‌ها، attributes باید بر اساس خصوصیات خاص تنظیم شود
+        if (isset($data['type']) && $data['type'] === 'variation') {
+            $data['attributes'] = [
+                [
+                    'name' => 'Size',
+                    'option' => $this->extractVariationAttribute($itemName, 'size')
+                ],
+                [
+                    'name' => 'Color',
+                    'option' => $this->extractVariationAttribute($itemName, 'color')
+                ]
+            ];
+        }
+
+        // اضافه کردن فیلدهای اضافی
+        if (!empty($itemName) && strlen($itemName) > 10) {
+            $data['description'] = $itemName . ' - محصول با کیفیت عالی';
+            $data['short_description'] = substr($itemName, 0, 50);
+        }
+
+        // تنظیم status به publish به جای draft
+        $data['status'] = 'publish';
 
         // لاگ نهایی برای بررسی داده‌های ارسالی
         Log::info('داده‌های نهایی محصول برای ووکامرس', [
             'barcode' => $barcode,
             'name' => $data['name'],
             'type' => $data['type'] ?? 'not_set',
-            'parent_id' => $data['parent_id'] ?? null,
+            'parent_unique_id' => $data['parent_unique_id'] ?? null,
             'regular_price' => $data['regular_price'] ?? null,
             'stock_quantity' => $data['stock_quantity'] ?? null,
             'has_attributes' => isset($data['attributes'])
@@ -670,7 +687,84 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
     }
 
     /**
-     * درج محصولات مادر و ساده
+     * درج همه محصولات (مادر و واریانت‌ها) در یک batch
+     */
+    protected function insertAllProductsBatch(array $allProducts, $license, $wooCommerceApiKey): void
+    {
+        try {
+            Log::info('درج دسته‌ای همه محصولات', [
+                'total_count' => count($allProducts),
+                'license_id' => $this->license_id
+            ]);
+
+            // تقسیم به chunks
+            $chunks = array_chunk($allProducts, $this->batchSize);
+
+            foreach ($chunks as $index => $chunk) {
+                // لاگ کردن داده‌های ارسالی به WooCommerce
+                Log::info('ارسال محصولات به WooCommerce API', [
+                    'chunk_index' => $index,
+                    'products_count' => count($chunk),
+                    'sample_product' => $chunk[0] ?? null,
+                    'license_id' => $this->license_id,
+                    'endpoint' => $license->website_url . '/wp-json/wc/v3/products/unique/batch',
+                    'product_types' => collect($chunk)->groupBy('type')->map(function($items) {
+                        return count($items);
+                    })->toArray()
+                ]);
+
+                $response = Http::withOptions([
+                    'timeout' => 180,
+                    'connect_timeout' => 60
+                ])->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ])->withBasicAuth(
+                    $wooCommerceApiKey->api_key,
+                    $wooCommerceApiKey->api_secret
+                )->post($license->website_url . '/wp-json/wc/v3/products/unique/batch', [
+                    'products' => $chunk
+                ]);
+
+                if ($response->successful()) {
+                    $responseData = $response->json();
+                    if (isset($responseData['create'])) {
+                        foreach ($responseData['create'] as $createdProduct) {
+                            if (isset($createdProduct['unique_id']) && isset($createdProduct['id'])) {
+                                Log::info('محصول با موفقیت درج شد', [
+                                    'unique_id' => $createdProduct['unique_id'],
+                                    'woo_id' => $createdProduct['id'],
+                                    'sku' => $createdProduct['sku'] ?? '',
+                                    'type' => $createdProduct['type'] ?? 'unknown',
+                                    'parent_unique_id' => $createdProduct['parent_unique_id'] ?? null
+                                ]);
+                            }
+                        }
+                    }
+                } else {
+                    Log::error('خطا در درج دسته‌ای محصولات', [
+                        'response' => $response->body(),
+                        'status' => $response->status(),
+                        'chunk_index' => $index,
+                        'products_count' => count($chunk)
+                    ]);
+                }
+
+                // تاخیر بین درخواست‌ها
+                if ($index < count($chunks) - 1) {
+                    sleep(2);
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::error('خطا در درج دسته‌ای همه محصولات: ' . $e->getMessage(), [
+                'license_id' => $this->license_id
+            ]);
+        }
+    }
+
+    /**
+     * درج محصولات مادر و ساده (متد قدیمی - حفظ شده برای سازگاری)
      *
      * @param array $parentProducts
      * @param License $license
@@ -795,7 +889,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     $variationData['attributes'] = [
                         [
                             'name' => 'Size',
-                            'option' => $this->extractVariationAttribute($variation['name'] ?? $variation['sku'])
+                            'option' => $this->extractVariationAttribute($variation['name'] ?? $variation['sku'], 'size')
                         ]
                     ];
                 }
@@ -892,18 +986,54 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
      * @param string $name
      * @return string
      */
-    protected function extractVariationAttribute(string $name): string
+    protected function extractVariationAttribute(string $name, string $type = 'size'): string
     {
-        // تلاش برای استخراج سایز از نام محصول
-        if (preg_match('/سایز\s*([XLS]+|[\d]+)/u', $name, $matches)) {
-            return trim($matches[1]);
+        if ($type === 'size') {
+            // تلاش برای استخراج سایز از نام محصول
+            if (preg_match('/سایز\s*([XLS]+|[\d]+)/u', $name, $matches)) {
+                return trim($matches[1]);
+            }
+
+            if (preg_match('/size\s*([XLS]+|[\d]+)/i', $name, $matches)) {
+                return trim($matches[1]);
+            }
+
+            // الگوهای مختلف برای سایز
+            if (preg_match('/(XS|S|M|L|XL|XXL)/i', $name, $matches)) {
+                return strtoupper($matches[1]);
+            }
+
+            // اگر سایز پیدا نشد، سایز پیش‌فرض
+            return 'M';
         }
 
-        if (preg_match('/size\s*([XLS]+|[\d]+)/i', $name, $matches)) {
-            return trim($matches[1]);
+        if ($type === 'color') {
+            // تلاش برای استخراج رنگ از نام محصول
+            $colors = [
+                'قرمز' => ['قرمز', 'red', 'سرخ'],
+                'آبی' => ['آبی', 'blue', 'ابی'],
+                'سیاه' => ['سیاه', 'black', 'مشکی'],
+                'سفید' => ['سفید', 'white', 'سپید'],
+                'سبز' => ['سبز', 'green'],
+                'زرد' => ['زرد', 'yellow'],
+                'نارنجی' => ['نارنجی', 'orange'],
+                'بنفش' => ['بنفش', 'purple', 'موو'],
+                'طوسی' => ['طوسی', 'gray', 'grey', 'خاکستری']
+            ];
+
+            foreach ($colors as $colorName => $patterns) {
+                foreach ($patterns as $pattern) {
+                    if (stripos($name, $pattern) !== false) {
+                        return $colorName;
+                    }
+                }
+            }
+
+            // اگر رنگ پیدا نشد، رنگ پیش‌فرض
+            return 'سفید';
         }
 
-        // اگر سایز پیدا نشد، از آخرین بخش نام استفاده کن
+        // اگر نوع مشخص نشده، از آخرین بخش نام استفاده کن
         $parts = explode('-', $name);
         return trim(end($parts));
     }
