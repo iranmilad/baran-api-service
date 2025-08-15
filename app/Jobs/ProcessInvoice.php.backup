@@ -104,7 +104,7 @@ class ProcessInvoice implements ShouldQueue
 
             if ($customerResponse->successful()) {
                 $responseJson = $customerResponse->json();
-
+                
                 Log::info('پاسخ خام GetCustomerByCode', [
                     'invoice_id' => $this->invoice->id,
                     'response_structure' => $responseJson ? array_keys($responseJson) : 'null_response',
@@ -113,7 +113,7 @@ class ProcessInvoice implements ShouldQueue
 
                 if (isset($responseJson['GetCustomerByCodeResult'])) {
                     $resultString = $responseJson['GetCustomerByCodeResult'];
-
+                    
                     // بررسی اینکه آیا نتیجه یک JSON string است یا خود یک آرایه
                     if (is_string($resultString)) {
                         $customerResult = json_decode($resultString, true);
@@ -131,7 +131,7 @@ class ProcessInvoice implements ShouldQueue
                     // ممکن است پاسخ مستقیم در خود response باشد
                     $customerResult = $responseJson;
                 }
-
+                
                 Log::info('نتیجه پردازش شده مشتری', [
                     'invoice_id' => $this->invoice->id,
                     'customer_result_keys' => $customerResult ? array_keys($customerResult) : 'null_result',
@@ -209,70 +209,91 @@ class ProcessInvoice implements ShouldQueue
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode', $customerRequestData);
 
                 if (!$customerResponse->successful()) {
-                    $responseBody = $customerResponse->body();
-                    $logData = [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'status_code' => $customerResponse->status()
-                    ];
+                $responseBody = $customerResponse->body();
+                $logData = [
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id,
+                    'status_code' => $customerResponse->status()
+                ];
 
-                    if ($this->shouldLogResponse($responseBody)) {
-                        $logData['response'] = $responseBody;
-                    }
-
-                    Log::error('خطا در دریافت اطلاعات مشتری پس از ثبت', $logData);
-
-                    $this->invoice->update([
-                        'rain_sale_response' => [
-                            'error' => 'خطا در دریافت اطلاعات مشتری پس از ثبت',
-                            'response' => $customerResponse->body(),
-                            'status_code' => $customerResponse->status(),
-                            'status' => 'error'
-                        ],
-                        'is_synced' => false,
-                        'sync_error' => $this->limitSyncError('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body())
-                    ]);
-
-                    $this->fail('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
-                    return;
+                if ($this->shouldLogResponse($responseBody)) {
+                    $logData['response'] = $responseBody;
                 }
 
-                // پردازش پاسخ مجدد مشابه قسمت قبل
-                $responseJson = $customerResponse->json();
+                Log::error('خطا در دریافت اطلاعات مشتری پس از ثبت', $logData);
 
-                Log::info('پاسخ خام GetCustomerByCode بعد از ثبت', [
-                    'invoice_id' => $this->invoice->id,
-                    'response_structure' => $responseJson ? array_keys($responseJson) : 'null_response',
-                    'has_result_key' => isset($responseJson['GetCustomerByCodeResult'])
+                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'خطا در دریافت اطلاعات مشتری پس از ثبت',
+                        'response' => $customerResponse->body(),
+                        'status_code' => $customerResponse->status(),
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => $this->limitSyncError('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body())
                 ]);
 
-                if (isset($responseJson['GetCustomerByCodeResult'])) {
-                    $resultString = $responseJson['GetCustomerByCodeResult'];
-
-                    if (is_string($resultString)) {
-                        $customerResult = json_decode($resultString, true);
-                        if (json_last_error() !== JSON_ERROR_NONE) {
-                            Log::error('خطا در decode کردن JSON نتیجه مشتری بعد از ثبت', [
-                                'invoice_id' => $this->invoice->id,
-                                'json_error' => json_last_error_msg(),
-                                'raw_result' => substr($resultString, 0, 200)
-                            ]);
-                        }
-                    } else {
-                        $customerResult = $resultString;
-                    }
-                } else {
-                    $customerResult = $responseJson;
-                }
-
-                Log::info('نتیجه پردازش شده مشتری بعد از ثبت', [
-                    'invoice_id' => $this->invoice->id,
-                    'customer_result_keys' => $customerResult ? array_keys($customerResult) : 'null_result',
-                    'has_customer_id' => isset($customerResult['CustomerID'])
-                ]);
+                $this->fail('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
+                return;
             }
 
-            // بررسی وجود CustomerID
+            // پردازش پاسخ مجدد
+            $responseJson = $customerResponse->json();
+            
+            Log::info('پاسخ خام GetCustomerByCode بعد از ثبت', [
+                'invoice_id' => $this->invoice->id,
+                'response_structure' => $responseJson ? array_keys($responseJson) : 'null_response',
+                'has_result_key' => isset($responseJson['GetCustomerByCodeResult'])
+            ]);
+
+            if (isset($responseJson['GetCustomerByCodeResult'])) {
+                $resultString = $responseJson['GetCustomerByCodeResult'];
+                
+                if (is_string($resultString)) {
+                    $customerResult = json_decode($resultString, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        Log::error('خطا در decode کردن JSON نتیجه مشتری بعد از ثبت', [
+                            'invoice_id' => $this->invoice->id,
+                            'json_error' => json_last_error_msg(),
+                            'raw_result' => substr($resultString, 0, 200)
+                        ]);
+                    }
+                } else {
+                    $customerResult = $resultString;
+                }
+            } else {
+                $customerResult = $responseJson;
+            }
+            
+            Log::info('نتیجه پردازش شده مشتری بعد از ثبت', [
+                'invoice_id' => $this->invoice->id,
+                'customer_result_keys' => $customerResult ? array_keys($customerResult) : 'null_result',
+                'has_customer_id' => isset($customerResult['CustomerID'])
+            ]);
+                }
+
+                Log::error('خطا در دریافت اطلاعات مشتری پس از ثبت', $logData);
+
+                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'خطا در دریافت اطلاعات مشتری پس از ثبت',
+                        'response' => $customerResponse->body(),
+                        'status_code' => $customerResponse->status(),
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => $this->limitSyncError('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body())
+                ]);
+
+                $this->fail('خطا در دریافت اطلاعات مشتری پس از ثبت: ' . $customerResponse->body());
+                return;
+            }
+
+                $customerResult = json_decode($customerResponse->json()['GetCustomerByCodeResult'], true);
+            }
+
             if (!isset($customerResult['CustomerID'])) {
                 $logData = [
                     'invoice_id' => $this->invoice->id,
@@ -328,8 +349,6 @@ class ProcessInvoice implements ShouldQueue
                 $this->fail('پاسخ نامعتبر از RainSale برای اطلاعات مشتری - همه تلاش‌ها شکست خوردند');
                 return;
             }
-
-            // ذخیره CustomerID
 
             $this->invoice->customer_id = $customerResult['CustomerID'];
             $this->invoice->save();
