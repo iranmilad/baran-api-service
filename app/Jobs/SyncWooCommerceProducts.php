@@ -231,14 +231,15 @@ class SyncWooCommerceProducts implements ShouldQueue
                 $data['name'] = $item['name'] ?? $item['item_name'] ?? $item['ItemName'] ?? '';
             }
 
-            if ($userSettings->enable_price_update) {
+            // برای درج، همیشه قیمت و موجودی را شامل کن
+            if ($this->operation === 'insert' || $userSettings->enable_price_update) {
                 $data['regular_price'] = (string)($item['price_amount'] ?? $item['PriceAmount'] ?? 0);
                 if (!empty($item['price_after_discount'] ?? $item['PriceAfterDiscount']) && ($item['price_after_discount'] ?? $item['PriceAfterDiscount']) > 0) {
                     $data['sale_price'] = (string)($item['price_after_discount'] ?? $item['PriceAfterDiscount']);
                 }
             }
 
-            if ($userSettings->enable_stock_update) {
+            if ($this->operation === 'insert' || $userSettings->enable_stock_update) {
                 $data['stock_quantity'] = (int)($item['total_count'] ?? $item['TotalCount'] ?? 0);
                 $data['stock_status'] = ($item['total_count'] ?? $item['TotalCount'] ?? 0) > 0 ? 'instock' : 'outofstock';
                 $data['manage_stock'] = true;
@@ -248,6 +249,42 @@ class SyncWooCommerceProducts implements ShouldQueue
             if (!empty($item['department_name'] ?? $item['DepartmentName']) && isset($categories[$item['department_name'] ?? $item['DepartmentName']])) {
                 $data['category_id'] = $categories[$item['department_name'] ?? $item['DepartmentName']]['id'];
             }
+
+            // تعیین نوع محصول بر اساس is_variant و parent_id
+            $isVariant = $item['is_variant'] ?? false;
+            $parentId = $data['parent_id']; // استفاده از parent_id که از قبل پردازش شده
+
+            if ($isVariant) {
+                if ($parentId) {
+                    // این یک واریانت است
+                    $data['type'] = 'variation';
+                    Log::info('نوع محصول: variation', [
+                        'barcode' => $data['barcode'],
+                        'parent_id' => $parentId
+                    ]);
+                } else {
+                    // این یک محصول مادر است
+                    $data['type'] = 'variable';
+                    Log::info('نوع محصول: variable (parent)', [
+                        'barcode' => $data['barcode']
+                    ]);
+                }
+            } else {
+                // محصول ساده
+                $data['type'] = 'simple';
+                Log::info('نوع محصول: simple', [
+                    'barcode' => $data['barcode']
+                ]);
+            }
+
+            Log::info('آماده‌سازی داده محصول برای ووکامرس', [
+                'barcode' => $data['barcode'],
+                'type' => $data['type'],
+                'is_variant' => $isVariant,
+                'parent_id' => $parentId,
+                'name' => $data['name'] ?? 'no_name',
+                'operation' => $this->operation
+            ]);
 
             return $data;
         })->filter()->values()->toArray();

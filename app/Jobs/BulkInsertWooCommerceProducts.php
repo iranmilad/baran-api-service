@@ -469,38 +469,47 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // This just adds a flag to track if name updates are enabled
         $enableNameUpdate = $userSetting->enable_name_update;
 
-        if ($userSetting->enable_price_update) {
-            $regularPrice = $this->calculateFinalPrice(
-                (float)$priceAmount,
-                0,
-                (float)$priceIncreasePercentage
-            );
+        // برای درج محصولات جدید، همیشه قیمت و موجودی را تنظیم کن
+        $regularPrice = $this->calculateFinalPrice(
+            (float)$priceAmount,
+            0,
+            (float)$priceIncreasePercentage
+        );
 
-            $salePrice = $this->calculateFinalPrice(
-                (float)$priceAmount,
-                (float)$discountPercentage,
-                (float)$priceIncreasePercentage
-            );
+        $salePrice = $this->calculateFinalPrice(
+            (float)$priceAmount,
+            (float)$discountPercentage,
+            (float)$priceIncreasePercentage
+        );
 
-            $data['regular_price'] = (string)$this->convertPriceUnit(
-                $regularPrice,
+        $data['regular_price'] = (string)$this->convertPriceUnit(
+            $regularPrice,
+            $userSetting->rain_sale_price_unit,
+            $userSetting->woocommerce_price_unit
+        );
+
+        if ($discountPercentage > 0) {
+            $data['sale_price'] = (string)$this->convertPriceUnit(
+                $salePrice,
                 $userSetting->rain_sale_price_unit,
                 $userSetting->woocommerce_price_unit
             );
-
-            if ($discountPercentage > 0) {
-                $data['sale_price'] = (string)$this->convertPriceUnit(
-                    $salePrice,
-                    $userSetting->rain_sale_price_unit,
-                    $userSetting->woocommerce_price_unit
-                );
-            }
         }
 
         // اضافه کردن دسته‌بندی ووکامرس بر اساس department_name
         if (!empty($departmentName) && !empty($productData['category_id'])) {
             $data['categories'] = [['id' => $productData['category_id']]];
         }
+
+        // لاگ نهایی برای بررسی داده‌های ارسالی
+        Log::info('داده‌های نهایی محصول برای ووکامرس', [
+            'barcode' => $barcode,
+            'name' => $data['name'],
+            'type' => $data['type'] ?? 'not_set',
+            'parent_id' => $data['parent_id'] ?? null,
+            'regular_price' => $data['regular_price'] ?? null,
+            'stock_quantity' => $data['stock_quantity'] ?? null
+        ]);
 
         return $data;
     }
