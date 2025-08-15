@@ -360,29 +360,8 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             $data['categories'] = [['id' => $productData['category_id']]];
         }
 
-        // برای محصولات variable، attributes اجباری است
-        if (isset($data['type']) && $data['type'] === 'variable') {
-            $data['attributes'] = [
-                [
-                    'name' => 'Size',
-                    'variation' => true,
-                    'visible' => true,
-                    'options' => ['S', 'M', 'L', 'XL'] // گزینه‌های پیش‌فرض
-                ],
-                [
-                    'name' => 'Color',
-                    'variation' => true,
-                    'visible' => true,
-                    'options' => ['قرمز', 'آبی', 'سیاه', 'سفید'] // گزینه‌های پیش‌فرض
-                ]
-            ];
-        }
-
-        // برای واریانت‌ها، attributes را خالی می‌گذاریم تا کاربر خودش تنظیم کند
-        if (isset($data['type']) && $data['type'] === 'variation') {
-            // حذف attributes برای واریانت‌ها - کاربر خودش تنظیم خواهد کرد
-            // $data['attributes'] = [];
-        }
+        // برای واریانت‌ها، attributes را اصلاً ارسال نمی‌کنیم
+        // واریانت‌ها attributes را از محصول مادر به ارث می‌برند
 
         // حذف description و short_description از درخواست درج
         // تا کاربر خودش آن‌ها را در WooCommerce تنظیم کند
@@ -955,16 +934,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 $variationData = $variation;
                 unset($variationData['parent_id']); // parent_id در URL قرار می‌گیرد
                 unset($variationData['type']); // واریانت‌ها نیازی به type ندارند
-
-                // اضافه کردن attributes برای واریانت
-                if (!isset($variationData['attributes']) || empty($variationData['attributes'])) {
-                    $variationData['attributes'] = [
-                        [
-                            'name' => 'Size',
-                            'option' => $this->extractVariationAttribute($variation['name'] ?? $variation['sku'], 'size')
-                        ]
-                    ];
-                }
+                unset($variationData['attributes']); // واریانت‌ها attributes را از محصول مادر به ارث می‌برند
 
                 // گروه‌بندی بر اساس parent WooCommerce ID
                 if (!isset($variationsByParent[$parentWooId])) {
