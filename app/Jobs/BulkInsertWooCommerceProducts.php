@@ -381,13 +381,23 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // تبدیل به آرایه اگر آبجکت است
         $productData = is_array($product) ? $product : (array)$product;
 
+        // لاگ کردن داده‌های ورودی برای عیب‌یابی
+        Log::info('پردازش محصول در prepareProductData', [
+            'original_data' => $productData,
+            'parent_id_check' => [
+                'parent_id' => $productData['parent_id'] ?? 'not_set',
+                'is_empty' => empty($productData['parent_id'] ?? null),
+                'is_trim_empty' => trim($productData['parent_id'] ?? '') === ''
+            ]
+        ]);
+
         // مپینگ نام‌های مختلف فیلدها (کیمل کیس و آندراسکور)
         $itemId = $productData['item_id'] ?? $productData['ItemId'] ?? null;
         $barcode = $productData['barcode'] ?? $productData['Barcode'] ?? '';
-        $itemName = $productData['item_name'] ?? $productData['ItemName'] ?? '';
-        $totalCount = $productData['total_count'] ?? $productData['TotalCount'] ?? 0;
+        $itemName = $productData['item_name'] ?? $productData['ItemName'] ?? $productData['name'] ?? '';
+        $totalCount = $productData['total_count'] ?? $productData['TotalCount'] ?? $productData['stock_quantity'] ?? 0;
         $departmentName = $productData['department_name'] ?? $productData['DepartmentName'] ?? null;
-        $priceAmount = $productData['price_amount'] ?? $productData['PriceAmount'] ?? 0;
+        $priceAmount = $productData['price_amount'] ?? $productData['PriceAmount'] ?? $productData['regular_price'] ?? 0;
         $isVariant = $productData['is_variant'] ?? $productData['IsVariant'] ?? false;
         $parentId = $productData['parent_id'] ?? $productData['ParentId'] ?? null;
         $discountPercentage = $productData['discount_percentage'] ?? $productData['DiscountPercentage'] ?? 0;
@@ -405,42 +415,49 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // اضافه کردن اطلاعات واریانت اگر موجود باشد
         if ($isVariant) {
             $data['is_variant'] = true;
-            if ($parentId) {
-                // اگر parentId یک شناسه یکتا (ItemId) است
+
+            // بررسی parent_id - اگر خالی باشد (null، empty string، یا فقط whitespace) یعنی محصول مادر است
+            if (!empty($parentId) && trim($parentId) !== '') {
+                // این یک واریانت است که والد دارد
                 if (is_string($parentId) && strlen($parentId) > 10) {
                     $data['parent_id'] = $parentId;
+                    $data['type'] = 'variation';
                     // لاگ برای بررسی و عیب‌یابی
-                    Log::info('محصول متغیر با شناسه یکتای والد', [
+                    Log::info('محصول متغیر (واریانت) با شناسه یکتای والد', [
                         'barcode' => $barcode,
-                        'parent_item_id' => $parentId
+                        'parent_item_id' => $parentId,
+                        'type' => 'variation'
                     ]);
                 } else if (is_numeric($parentId)) {
                     // اگر parentId یک شناسه عددی است (احتمالاً ID داخلی دیتابیس)
                     $data['parent_id'] = (int)$parentId;
-                    Log::info('محصول متغیر با شناسه عددی والد', [
+                    $data['type'] = 'variation';
+                    Log::info('محصول متغیر (واریانت) با شناسه عددی والد', [
                         'barcode' => $barcode,
-                        'parent_db_id' => $parentId
+                        'parent_db_id' => $parentId,
+                        'type' => 'variation'
                     ]);
                 } else {
                     $data['parent_id'] = $parentId;
+                    $data['type'] = 'variation';
                 }
             } else {
-                // محصول متغیر بدون والد، احتمالاً خود محصول مادر است
-                Log::info('محصول متغیر مادر (بدون parent_id)', [
-                    'barcode' => $barcode,
-                    'item_id' => $itemId
-                ]);
-            }
-
-            // برای محصولات متغیر، نوع محصول در WooCommerce را تنظیم می‌کنیم
-            if ($parentId) {
-                $data['type'] = 'variation';
-            } else {
+                // محصول متغیر بدون والد، یعنی خود محصول مادر است (variable product)
                 $data['type'] = 'variable';
+                Log::info('محصول متغیر مادر (parent product)', [
+                    'barcode' => $barcode,
+                    'item_id' => $itemId,
+                    'type' => 'variable',
+                    'parent_id_received' => $parentId
+                ]);
             }
         } else {
             // محصول عادی (غیر متغیر)
             $data['type'] = 'simple';
+            Log::info('محصول ساده', [
+                'barcode' => $barcode,
+                'type' => 'simple'
+            ]);
         }
 
         // name is a required field for WooCommerce API product creation
@@ -452,7 +469,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // This just adds a flag to track if name updates are enabled
         $enableNameUpdate = $userSetting->enable_name_update;
 
-        if ($userSetting->enable_price_update || $this->operation === 'insert') {
+        if ($userSetting->enable_price_update) {
             $regularPrice = $this->calculateFinalPrice(
                 (float)$priceAmount,
                 0,

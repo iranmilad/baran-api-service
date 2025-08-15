@@ -153,7 +153,7 @@ class ProcessProductChanges implements ShouldQueue
                 'stock_id' => $productData['StockID'] ?? null,
                 'department_name' => $productData['DepartmentName'] ?? null,
                 'is_variant' => isset($productData['is_variant']) ? (bool)$productData['is_variant'] : false,
-                'parent_id' => (!empty($productData['parent_id']) && $productData['parent_id'] !== '') ? $productData['parent_id'] : null,
+                'parent_id' => (!empty($productData['parent_id']) && trim($productData['parent_id']) !== '') ? $productData['parent_id'] : null,
                 'last_sync_at' => $now,
                 'license_id' => $this->license_id,
                 'created_at' => $now,
@@ -162,11 +162,20 @@ class ProcessProductChanges implements ShouldQueue
 
             // جداسازی محصولات مادر و متغیر برای مرتب‌سازی بعدی
             if ($productData['is_variant'] === true) {
-                if (empty($productData['parent_id']) || $productData['parent_id'] === '') {
+                if (empty($productData['parent_id']) || trim($productData['parent_id']) === '') {
                     // این یک محصول مادر است (is_variant=true و parent_id خالی)
+                    Log::info('تشخیص محصول مادر (variable product)', [
+                        'barcode' => $barcode,
+                        'parent_id_original' => $change['product']['parent_id'] ?? 'not_set',
+                        'parent_id_processed' => $productData['parent_id']
+                    ]);
                     $this->processParentProduct($productData, $barcode, $changeType, $existingProducts, $parentProducts, $productsToUpdate, $updateIds, $variantsToDelete);
                 } else {
                     // این یک محصول متغیر است (is_variant=true و parent_id پر)
+                    Log::info('تشخیص محصول واریانت (variation)', [
+                        'barcode' => $barcode,
+                        'parent_id' => $productData['parent_id']
+                    ]);
                     $this->processChildProduct($productData, $barcode, $changeType, $existingProducts, $childProducts, $productsToUpdate, $updateIds);
                 }
             } else {

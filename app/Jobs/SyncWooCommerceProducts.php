@@ -213,7 +213,7 @@ class SyncWooCommerceProducts implements ShouldQueue
                 'status' => 'draft',
                 'barcode' => $item['barcode'] ?? $item['Barcode'] ?? '',
                 'is_variant' => $item['is_variant'] ?? false,
-                'parent_id' => $item['parent_id'] ?? null
+                'parent_id' => (!empty($item['parent_id']) && trim($item['parent_id']) !== '') ? $item['parent_id'] : null
             ];
 
             // Add brand information if available
@@ -256,8 +256,10 @@ class SyncWooCommerceProducts implements ShouldQueue
         usort($preparedProducts, function($a, $b) {
             $aIsVariant = $a['is_variant'] ?? false;
             $bIsVariant = $b['is_variant'] ?? false;
-            $aParentId = !empty($a['parent_id']);
-            $bParentId = !empty($b['parent_id']);
+
+            // بررسی parent_id با در نظر گیری string خالی
+            $aParentId = !empty($a['parent_id']) && trim($a['parent_id']) !== '';
+            $bParentId = !empty($b['parent_id']) && trim($b['parent_id']) !== '';
 
             // اگر هیچکدام variant نیستند، ترتیب فرقی ندارد
             if (!$aIsVariant && !$bIsVariant) {
