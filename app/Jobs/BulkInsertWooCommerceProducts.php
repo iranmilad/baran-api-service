@@ -176,187 +176,42 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     'count' => count($productsToCreate)
                 ]);
 
-                // لاگ کردن محتوای درخواست
-                Log::info('محتوای درخواست درج محصولات:', [
-                    'license_id' => $this->license_id,
-                    'request_data' => [
-                        'products' => $productsToCreate
-                    ],
-                    'endpoint' => $license->website_url . '/wp-json/wc/v3/products/unique/batch'
-                ]);
+                // جداسازی محصولات مادر و واریانت‌ها
+                $parentProducts = [];
+                $variationProducts = [];
 
-                Log::info('درج محصولات جدید:', [
-                    'license_id' => $this->license_id,
-                    'unique_ids' => collect($productsToCreate)->pluck('unique_id')->take(10)->toArray(), // نمایش 10 آیتم اول
-                    'total_count' => count($productsToCreate),
-                    'batch_size' => $this->batchSize
-                ]);
-
-                // تقسیم محصولات به دسته‌های کوچکتر برای جلوگیری از خطاهای JSON
-                $chunks = array_chunk($productsToCreate, $this->batchSize);
-                $totalChunks = count($chunks);
-
-                Log::info('تقسیم محصولات به دسته‌های کوچکتر برای درج', [
-                    'total_products' => count($productsToCreate),
-                    'batch_size' => $this->batchSize,
-                    'total_chunks' => $totalChunks,
-                    'license_id' => $this->license_id
-                ]);
-
-                $successfulInserts = 0;
-                $failedInserts = 0;
-                $errors = [];
-
-                foreach ($chunks as $index => $chunk) {
-                    try {
-                        Log::info('درج دسته محصولات', [
-                            'chunk_index' => $index + 1,
-                            'total_chunks' => $totalChunks,
-                            'chunk_size' => count($chunk),
-                            'license_id' => $this->license_id,
-                            'sample_product' => count($chunk) > 0 ? [
-                                'ItemName' => $chunk[0]['ItemName'] ?? 'not set',
-                                'item_name' => $chunk[0]['item_name'] ?? 'not set',
-                                'Barcode' => $chunk[0]['Barcode'] ?? 'not set',
-                                'barcode' => $chunk[0]['barcode'] ?? 'not set'
-                            ] : []
-                        ]);
-
-                        try {
-                            // اطمینان از وجود فیلدهای اجباری قبل از ارسال به API
-                            foreach ($chunk as $index => $product) {
-                                // بررسی وجود نام - در هر دو حالت نام‌گذاری فیلدها
-                                $hasName = !empty($product['name']) || !empty($product['ItemName']) || !empty($product['item_name']);
-
-                                if (!$hasName) {
-                                    // تعیین بارکد برای استفاده در نام پیش‌فرض
-                                    $sku = $product['sku'] ?? $product['Barcode'] ?? 'unknown';
-
-                                    Log::warning('محصول بدون نام یافت شد - اضافه کردن نام پیش‌فرض', [
-                                        'product_sku' => $sku,
-                                        'license_id' => $this->license_id
-                                    ]);
-
-                                    // اضافه کردن نام پیش‌فرض برای جلوگیری از خطای API
-                                    $chunk[$index]['name'] = 'محصول ' . $sku;
-                                } else if (empty($product['name']) && (!empty($product['ItemName']) || !empty($product['item_name']))) {
-                                    // اگر نام به فرمت کیمل‌کیس یا اندراسکور وجود دارد اما در فیلد 'name' نیست
-                                    $chunk[$index]['name'] = $product['ItemName'] ?? $product['item_name'];
-                                }
-                            }
-
-                            $response = Http::withOptions([
-                                'verify' => false,
-                                'timeout' => 180,
-                                'connect_timeout' => 60
-                            ])->retry(3, 300, function ($exception, $request) {
-                                // لاگ کردن خطاهای شبکه برای کمک به تشخیص مشکلات
-                                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
-                                    Log::error('خطای اتصال به وب‌سرویس ووکامرس (تلاش مجدد):', [
-                                        'error' => $exception->getMessage(),
-                                        'license_id' => $this->license_id
-                                    ]);
-                                } elseif (isset($exception->response)) {
-                                    Log::error('خطای سرور در وب‌سرویس ووکامرس (تلاش مجدد):', [
-                                        'status' => $exception->response->status(),
-                                        'body' => $exception->response->body(),
-                                        'license_id' => $this->license_id
-                                    ]);
-                                }
-
-                                return $exception instanceof \Illuminate\Http\Client\ConnectionException ||
-                                       (isset($exception->response) && $exception->response->status() >= 500);
-                            })->withHeaders([
-                                'Content-Type' => 'application/json',
-                                'Accept' => 'application/json'
-                            ])->withBasicAuth(
-                                $wooCommerceApiKey->api_key,
-                                $wooCommerceApiKey->api_secret
-                            )->post($license->website_url . '/wp-json/wc/v3/products/unique/batch', [
-                                'products' => $chunk
-                            ]);
-                        } catch (\Exception $connectionException) {
-                            // ثبت جزئیات خطای اتصال
-                            Log::error('خطای اتصال به وب‌سرویس ووکامرس:', [
-                                'exception' => get_class($connectionException),
-                                'message' => $connectionException->getMessage(),
-                                'chunk_index' => $index + 1,
-                                'license_id' => $this->license_id,
-                                'website_url' => $license->website_url
-                            ]);
-
-                            throw $connectionException;
-                        }
-
-                        // پردازش پاسخ برای این دسته
-                        $chunkResult = $this->processChunkResponse($response, $chunk, 'insert');
-                        $successfulInserts += $chunkResult['successful'];
-                        $failedInserts += $chunkResult['failed'];
-
-                        if (!empty($chunkResult['errors'])) {
-                            $errors = array_merge($errors, $chunkResult['errors']);
-                        }
-
-                        // اضافه کردن تاخیر بین درخواست‌ها برای جلوگیری از اورلود سرور
-                        if ($index < $totalChunks - 1) {
-                            sleep(2); // 2 ثانیه تاخیر بین هر درخواست
-                        }
-
-                    } catch (\Exception $e) {
-                        $failedInserts += count($chunk);
-                        $errors[] = [
-                            'chunk_index' => $index + 1,
-                            'error_message' => $e->getMessage(),
-                            'products_count' => count($chunk),
-                            'first_few_skus' => array_slice(array_column($chunk, 'sku'), 0, 5) // نمایش 5 بارکد اول برای تشخیص
-                        ];
-
-                        Log::error('خطا در درج دسته محصولات: ' . $e->getMessage(), [
-                            'chunk_index' => $index + 1,
-                            'products_count' => count($chunk),
-                            'license_id' => $this->license_id,
-                            'error_code' => $e->getCode()
-                        ]);
-
-                        // ادامه اجرا با دسته بعدی، بدون توقف کامل فرآیند
-                        continue;
-                    }
-                }
-
-                // گزارش نهایی درج
-                Log::info('پایان فرآیند درج محصولات', [
-                    'total_products' => count($productsToCreate),
-                    'successful_inserts' => $successfulInserts,
-                    'failed_inserts' => $failedInserts,
-                    'total_chunks' => $totalChunks,
-                    'errors_count' => count($errors),
-                    'license_id' => $this->license_id
-                ]);
-
-                // اگر خطایی رخ داده باشد، گزارش آن را ثبت می‌کنیم
-                if (!empty($errors)) {
-                    if ($successfulInserts > 0) {
-                        // برخی موارد با موفقیت انجام شده‌اند
-                        Log::warning('درج با برخی خطاها انجام شد', [
-                            'errors_sample' => array_slice($errors, 0, 5), // نمایش 5 خطای اول
-                            'total_errors' => count($errors),
-                            'license_id' => $this->license_id
-                        ]);
+                foreach ($productsToCreate as $product) {
+                    if (isset($product['type']) && $product['type'] === 'variable') {
+                        $parentProducts[] = $product;
+                    } elseif (isset($product['type']) && $product['type'] === 'variation') {
+                        $variationProducts[] = $product;
                     } else {
-                        // هیچ موردی با موفقیت انجام نشده است
-                        Log::error('هیچ یک از محصولات با موفقیت درج نشدند', [
-                            'errors_sample' => array_slice($errors, 0, 5), // نمایش 5 خطای اول
-                            'total_errors' => count($errors),
-                            'license_id' => $this->license_id
-                        ]);
-
-                        // به جای پرتاب استثنا، فقط لاگ می‌کنیم و ادامه می‌دهیم
-                        // این باعث می‌شود حتی اگر درج با شکست مواجه شود، پردازش ادامه یابد
-                        Log::warning('علی‌رغم خطاها، پردازش ادامه می‌یابد', [
-                            'license_id' => $this->license_id
-                        ]);
+                        $parentProducts[] = $product; // محصولات ساده
                     }
                 }
+
+                Log::info('تقسیم‌بندی محصولات', [
+                    'parent_products' => count($parentProducts),
+                    'variations' => count($variationProducts),
+                    'license_id' => $this->license_id
+                ]);
+
+                // ابتدا محصولات مادر و ساده را درج کن
+                $parentProductsMap = [];
+                if (!empty($parentProducts)) {
+                    $parentProductsMap = $this->insertParentProducts($parentProducts, $license, $wooCommerceApiKey);
+                }
+
+                // سپس واریانت‌ها را درج کن
+                if (!empty($variationProducts)) {
+                    $this->insertVariations($variationProducts, $parentProductsMap, $license, $wooCommerceApiKey);
+                }
+
+                Log::info('درج محصولات تکمیل شد', [
+                    'parent_products' => count($parentProducts),
+                    'variations' => count($variationProducts),
+                    'license_id' => $this->license_id
+                ]);
             } else {
                 Log::info('هیچ محصول جدیدی برای درج وجود ندارد', [
                     'license_id' => $this->license_id,
@@ -501,6 +356,18 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             $data['categories'] = [['id' => $productData['category_id']]];
         }
 
+        // برای محصولات variable، attributes اجباری است
+        if (isset($data['type']) && $data['type'] === 'variable') {
+            $data['attributes'] = [
+                [
+                    'name' => 'Size',
+                    'variation' => true,
+                    'visible' => true,
+                    'options' => [] // خالی می‌گذاریم، بعداً با واریانت‌ها پر می‌شود
+                ]
+            ];
+        }
+
         // لاگ نهایی برای بررسی داده‌های ارسالی
         Log::info('داده‌های نهایی محصول برای ووکامرس', [
             'barcode' => $barcode,
@@ -508,7 +375,8 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             'type' => $data['type'] ?? 'not_set',
             'parent_id' => $data['parent_id'] ?? null,
             'regular_price' => $data['regular_price'] ?? null,
-            'stock_quantity' => $data['stock_quantity'] ?? null
+            'stock_quantity' => $data['stock_quantity'] ?? null,
+            'has_attributes' => isset($data['attributes'])
         ]);
 
         return $data;
@@ -794,6 +662,192 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 ]);
             }
         }
+    }
+
+    /**
+     * درج محصولات مادر و ساده
+     *
+     * @param array $parentProducts
+     * @param License $license
+     * @param WooCommerceApiKey $wooCommerceApiKey
+     * @return array نقشه محصولات با ID های ووکامرس
+     */
+    protected function insertParentProducts(array $parentProducts, $license, $wooCommerceApiKey): array
+    {
+        $parentProductsMap = [];
+
+        try {
+            Log::info('درج محصولات مادر و ساده', [
+                'count' => count($parentProducts),
+                'license_id' => $this->license_id
+            ]);
+
+            // تقسیم به chunks
+            $chunks = array_chunk($parentProducts, $this->batchSize);
+
+            foreach ($chunks as $index => $chunk) {
+                $response = Http::withOptions([
+                    'timeout' => 180,
+                    'connect_timeout' => 60
+                ])->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ])->withBasicAuth(
+                    $wooCommerceApiKey->api_key,
+                    $wooCommerceApiKey->api_secret
+                )->post($license->website_url . '/wp-json/wc/v3/products/unique/batch', [
+                    'products' => $chunk
+                ]);
+
+                if ($response->successful()) {
+                    $responseData = $response->json();
+                    if (isset($responseData['create'])) {
+                        foreach ($responseData['create'] as $createdProduct) {
+                            if (isset($createdProduct['unique_id']) && isset($createdProduct['id'])) {
+                                $parentProductsMap[$createdProduct['unique_id']] = [
+                                    'id' => $createdProduct['id'],
+                                    'sku' => $createdProduct['sku'] ?? ''
+                                ];
+
+                                Log::info('محصول مادر درج شد', [
+                                    'unique_id' => $createdProduct['unique_id'],
+                                    'woo_id' => $createdProduct['id'],
+                                    'sku' => $createdProduct['sku'] ?? ''
+                                ]);
+                            }
+                        }
+                    }
+                } else {
+                    Log::error('خطا در درج محصولات مادر', [
+                        'response' => $response->body(),
+                        'status' => $response->status()
+                    ]);
+                }
+
+                // تاخیر بین درخواست‌ها
+                if ($index < count($chunks) - 1) {
+                    sleep(2);
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::error('خطا در درج محصولات مادر: ' . $e->getMessage());
+        }
+
+        return $parentProductsMap;
+    }
+
+    /**
+     * درج واریانت‌های محصولات
+     *
+     * @param array $variationProducts
+     * @param array $parentProductsMap
+     * @param License $license
+     * @param WooCommerceApiKey $wooCommerceApiKey
+     */
+    protected function insertVariations(array $variationProducts, array $parentProductsMap, $license, $wooCommerceApiKey): void
+    {
+        try {
+            Log::info('درج واریانت‌های محصولات', [
+                'variations_count' => count($variationProducts),
+                'parent_products_count' => count($parentProductsMap),
+                'license_id' => $this->license_id
+            ]);
+
+            foreach ($variationProducts as $variation) {
+                $parentId = $variation['parent_id'] ?? null;
+
+                if (!$parentId || !isset($parentProductsMap[$parentId])) {
+                    Log::warning('محصول مادر برای واریانت یافت نشد', [
+                        'variation_sku' => $variation['sku'] ?? '',
+                        'parent_id' => $parentId,
+                        'available_parents' => array_keys($parentProductsMap)
+                    ]);
+                    continue;
+                }
+
+                $parentWooId = $parentProductsMap[$parentId]['id'];
+
+                // حذف فیلدهای غیرضروری برای واریانت
+                $variationData = $variation;
+                unset($variationData['parent_id']); // parent_id برای واریانت‌ها در URL قرار می‌گیرد
+                unset($variationData['type']); // واریانت‌ها نیازی به type ندارند
+
+                // اضافه کردن attributes برای واریانت (اگر وجود ندارد)
+                if (!isset($variationData['attributes']) || empty($variationData['attributes'])) {
+                    // ایجاد attribute بر اساس نام محصول یا SKU
+                    $variationData['attributes'] = [
+                        [
+                            'name' => 'Size',
+                            'option' => $this->extractVariationAttribute($variation['name'] ?? $variation['sku'])
+                        ]
+                    ];
+                }
+
+                try {
+                    $response = Http::withOptions([
+                        'timeout' => 180,
+                        'connect_timeout' => 60
+                    ])->withHeaders([
+                        'Content-Type' => 'application/json',
+                        'Accept' => 'application/json'
+                    ])->withBasicAuth(
+                        $wooCommerceApiKey->api_key,
+                        $wooCommerceApiKey->api_secret
+                    )->post($license->website_url . "/wp-json/wc/v3/products/{$parentWooId}/variations", $variationData);
+
+                    if ($response->successful()) {
+                        $createdVariation = $response->json();
+                        Log::info('واریانت با موفقیت درج شد', [
+                            'parent_woo_id' => $parentWooId,
+                            'variation_woo_id' => $createdVariation['id'] ?? '',
+                            'variation_sku' => $variation['sku'] ?? '',
+                            'parent_unique_id' => $parentId
+                        ]);
+                    } else {
+                        Log::error('خطا در درج واریانت', [
+                            'parent_woo_id' => $parentWooId,
+                            'variation_sku' => $variation['sku'] ?? '',
+                            'response' => $response->body(),
+                            'status' => $response->status()
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::error('خطا در درج واریانت: ' . $e->getMessage(), [
+                        'parent_woo_id' => $parentWooId,
+                        'variation_sku' => $variation['sku'] ?? ''
+                    ]);
+                }
+
+                // تاخیر کوتاه بین درج واریانت‌ها
+                sleep(1);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('خطا در درج واریانت‌ها: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * استخراج attribute از نام واریانت
+     *
+     * @param string $name
+     * @return string
+     */
+    protected function extractVariationAttribute(string $name): string
+    {
+        // تلاش برای استخراج سایز از نام محصول
+        if (preg_match('/سایز\s*([XLS]+|[\d]+)/u', $name, $matches)) {
+            return trim($matches[1]);
+        }
+
+        if (preg_match('/size\s*([XLS]+|[\d]+)/i', $name, $matches)) {
+            return trim($matches[1]);
+        }
+
+        // اگر سایز پیدا نشد، از آخرین بخش نام استفاده کن
+        $parts = explode('-', $name);
+        return trim(end($parts));
     }
 
     /**
