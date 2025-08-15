@@ -172,28 +172,33 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             if (!empty($productsToCreate)) {
                 Log::info('محصولات جدید در حال درج:', [
                     'license_id' => $this->license_id,
-                    'unique_ids' => collect($productsToCreate)->pluck('unique_id')->toArray(),
+                    'unique_ids' => collect($productsToCreate)->pluck('item_id')->toArray(),
                     'count' => count($productsToCreate)
                 ]);
 
-                // جداسازی محصولات مادر و واریانت‌ها
+                // آماده‌سازی و جداسازی محصولات مادر و واریانت‌ها
                 $parentProducts = [];
                 $variationProducts = [];
 
                 foreach ($productsToCreate as $product) {
-                    if (isset($product['type']) && $product['type'] === 'variable') {
-                        $parentProducts[] = $product;
-                    } elseif (isset($product['type']) && $product['type'] === 'variation') {
-                        $variationProducts[] = $product;
+                    // ابتدا محصول را آماده کن
+                    $preparedProduct = $this->prepareProductData($product, $userSetting);
+
+                    if (isset($preparedProduct['type']) && $preparedProduct['type'] === 'variable') {
+                        $parentProducts[] = $preparedProduct;
+                    } elseif (isset($preparedProduct['type']) && $preparedProduct['type'] === 'variation') {
+                        $variationProducts[] = $preparedProduct;
                     } else {
-                        $parentProducts[] = $product; // محصولات ساده
+                        $parentProducts[] = $preparedProduct; // محصولات ساده
                     }
                 }
 
                 Log::info('تقسیم‌بندی محصولات', [
                     'parent_products' => count($parentProducts),
                     'variations' => count($variationProducts),
-                    'license_id' => $this->license_id
+                    'license_id' => $this->license_id,
+                    'parent_unique_ids' => collect($parentProducts)->pluck('unique_id')->toArray(),
+                    'variation_unique_ids' => collect($variationProducts)->pluck('unique_id')->toArray()
                 ]);
 
                 // ابتدا محصولات مادر و ساده را درج کن
@@ -686,6 +691,15 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             $chunks = array_chunk($parentProducts, $this->batchSize);
 
             foreach ($chunks as $index => $chunk) {
+                // لاگ کردن داده‌های ارسالی به WooCommerce
+                Log::info('ارسال محصولات به WooCommerce API', [
+                    'chunk_index' => $index,
+                    'products_count' => count($chunk),
+                    'sample_product' => $chunk[0] ?? null,
+                    'license_id' => $this->license_id,
+                    'endpoint' => $license->website_url . '/wp-json/wc/v3/products/unique/batch'
+                ]);
+
                 $response = Http::withOptions([
                     'timeout' => 180,
                     'connect_timeout' => 60
@@ -754,12 +768,15 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 'license_id' => $this->license_id
             ]);
 
+            // گروه‌بندی واریانت‌ها بر اساس parent_id
+            $variationsByParent = [];
             foreach ($variationProducts as $variation) {
                 $parentId = $variation['parent_id'] ?? null;
 
                 if (!$parentId || !isset($parentProductsMap[$parentId])) {
                     Log::warning('محصول مادر برای واریانت یافت نشد', [
                         'variation_sku' => $variation['sku'] ?? '',
+                        'variation_unique_id' => $variation['unique_id'] ?? '',
                         'parent_id' => $parentId,
                         'available_parents' => array_keys($parentProductsMap)
                     ]);
@@ -768,14 +785,13 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
                 $parentWooId = $parentProductsMap[$parentId]['id'];
 
-                // حذف فیلدهای غیرضروری برای واریانت
+                // آماده‌سازی داده‌های واریانت
                 $variationData = $variation;
-                unset($variationData['parent_id']); // parent_id برای واریانت‌ها در URL قرار می‌گیرد
+                unset($variationData['parent_id']); // parent_id در URL قرار می‌گیرد
                 unset($variationData['type']); // واریانت‌ها نیازی به type ندارند
 
-                // اضافه کردن attributes برای واریانت (اگر وجود ندارد)
+                // اضافه کردن attributes برای واریانت
                 if (!isset($variationData['attributes']) || empty($variationData['attributes'])) {
-                    // ایجاد attribute بر اساس نام محصول یا SKU
                     $variationData['attributes'] = [
                         [
                             'name' => 'Size',
@@ -784,47 +800,89 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     ];
                 }
 
-                try {
-                    $response = Http::withOptions([
-                        'timeout' => 180,
-                        'connect_timeout' => 60
-                    ])->withHeaders([
-                        'Content-Type' => 'application/json',
-                        'Accept' => 'application/json'
-                    ])->withBasicAuth(
-                        $wooCommerceApiKey->api_key,
-                        $wooCommerceApiKey->api_secret
-                    )->post($license->website_url . "/wp-json/wc/v3/products/{$parentWooId}/variations", $variationData);
-
-                    if ($response->successful()) {
-                        $createdVariation = $response->json();
-                        Log::info('واریانت با موفقیت درج شد', [
-                            'parent_woo_id' => $parentWooId,
-                            'variation_woo_id' => $createdVariation['id'] ?? '',
-                            'variation_sku' => $variation['sku'] ?? '',
-                            'parent_unique_id' => $parentId
-                        ]);
-                    } else {
-                        Log::error('خطا در درج واریانت', [
-                            'parent_woo_id' => $parentWooId,
-                            'variation_sku' => $variation['sku'] ?? '',
-                            'response' => $response->body(),
-                            'status' => $response->status()
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    Log::error('خطا در درج واریانت: ' . $e->getMessage(), [
-                        'parent_woo_id' => $parentWooId,
-                        'variation_sku' => $variation['sku'] ?? ''
-                    ]);
+                // گروه‌بندی بر اساس parent WooCommerce ID
+                if (!isset($variationsByParent[$parentWooId])) {
+                    $variationsByParent[$parentWooId] = [];
                 }
+                $variationsByParent[$parentWooId][] = $variationData;
+            }
 
-                // تاخیر کوتاه بین درج واریانت‌ها
-                sleep(1);
+            // درج واریانت‌ها برای هر محصول مادر با batch
+            foreach ($variationsByParent as $parentWooId => $variations) {
+                $this->insertVariationsBatch($variations, $parentWooId, $license, $wooCommerceApiKey);
+                // تاخیر بین درج واریانت‌های محصولات مختلف
+                sleep(2);
             }
 
         } catch (\Exception $e) {
             Log::error('خطا در درج واریانت‌ها: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * درج دسته‌ای واریانت‌ها برای یک محصول مادر
+     */
+    protected function insertVariationsBatch(array $variations, int $parentWooId, $license, $wooCommerceApiKey): void
+    {
+        try {
+            // تقسیم به chunks کوچکتر برای واریانت‌ها
+            $chunks = array_chunk($variations, min($this->batchSize, 5));
+
+            foreach ($chunks as $index => $chunk) {
+                // لاگ کردن داده‌های ارسالی
+                Log::info('ارسال واریانت‌ها به WooCommerce API', [
+                    'parent_woo_id' => $parentWooId,
+                    'chunk_index' => $index,
+                    'variations_count' => count($chunk),
+                    'sample_variation' => $chunk[0] ?? null,
+                    'license_id' => $this->license_id,
+                    'endpoint' => $license->website_url . "/wp-json/wc/v3/products/{$parentWooId}/variations/batch"
+                ]);
+
+                $response = Http::withOptions([
+                    'timeout' => 180,
+                    'connect_timeout' => 60
+                ])->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ])->withBasicAuth(
+                    $wooCommerceApiKey->api_key,
+                    $wooCommerceApiKey->api_secret
+                )->post($license->website_url . "/wp-json/wc/v3/products/{$parentWooId}/variations/batch", [
+                    'create' => $chunk
+                ]);
+
+                if ($response->successful()) {
+                    $responseData = $response->json();
+                    if (isset($responseData['create'])) {
+                        foreach ($responseData['create'] as $createdVariation) {
+                            Log::info('واریانت با موفقیت درج شد', [
+                                'parent_woo_id' => $parentWooId,
+                                'variation_woo_id' => $createdVariation['id'] ?? '',
+                                'variation_sku' => $createdVariation['sku'] ?? '',
+                                'variation_unique_id' => $createdVariation['unique_id'] ?? ''
+                            ]);
+                        }
+                    }
+                } else {
+                    Log::error('خطا در درج دسته‌ای واریانت‌ها', [
+                        'parent_woo_id' => $parentWooId,
+                        'response' => $response->body(),
+                        'status' => $response->status(),
+                        'variations_count' => count($chunk)
+                    ]);
+                }
+
+                // تاخیر بین chunks
+                if ($index < count($chunks) - 1) {
+                    sleep(1);
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::error('خطا در درج دسته‌ای واریانت‌ها: ' . $e->getMessage(), [
+                'parent_woo_id' => $parentWooId
+            ]);
         }
     }
 
