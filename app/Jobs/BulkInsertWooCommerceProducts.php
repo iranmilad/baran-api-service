@@ -277,9 +277,9 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
             // بررسی parent_id - اگر خالی باشد (null، empty string، یا فقط whitespace) یعنی محصول مادر است
             if (!empty($parentId) && trim($parentId) !== '') {
-                // این یک واریانت است که والد دارد
+                // این یک واریانت است که والد دارد - از variable استفاده می‌کنیم
                 $data['parent_unique_id'] = $parentId; // استفاده از parent_unique_id به جای parent_id
-                $data['type'] = 'variation';
+                $data['type'] = 'variable'; // تغییر از variation به variable
 
                 // حذف parent_id چون از parent_unique_id استفاده می‌کنیم
                 unset($data['parent_id']);
@@ -287,7 +287,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 Log::info('محصول متغیر (واریانت) با شناسه یکتای والد', [
                     'barcode' => $barcode,
                     'parent_unique_id' => $parentId,
-                    'type' => 'variation'
+                    'type' => 'variable' // تغییر از variation به variable
                 ]);
             } else {
                 // محصول متغیر بدون والد، یعنی خود محصول مادر است (variable product)
@@ -309,8 +309,8 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         }
 
         // name is a required field for WooCommerce API product creation
-        if (isset($data['type']) && $data['type'] === 'variation') {
-            // برای واریانت‌ها (variations)، نام را در description قرار می‌دهیم
+        if (isset($data['parent_unique_id'])) {
+            // برای واریانت‌ها (محصولاتی که parent_unique_id دارند)، نام را در description قرار می‌دهیم
             $data['description'] = !empty($itemName) ?
                 $itemName :
                 'واریانت ' . $barcode; // توضیحات پیش‌فرض برای واریانت‌ها
