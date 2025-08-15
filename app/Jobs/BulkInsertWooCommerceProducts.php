@@ -309,9 +309,20 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         }
 
         // name is a required field for WooCommerce API product creation
-        $data['name'] = !empty($itemName) ?
-            $itemName :
-            'محصول ' . $barcode; // Default name if missing
+        if (isset($data['type']) && $data['type'] === 'variation') {
+            // برای واریانت‌ها (variations)، نام را در description قرار می‌دهیم
+            $data['description'] = !empty($itemName) ?
+                $itemName :
+                'واریانت ' . $barcode; // توضیحات پیش‌فرض برای واریانت‌ها
+
+            // name را خالی می‌گذاریم یا نام کوتاه می‌دهیم چون WooCommerce خودکار تنظیم می‌کند
+            $data['name'] = $barcode; // فقط بارکد به عنوان نام
+        } else {
+            // برای محصولات مادر (variable) و ساده (simple)
+            $data['name'] = !empty($itemName) ?
+                $itemName :
+                'محصول ' . $barcode; // نام پیش‌فرض برای محصولات مادر
+        }
 
         // We'll still respect the setting for updates, but for inserts, name is required
         // This just adds a flag to track if name updates are enabled
@@ -367,25 +378,14 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             ];
         }
 
-        // برای واریانت‌ها، attributes باید بر اساس خصوصیات خاص تنظیم شود
+        // برای واریانت‌ها، attributes را خالی می‌گذاریم تا کاربر خودش تنظیم کند
         if (isset($data['type']) && $data['type'] === 'variation') {
-            $data['attributes'] = [
-                [
-                    'name' => 'Size',
-                    'option' => $this->extractVariationAttribute($itemName, 'size')
-                ],
-                [
-                    'name' => 'Color',
-                    'option' => $this->extractVariationAttribute($itemName, 'color')
-                ]
-            ];
+            // حذف attributes برای واریانت‌ها - کاربر خودش تنظیم خواهد کرد
+            // $data['attributes'] = [];
         }
 
-        // اضافه کردن فیلدهای اضافی
-        if (!empty($itemName) && strlen($itemName) > 10) {
-            $data['description'] = $itemName . ' - محصول با کیفیت عالی';
-            $data['short_description'] = substr($itemName, 0, 50);
-        }
+        // حذف description و short_description از درخواست درج
+        // تا کاربر خودش آن‌ها را در WooCommerce تنظیم کند
 
         // تنظیم status به publish به جای draft
         $data['status'] = 'publish';
@@ -700,6 +700,10 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             // تقسیم به chunks
             $chunks = array_chunk($allProducts, $this->batchSize);
 
+            // آمارهای کلی
+            $totalSuccessful = 0;
+            $totalFailed = 0;
+
             foreach ($chunks as $index => $chunk) {
                 // لاگ کردن داده‌های ارسالی به WooCommerce
                 Log::info('ارسال محصولات به WooCommerce API', [
@@ -728,26 +732,81 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
                 if ($response->successful()) {
                     $responseData = $response->json();
-                    if (isset($responseData['create'])) {
+
+                    // شمارش موفقیت‌ها و خطاها
+                    $successCount = 0;
+                    $errorCount = 0;
+                    $successfulProducts = [];
+                    $failedProducts = [];
+
+                    if (isset($responseData['create']) && is_array($responseData['create'])) {
                         foreach ($responseData['create'] as $createdProduct) {
                             if (isset($createdProduct['unique_id']) && isset($createdProduct['id'])) {
-                                Log::info('محصول با موفقیت درج شد', [
+                                $successCount++;
+                                $successfulProducts[] = [
                                     'unique_id' => $createdProduct['unique_id'],
                                     'woo_id' => $createdProduct['id'],
                                     'sku' => $createdProduct['sku'] ?? '',
                                     'type' => $createdProduct['type'] ?? 'unknown',
                                     'parent_unique_id' => $createdProduct['parent_unique_id'] ?? null
+                                ];
+
+                                Log::info('محصول با موفقیت درج شد', [
+                                    'unique_id' => $createdProduct['unique_id'],
+                                    'woo_id' => $createdProduct['id'],
+                                    'sku' => $createdProduct['sku'] ?? '',
+                                    'type' => $createdProduct['type'] ?? 'unknown',
+                                    'parent_unique_id' => $createdProduct['parent_unique_id'] ?? null,
+                                    'chunk_index' => $index,
+                                    'license_id' => $this->license_id
+                                ]);
+                            } else if (isset($createdProduct['error'])) {
+                                $errorCount++;
+                                $failedProducts[] = [
+                                    'unique_id' => $createdProduct['unique_id'] ?? 'نامشخص',
+                                    'sku' => $createdProduct['sku'] ?? 'نامشخص',
+                                    'error_code' => $createdProduct['error']['code'] ?? 'نامشخص',
+                                    'error_message' => $createdProduct['error']['message'] ?? 'خطای نامشخص'
+                                ];
+
+                                Log::error('خطا در درج محصول', [
+                                    'unique_id' => $createdProduct['unique_id'] ?? 'نامشخص',
+                                    'sku' => $createdProduct['sku'] ?? 'نامشخص',
+                                    'error_code' => $createdProduct['error']['code'] ?? 'نامشخص',
+                                    'error_message' => $createdProduct['error']['message'] ?? 'خطای نامشخص',
+                                    'chunk_index' => $index,
+                                    'license_id' => $this->license_id
                                 ]);
                             }
                         }
                     }
+
+                    // لاگ خلاصه نتیجه chunk
+                    Log::info('نتیجه درج chunk محصولات', [
+                        'chunk_index' => $index,
+                        'total_products' => count($chunk),
+                        'successful_count' => $successCount,
+                        'failed_count' => $errorCount,
+                        'success_rate' => $successCount > 0 ? round(($successCount / count($chunk)) * 100, 2) . '%' : '0%',
+                        'license_id' => $this->license_id,
+                        'successful_products' => $successfulProducts,
+                        'failed_products' => $failedProducts
+                    ]);
+
+                    // اضافه کردن به آمار کلی
+                    $totalSuccessful += $successCount;
+                    $totalFailed += $errorCount;
                 } else {
                     Log::error('خطا در درج دسته‌ای محصولات', [
                         'response' => $response->body(),
                         'status' => $response->status(),
                         'chunk_index' => $index,
-                        'products_count' => count($chunk)
+                        'products_count' => count($chunk),
+                        'license_id' => $this->license_id
                     ]);
+
+                    // اضافه کردن به آمار خطا
+                    $totalFailed += count($chunk);
                 }
 
                 // تاخیر بین درخواست‌ها
@@ -755,6 +814,19 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     sleep(2);
                 }
             }
+
+            // لاگ خلاصه نهایی کل عملیات درج
+            Log::info('خلاصه نهایی درج دسته‌ای محصولات', [
+                'license_id' => $this->license_id,
+                'total_products_attempted' => count($allProducts),
+                'total_successful' => $totalSuccessful,
+                'total_failed' => $totalFailed,
+                'success_rate' => count($allProducts) > 0 ? round(($totalSuccessful / count($allProducts)) * 100, 2) . '%' : '0%',
+                'total_chunks' => count($chunks),
+                'product_types_summary' => collect($allProducts)->groupBy('type')->map(function($items) {
+                    return count($items);
+                })->toArray()
+            ]);
 
         } catch (\Exception $e) {
             Log::error('خطا در درج دسته‌ای همه محصولات: ' . $e->getMessage(), [
