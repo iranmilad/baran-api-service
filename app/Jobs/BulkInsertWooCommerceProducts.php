@@ -446,11 +446,13 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // name is a required field for WooCommerce API product creation
         $data['name'] = !empty($itemName) ?
             $itemName :
-            'محصول ' . $barcode; // Default name if missing        // We'll still respect the setting for updates, but for inserts, name is required
+            'محصول ' . $barcode; // Default name if missing
+
+        // We'll still respect the setting for updates, but for inserts, name is required
         // This just adds a flag to track if name updates are enabled
         $enableNameUpdate = $userSetting->enable_name_update;
 
-        if ($userSetting->enable_price_update) {
+        if ($userSetting->enable_price_update || $this->operation === 'insert') {
             $regularPrice = $this->calculateFinalPrice(
                 (float)$priceAmount,
                 0,
