@@ -312,6 +312,14 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // تشخیص واریانت بر اساس متغیرهای محلی
         $isChildVariant = $isVariant && !empty($parentId) && trim($parentId) !== '';
 
+        Log::info('تشخیص نوع محصول برای تنظیم name/description', [
+            'barcode' => $barcode,
+            'isVariant' => $isVariant,
+            'parentId' => $parentId,
+            'isChildVariant' => $isChildVariant,
+            'itemName' => $itemName
+        ]);
+
         if ($isChildVariant) {
             // برای واریانت‌ها (محصولاتی که parent_id دارند)، نام را در description قرار می‌دهیم
             $data['description'] = !empty($itemName) ?
@@ -320,14 +328,22 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
             // name را خالی می‌گذاریم یا نام کوتاه می‌دهیم چون WooCommerce خودکار تنظیم می‌کند
             $data['name'] = $barcode; // فقط بارکد به عنوان نام
+
+            Log::info('تنظیم description برای واریانت', [
+                'barcode' => $barcode,
+                'description' => $data['description']
+            ]);
         } else {
             // برای محصولات مادر (variable) و ساده (simple)
             $data['name'] = !empty($itemName) ?
                 $itemName :
                 'محصول ' . $barcode; // نام پیش‌فرض برای محصولات مادر
-        }
 
-        // We'll still respect the setting for updates, but for inserts, name is required
+            Log::info('تنظیم name برای محصول مادر/ساده', [
+                'barcode' => $barcode,
+                'name' => $data['name']
+            ]);
+        }        // We'll still respect the setting for updates, but for inserts, name is required
         // This just adds a flag to track if name updates are enabled
         $enableNameUpdate = $userSetting->enable_name_update;
 
@@ -376,11 +392,13 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         Log::info('داده‌های نهایی محصول برای ووکامرس', [
             'barcode' => $barcode,
             'name' => $data['name'],
+            'description' => $data['description'] ?? 'not_set', // اضافه کردن description به لاگ
             'type' => $data['type'] ?? 'not_set',
             'parent_unique_id' => $data['parent_unique_id'] ?? null,
             'regular_price' => $data['regular_price'] ?? null,
             'stock_quantity' => $data['stock_quantity'] ?? null,
-            'has_attributes' => isset($data['attributes'])
+            'has_attributes' => isset($data['attributes']),
+            'is_child_variant' => $isChildVariant // اضافه کردن متغیر تشخیص واریانت
         ]);
 
         return $data;
