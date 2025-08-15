@@ -309,8 +309,11 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         }
 
         // name is a required field for WooCommerce API product creation
-        if (isset($data['parent_unique_id'])) {
-            // برای واریانت‌ها (محصولاتی که parent_unique_id دارند)، نام را در description قرار می‌دهیم
+        // تشخیص واریانت بر اساس متغیرهای محلی
+        $isChildVariant = $isVariant && !empty($parentId) && trim($parentId) !== '';
+
+        if ($isChildVariant) {
+            // برای واریانت‌ها (محصولاتی که parent_id دارند)، نام را در description قرار می‌دهیم
             $data['description'] = !empty($itemName) ?
                 $itemName :
                 'واریانت ' . $barcode; // توضیحات پیش‌فرض برای واریانت‌ها
