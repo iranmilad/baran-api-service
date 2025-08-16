@@ -493,6 +493,7 @@ class ProcessInvoice implements ShouldQueue
                     'Payments' => $payments,
                     'StoreId' => $this->user->api_storeId,
                     'UserId' => $this->user->api_userId,
+                    'DeliveryCost' => isset($this->invoice->order_data['delivery_cost']) ? (float)$this->invoice->order_data['delivery_cost'] : 0
                 ],
                 'useCredit' => false
             ];
