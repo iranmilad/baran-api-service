@@ -25,7 +25,7 @@ Schedule::call(function () {
     Log::info('Cron schedule executed at: ' . now());
 })->everyTenMinutes();
 
-Schedule::command('queue:work --queue=product-coordination,product-processing,invoices,products,bulk-update,empty-unique-ids,unique-ids-sync,category,woocommerce,woocommerce-update,woocommerce-insert,woocommerce-sync,default --tries=3 --max-jobs=50 --stop-when-empty')
+Schedule::command('queue:work --queue=product-coordination,product-processing,invoices,products,bulk-update,empty-unique-ids,unique-ids-sync,category,woocommerce,woocommerce-update,woocommerce-insert,woocommerce-sync,default --tries=3 --max-jobs=100 --stop-when-empty')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer()
