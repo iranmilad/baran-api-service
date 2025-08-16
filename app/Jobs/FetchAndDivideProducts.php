@@ -1,0 +1,178 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Models\License;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Automattic\WooCommerce\Client;
+
+class FetchAndDivideProducts implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    protected $licenseId;
+
+    /**
+     * The number of times the job may be attempted.
+     */
+    public $tries = 2;
+
+    /**
+     * The number of seconds the job can run before timing out.
+     */
+    public $timeout = 45;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct($licenseId)
+    {
+        $this->licenseId = $licenseId;
+    }
+
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
+    {
+        $startTime = microtime(true);
+        $maxExecutionTime = 35; // 35 ثانیه
+
+        try {
+            Log::info('شروع دریافت و تقسیم همه محصولات', [
+                'license_id' => $this->licenseId
+            ]);
+
+            $license = License::with(['userSetting', 'woocommerceApiKey'])->find($this->licenseId);
+            if (!$license || !$license->isActive()) {
+                Log::error('لایسنس معتبر نیست', [
+                    'license_id' => $this->licenseId
+                ]);
+                return;
+            }
+
+            $wooApiKey = $license->woocommerceApiKey;
+            if (!$wooApiKey) {
+                Log::error('کلید API ووکامرس یافت نشد', [
+                    'license_id' => $license->id
+                ]);
+                return;
+            }
+
+            // دریافت محصولات از WooCommerce
+            $allBarcodes = $this->getAllProductBarcodes($license, $wooApiKey, $startTime, $maxExecutionTime);
+
+            if (empty($allBarcodes)) {
+                Log::info('هیچ بارکدی برای پردازش یافت نشد', [
+                    'license_id' => $this->licenseId
+                ]);
+                return;
+            }
+
+            // تقسیم به chunks و ارسال
+            $chunkSize = 8; // chunks کوچکتر برای همه محصولات
+            $chunks = array_chunk($allBarcodes, $chunkSize);
+
+            Log::info('تقسیم همه محصولات به chunks', [
+                'license_id' => $this->licenseId,
+                'total_barcodes' => count($allBarcodes),
+                'chunk_size' => $chunkSize,
+                'total_chunks' => count($chunks)
+            ]);
+
+            foreach ($chunks as $index => $chunk) {
+                $delaySeconds = 5 + ($index * 8); // delay کمتر برای سرعت بیشتر
+
+                ProcessSingleProductBatch::dispatch($this->licenseId, $chunk)
+                    ->onQueue('product-processing')
+                    ->delay(now()->addSeconds($delaySeconds));
+
+                // هر 100 chunk یک log
+                if (($index + 1) % 100 === 0) {
+                    Log::info('پیشرفت ارسال chunks', [
+                        'license_id' => $this->licenseId,
+                        'processed_chunks' => $index + 1,
+                        'total_chunks' => count($chunks)
+                    ]);
+                }
+            }
+
+            Log::info('تقسیم و ارسال همه محصولات تکمیل شد', [
+                'license_id' => $this->licenseId,
+                'total_chunks_sent' => count($chunks),
+                'execution_time' => round(microtime(true) - $startTime, 2)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('خطا در دریافت و تقسیم محصولات: ' . $e->getMessage(), [
+                'license_id' => $this->licenseId,
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * دریافت همه barcodes از WooCommerce
+     */
+    private function getAllProductBarcodes($license, $wooApiKey, $startTime, $maxExecutionTime)
+    {
+        try {
+            $woocommerce = new Client(
+                $license->website_url,
+                $wooApiKey->api_key,
+                $wooApiKey->api_secret,
+                [
+                    'version' => 'wc/v3',
+                    'verify_ssl' => false,
+                    'timeout' => 25
+                ]
+            );
+
+            $response = $woocommerce->get('products/unique');
+
+            if (!isset($response->success) || !$response->success || !isset($response->data)) {
+                Log::error('پاسخ نامعتبر از API ووکامرس', [
+                    'license_id' => $this->licenseId
+                ]);
+                return [];
+            }
+
+            // استخراج barcodes
+            $barcodes = [];
+            foreach ($response->data as $product) {
+                if (!empty($product->barcode)) {
+                    $barcodes[] = $product->barcode;
+                }
+
+                // بررسی زمان
+                $elapsedTime = microtime(true) - $startTime;
+                if ($elapsedTime > $maxExecutionTime) {
+                    Log::warning('زمان به پایان رسید در حین دریافت محصولات', [
+                        'license_id' => $this->licenseId,
+                        'barcodes_collected' => count($barcodes)
+                    ]);
+                    break;
+                }
+            }
+
+            Log::info('barcodes دریافت شد از WooCommerce', [
+                'license_id' => $this->licenseId,
+                'count' => count($barcodes)
+            ]);
+
+            return $barcodes;
+
+        } catch (\Exception $e) {
+            Log::error('خطا در دریافت محصولات از WooCommerce: ' . $e->getMessage(), [
+                'license_id' => $this->licenseId
+            ]);
+            return [];
+        }
+    }
+}

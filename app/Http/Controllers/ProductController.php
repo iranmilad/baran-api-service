@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\CoordinateProductUpdate;
 use App\Jobs\UpdateWooCommerceProducts;
 use App\Jobs\SyncUniqueIds;
 use App\Jobs\ProcessEmptyUniqueIds;
@@ -274,46 +275,26 @@ class ProductController extends Controller
 
             // اگر درخواست برای همه محصولات است (barcodes خالی)
             if (empty($barcodes)) {
-                // صف یکپارچه برای همه محصولات با تنظیم پارامتر batch_size
-                UpdateWooCommerceProducts::dispatch($license->id, 'bulk', [], $batchSize)
-                    ->onQueue('bulk-update')
-                    ->delay(now()->addSeconds(10)); // افزایش delay
+                // استفاده از معماری جدید coordination
+                CoordinateProductUpdate::dispatch($license->id, [])
+                    ->onQueue('product-coordination')
+                    ->delay(now()->addSeconds(5));
 
-                Log::info('Queued bulk update for all products with batch size', [
+                Log::info('شروع coordination برای همه محصولات', [
                     'license_id' => $license->id,
                     'batch_size' => $batchSize
                 ]);
             } else {
-                // تقسیم بارکدها به دسته‌های کوچکتر
-                $chunks = array_chunk($barcodes, $batchSize);
-                $totalChunks = count($chunks);
+                // استفاده از معماری جدید coordination برای barcodes خاص
+                CoordinateProductUpdate::dispatch($license->id, $barcodes)
+                    ->onQueue('product-coordination')
+                    ->delay(now()->addSeconds(5));
 
-                Log::info('Splitting bulk update into chunks', [
+                Log::info('شروع coordination برای محصولات خاص', [
                     'license_id' => $license->id,
-                    'total_barcodes' => count($barcodes),
-                    'batch_size' => $batchSize,
-                    'total_chunks' => $totalChunks
+                    'barcodes_count' => count($barcodes),
+                    'batch_size' => $batchSize
                 ]);
-
-                // ارسال هر دسته به صف با تاخیر افزایشی
-                foreach ($chunks as $index => $chunk) {
-                    // افزایش تاخیر برای هر دسته به منظور جلوگیری از اورلود شدن سرور
-                    $delaySeconds = 10 + ($index * 30); // 10 ثانیه اولیه + 30 ثانیه به ازای هر دسته
-
-                    // استفاده از job جدید ProcessProductBatch برای batch های کوچکتر
-                    \App\Jobs\ProcessProductBatch::dispatch($license->id, $chunk, 15)
-                        ->onQueue('products')
-                        ->delay(now()->addSeconds($delaySeconds));
-
-                    Log::info('Queued chunk for bulk update', [
-                        'license_id' => $license->id,
-                        'chunk_index' => $index + 1,
-                        'chunk_size' => count($chunk),
-                        'delay_seconds' => $delaySeconds,
-                        'estimated_completion' => now()->addSeconds($delaySeconds)->format('H:i:s'),
-                        'job_type' => 'ProcessProductBatch'
-                    ]);
-                }
             }
 
             return response()->json([
