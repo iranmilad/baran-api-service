@@ -472,7 +472,7 @@ class ProcessInvoice implements ShouldQueue
 
             // محاسبه مبلغ کل شامل هزینه ارسال
             $orderTotal = (float)$this->invoice->order_data['total'];
-            $deliveryCost = isset($this->invoice->order_data['delivery_cost']) ? (float)$this->invoice->order_data['delivery_cost'] : 0;
+            $deliveryCost = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
             $totalAmount = $orderTotal + $deliveryCost;
 
             Log::info('محاسبه مبلغ کل پرداخت', [
