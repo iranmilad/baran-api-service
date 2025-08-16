@@ -108,10 +108,11 @@ class ProcessInvoice implements ShouldQueue
                 Log::info('پاسخ خام GetCustomerByCode', [
                     'invoice_id' => $this->invoice->id,
                     'response_structure' => $responseJson ? array_keys($responseJson) : 'null_response',
-                    'has_result_key' => isset($responseJson['GetCustomerByCodeResult'])
+                    'has_result_key' => isset($responseJson['GetCustomerByCodeResult']),
+                    'result_value' => $responseJson['GetCustomerByCodeResult'] ?? 'not_set'
                 ]);
 
-                if (isset($responseJson['GetCustomerByCodeResult'])) {
+                if (isset($responseJson['GetCustomerByCodeResult']) && $responseJson['GetCustomerByCodeResult'] !== null) {
                     $resultString = $responseJson['GetCustomerByCodeResult'];
 
                     // بررسی اینکه آیا نتیجه یک JSON string است یا خود یک آرایه
@@ -127,20 +128,27 @@ class ProcessInvoice implements ShouldQueue
                     } else {
                         $customerResult = $resultString;
                     }
+
+                    // بررسی وجود CustomerID در نتیجه
+                    if (isset($customerResult['CustomerID']) && !empty($customerResult['CustomerID'])) {
+                        $customerExists = true;
+                    }
                 } else {
-                    // ممکن است پاسخ مستقیم در خود response باشد
-                    $customerResult = $responseJson;
+                    // GetCustomerByCodeResult null است - مشتری وجود ندارد
+                    Log::info('مشتری در RainSale وجود ندارد', [
+                        'invoice_id' => $this->invoice->id,
+                        'customer_mobile' => $this->invoice->customer_mobile
+                    ]);
+                    $customerResult = null;
+                    $customerExists = false;
                 }
 
                 Log::info('نتیجه پردازش شده مشتری', [
                     'invoice_id' => $this->invoice->id,
                     'customer_result_keys' => $customerResult ? array_keys($customerResult) : 'null_result',
-                    'has_customer_id' => isset($customerResult['CustomerID'])
+                    'has_customer_id' => isset($customerResult['CustomerID']),
+                    'customer_exists' => $customerExists
                 ]);
-
-                if (isset($customerResult['CustomerID']) && !empty($customerResult['CustomerID'])) {
-                    $customerExists = true;
-                }
             } else {
                 Log::error('درخواست GetCustomerByCode ناموفق', [
                     'invoice_id' => $this->invoice->id,
@@ -243,10 +251,11 @@ class ProcessInvoice implements ShouldQueue
                 Log::info('پاسخ خام GetCustomerByCode بعد از ثبت', [
                     'invoice_id' => $this->invoice->id,
                     'response_structure' => $responseJson ? array_keys($responseJson) : 'null_response',
-                    'has_result_key' => isset($responseJson['GetCustomerByCodeResult'])
+                    'has_result_key' => isset($responseJson['GetCustomerByCodeResult']),
+                    'result_value' => $responseJson['GetCustomerByCodeResult'] ?? 'not_set'
                 ]);
 
-                if (isset($responseJson['GetCustomerByCodeResult'])) {
+                if (isset($responseJson['GetCustomerByCodeResult']) && $responseJson['GetCustomerByCodeResult'] !== null) {
                     $resultString = $responseJson['GetCustomerByCodeResult'];
 
                     if (is_string($resultString)) {
@@ -262,7 +271,24 @@ class ProcessInvoice implements ShouldQueue
                         $customerResult = $resultString;
                     }
                 } else {
-                    $customerResult = $responseJson;
+                    // اگر بعد از ثبت هم null است، یعنی مشکلی در ثبت بوده
+                    Log::error('مشتری بعد از ثبت در RainSale پیدا نشد', [
+                        'invoice_id' => $this->invoice->id,
+                        'customer_mobile' => $this->invoice->customer_mobile
+                    ]);
+
+                    $this->invoice->update([
+                        'rain_sale_response' => [
+                            'error' => 'مشتری بعد از ثبت در RainSale پیدا نشد',
+                            'response' => $responseJson,
+                            'status' => 'error'
+                        ],
+                        'is_synced' => false,
+                        'sync_error' => $this->limitSyncError('مشتری بعد از ثبت در RainSale پیدا نشد')
+                    ]);
+
+                    $this->fail('مشتری بعد از ثبت در RainSale پیدا نشد');
+                    return;
                 }
 
                 Log::info('نتیجه پردازش شده مشتری بعد از ثبت', [
