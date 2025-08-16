@@ -206,14 +206,25 @@ class SyncWooCommerceProducts implements ShouldQueue
                 return null;
             }
 
+            $isVariant = $item['is_variant'] ?? false;
+            $parentId = (!empty($item['parent_id']) && trim($item['parent_id']) !== '') ? $item['parent_id'] : null;
+
+            // تعیین status بر اساس نوع محصول
+            $status = 'draft'; // پیش‌فرض همیشه draft
+            if ($isVariant && !empty($parentId)) {
+                // فقط واریانت‌هایی که والد دارند منتشر می‌شوند
+                $status = 'publish';
+            }
+            // کالای مادر و محصولات ساده همیشه draft می‌مانند
+
             $data = [
                 'unique_id' => $item['item_id'] ?? $item['ItemId'] ?? null,
                 'sku' => $item['barcode'] ?? $item['Barcode'] ?? '',
                 'item_id' => $item['item_id'] ?? $item['ItemId'] ?? null,
-                'status' => 'draft',
+                'status' => $status,
                 'barcode' => $item['barcode'] ?? $item['Barcode'] ?? '',
-                'is_variant' => $item['is_variant'] ?? false,
-                'parent_id' => (!empty($item['parent_id']) && trim($item['parent_id']) !== '') ? $item['parent_id'] : null
+                'is_variant' => $isVariant,
+                'parent_id' => $parentId
             ];
 
             // Add brand information if available

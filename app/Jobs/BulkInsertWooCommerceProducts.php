@@ -265,7 +265,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         $data = [
             'unique_id' => (string)$itemId,
             'sku' => (string)$barcode,
-            'status' => 'draft',
+            'status' => 'draft', // پیش‌فرض draft، بعداً تغییر می‌کند
             'manage_stock' => true,
             'stock_quantity' => (int)$totalCount,
             'stock_status' => (int)$totalCount > 0 ? 'instock' : 'outofstock'
@@ -277,34 +277,40 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
             // بررسی parent_id - اگر خالی باشد (null، empty string، یا فقط whitespace) یعنی محصول مادر است
             if (!empty($parentId) && trim($parentId) !== '') {
-                // این یک واریانت است که والد دارد - از variable استفاده می‌کنیم
+                // این یک واریانت است که والد دارد - منتشر می‌شود
                 $data['parent_unique_id'] = $parentId; // استفاده از parent_unique_id به جای parent_id
                 $data['type'] = 'variable'; // تغییر از variation به variable
+                $data['status'] = 'publish'; // فقط واریانت‌ها منتشر می‌شوند
 
                 // حذف parent_id چون از parent_unique_id استفاده می‌کنیم
                 unset($data['parent_id']);
 
-                Log::info('محصول متغیر (واریانت) با شناسه یکتای والد', [
+                Log::info('محصول متغیر (واریانت) با شناسه یکتای والد - منتشر شده', [
                     'barcode' => $barcode,
                     'parent_unique_id' => $parentId,
-                    'type' => 'variable' // تغییر از variation به variable
+                    'type' => 'variable',
+                    'status' => 'publish'
                 ]);
             } else {
-                // محصول متغیر بدون والد، یعنی خود محصول مادر است (variable product)
+                // محصول متغیر بدون والد، یعنی خود محصول مادر است (variable product) - همیشه پیش‌نویس می‌ماند
                 $data['type'] = 'variable';
-                Log::info('محصول متغیر مادر (parent product)', [
+                $data['status'] = 'draft'; // کالای مادر همیشه پیش‌نویس
+                Log::info('محصول متغیر مادر (parent product) - پیش‌نویس', [
                     'barcode' => $barcode,
                     'item_id' => $itemId,
                     'type' => 'variable',
+                    'status' => 'draft',
                     'parent_id_received' => $parentId
                 ]);
             }
         } else {
-            // محصول عادی (غیر متغیر)
+            // محصول عادی (غیر متغیر) - همیشه پیش‌نویس درج می‌شود
             $data['type'] = 'simple';
-            Log::info('محصول ساده', [
+            $data['status'] = 'draft'; // محصولات ساده هم پیش‌نویس درج می‌شوند
+            Log::info('محصول ساده - پیش‌نویس', [
                 'barcode' => $barcode,
-                'type' => 'simple'
+                'type' => 'simple',
+                'status' => 'draft'
             ]);
         }
 
@@ -760,6 +766,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                                     'chunk_index' => $index,
                                     'license_id' => $this->license_id
                                 ]);
+
                             } else if (isset($createdProduct['error'])) {
                                 $errorCount++;
                                 $failedProducts[] = [
