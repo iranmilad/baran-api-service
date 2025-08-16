@@ -275,6 +275,9 @@ class ProcessSingleProductBatch implements ShouldQueue
     {
         return [
             'id' => $product['variation_id'] ?: $product['product_id'],
+            'product_id' => $product['product_id'],
+            'variation_id' => $product['variation_id'],
+            'is_variation' => !empty($product['variation_id']),
             'regular_price' => (string) $product['regular_price'],
             'stock_quantity' => (int) $product['stock_quantity'],
             'meta_data' => [
@@ -295,17 +298,57 @@ class ProcessSingleProductBatch implements ShouldQueue
             // به‌روزرسانی یکی یکی برای جلوگیری از timeout
             foreach ($productsToUpdate as $product) {
                 try {
-                    $woocommerce->put('products/' . $product['id'], $product);
+                    // تشخیص نوع محصول و استفاده از endpoint مناسب
+                    if ($product['is_variation'] && !empty($product['variation_id']) && !empty($product['product_id'])) {
+                        // واریانت محصول - استفاده از endpoint واریانت
+                        $endpoint = 'products/' . $product['product_id'] . '/variations/' . $product['variation_id'];
 
-                    Log::info('محصول به‌روزرسانی شد', [
+                        // حذف فیلدهای اضافی که برای endpoint واریانت ضروری نیست
+                        $updateData = [
+                            'regular_price' => $product['regular_price'],
+                            'stock_quantity' => $product['stock_quantity'],
+                            'meta_data' => $product['meta_data']
+                        ];
+
+                        Log::info('به‌روزرسانی واریانت محصول', [
+                            'license_id' => $this->licenseId,
+                            'product_id' => $product['product_id'],
+                            'variation_id' => $product['variation_id'],
+                            'endpoint' => $endpoint
+                        ]);
+                    } else {
+                        // محصول اصلی - استفاده از endpoint معمولی
+                        $endpoint = 'products/' . $product['id'];
+
+                        $updateData = [
+                            'regular_price' => $product['regular_price'],
+                            'stock_quantity' => $product['stock_quantity'],
+                            'meta_data' => $product['meta_data']
+                        ];
+
+                        Log::info('به‌روزرسانی محصول اصلی', [
+                            'license_id' => $this->licenseId,
+                            'product_id' => $product['id'],
+                            'endpoint' => $endpoint
+                        ]);
+                    }
+
+                    $response = $woocommerce->put($endpoint, $updateData);
+
+                    Log::info('محصول با موفقیت به‌روزرسانی شد', [
                         'license_id' => $this->licenseId,
-                        'product_id' => $product['id']
+                        'product_id' => $product['id'],
+                        'is_variation' => $product['is_variation'],
+                        'endpoint' => $endpoint
                     ]);
 
                 } catch (\Exception $e) {
                     Log::warning('خطا در به‌روزرسانی محصول منفرد', [
                         'license_id' => $this->licenseId,
                         'product_id' => $product['id'],
+                        'is_variation' => $product['is_variation'] ?? false,
+                        'variation_id' => $product['variation_id'] ?? null,
+                        'parent_product_id' => $product['product_id'] ?? null,
                         'error' => $e->getMessage()
                     ]);
                 }
