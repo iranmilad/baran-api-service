@@ -481,44 +481,26 @@ class ProcessInvoice implements ShouldQueue
                     return;
                 }
 
-                // آماده‌سازی مقادیر ItemId
-                $itemId = $item['unique_id'];
+                // آماده‌سازی مقادیر ItemId - بررسی ساختار unique_id
+                if (is_array($item['unique_id']) && isset($item['unique_id']['unique_id'])) {
+                    // اگر unique_id یک object است که خود unique_id و barcode دارد
+                    $itemId = $item['unique_id']['unique_id'];
+                    Log::info('استخراج unique_id از object', [
+                        'invoice_id' => $this->invoice->id,
+                        'item_index' => $index,
+                        'extracted_unique_id' => $itemId,
+                        'original_structure' => $item['unique_id']
+                    ]);
+                } else {
+                    // اگر unique_id یک string است
+                    $itemId = $item['unique_id'];
+                    Log::info('استفاده از unique_id به صورت string', [
+                        'invoice_id' => $this->invoice->id,
+                        'item_index' => $index,
+                        'unique_id' => $itemId
+                    ]);
+                }
 
-                // دریافت اطلاعات محصول از دیتابیس برای استخراج بارکد
-                // $product = \App\Models\Product::where('item_id', $itemId)->first();
-
-                // if (!$product || empty($product->barcode)) {
-                //     $errorMessage = 'بارکد برای آیتم با کد یکتا ' . $itemId . ' نامعتبر است';
-
-                //     Log::error('بارکد محصول یافت نشد یا نامعتبر است', [
-                //         'invoice_id' => $this->invoice->id,
-                //         'order_id' => $this->invoice->woocommerce_order_id,
-                //         'item_index' => $index,
-                //         'item' => $item,
-                //         'item_id' => $itemId,
-                //         'product_found' => (bool) $product,
-                //         'barcode_empty' => empty($product->barcode ?? null)
-                //     ]);
-
-                //     // ذخیره خطا در دیتابیس
-                //     $this->invoice->update([
-                //         'rain_sale_response' => [
-                //             'function' => 'SaveSaleInvoiceByOrder',
-                //             'error' => $errorMessage,
-                //             'item_index' => $index,
-                //             'item_data' => $item,
-                //             'status' => 'error'
-                //         ],
-                //         'is_synced' => false,
-                //         'sync_error' => $this->limitSyncError($errorMessage)
-                //     ]);
-
-                //     // ارسال خطا به ووکامرس
-                //     $this->updateWooCommerceStatus(false, $errorMessage);
-                //     return;
-                // }
-
-                // $barcode = $product->barcode;
 
                 // محاسبه مقدار total در صورت عدم وجود
                 $itemPrice = (float)$item['price'];
