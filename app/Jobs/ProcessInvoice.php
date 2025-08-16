@@ -470,8 +470,17 @@ class ProcessInvoice implements ShouldQueue
                 $paymentTypeId = 1; // پرداخت نقدی
             }
 
-            $totalAmount = (float)$this->invoice->order_data['total'];
+            // محاسبه مبلغ کل شامل هزینه ارسال
+            $orderTotal = (float)$this->invoice->order_data['total'];
+            $deliveryCost = isset($this->invoice->order_data['delivery_cost']) ? (float)$this->invoice->order_data['delivery_cost'] : 0;
+            $totalAmount = $orderTotal + $deliveryCost;
 
+            Log::info('محاسبه مبلغ کل پرداخت', [
+                'invoice_id' => $this->invoice->id,
+                'order_total' => $orderTotal,
+                'delivery_cost' => $deliveryCost,
+                'final_total' => $totalAmount
+            ]);
 
             $payments[] = [
                 'Amount' => $totalAmount,
@@ -493,7 +502,7 @@ class ProcessInvoice implements ShouldQueue
                     'Payments' => $payments,
                     'StoreId' => $this->user->api_storeId,
                     'UserId' => $this->user->api_userId,
-                    'DeliveryCost' => isset($this->invoice->order_data['delivery_cost']) ? (float)$this->invoice->order_data['delivery_cost'] : 0
+                    'DeliveryCost' => $deliveryCost
                 ],
                 'useCredit' => false
             ];
