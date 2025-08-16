@@ -252,6 +252,12 @@ class ProcessInvoice implements ShouldQueue
                 // بررسی وجود CustomerID در نتیجه
                 if ($customerResult && isset($customerResult['CustomerID']) && !empty($customerResult['CustomerID'])) {
                     $customerExists = true;
+
+                    Log::info('مشتری در RainSale یافت شد', [
+                        'invoice_id' => $this->invoice->id,
+                        'customer_id' => $customerResult['CustomerID'],
+                        'customer_mobile' => $this->invoice->customer_mobile
+                    ]);
                 }
             } else {
                 Log::error('درخواست GetCustomerByCode ناموفق', [
