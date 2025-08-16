@@ -218,8 +218,8 @@ class ProcessSingleProductBatch implements ShouldQueue
                         'barcode' => $rainProduct["Barcode"],
                         'unique_id' => $rainProduct["ItemID"],
                         'name' => $rainProduct["Name"],
-                        'regular_price' => $rainProduct["Price"],
-                        'stock_quantity' => $rainProduct["CurrentUnitCount"],
+                        'regular_price' => $rainProduct["Price"], // قیمت از RainSale
+                        'stock_quantity' => $rainProduct["CurrentUnitCount"], // موجودی از RainSale
                         'product_id' => $wooProduct['product_id'],
                         'variation_id' => $wooProduct['variation_id']
                     ], $userSettings);
@@ -273,13 +273,11 @@ class ProcessSingleProductBatch implements ShouldQueue
      */
     private function prepareProductData($product, $userSettings)
     {
-        return [
+        $data = [
             'id' => $product['variation_id'] ?: $product['product_id'],
             'product_id' => $product['product_id'],
             'variation_id' => $product['variation_id'],
             'is_variation' => !empty($product['variation_id']),
-            'regular_price' => (string) $product['regular_price'],
-            'stock_quantity' => (int) $product['stock_quantity'],
             'meta_data' => [
                 [
                     'key' => '_bim_unique_id',
@@ -287,6 +285,46 @@ class ProcessSingleProductBatch implements ShouldQueue
                 ]
             ]
         ];
+
+        // بررسی تنظیمات کاربر برای قیمت
+        if ($userSettings->enable_price_update) {
+            $data['regular_price'] = (string) $product['regular_price'];
+
+            Log::info('قیمت محصول به‌روزرسانی می‌شود', [
+                'license_id' => $this->licenseId,
+                'product_id' => $product['product_id'],
+                'variation_id' => $product['variation_id'] ?? null,
+                'regular_price' => $product['regular_price']
+            ]);
+        }
+
+        // بررسی تنظیمات کاربر برای موجودی
+        if ($userSettings->enable_stock_update) {
+            $data['stock_quantity'] = (int) $product['stock_quantity'];
+            $data['manage_stock'] = true;
+            $data['stock_status'] = (int) $product['stock_quantity'] > 0 ? 'instock' : 'outofstock';
+
+            Log::info('موجودی محصول به‌روزرسانی می‌شود', [
+                'license_id' => $this->licenseId,
+                'product_id' => $product['product_id'],
+                'variation_id' => $product['variation_id'] ?? null,
+                'stock_quantity' => $product['stock_quantity']
+            ]);
+        }
+
+        // بررسی تنظیمات کاربر برای نام محصول
+        if ($userSettings->enable_name_update && !empty($product['name'])) {
+            $data['name'] = $product['name'];
+
+            Log::info('نام محصول به‌روزرسانی می‌شود', [
+                'license_id' => $this->licenseId,
+                'product_id' => $product['product_id'],
+                'variation_id' => $product['variation_id'] ?? null,
+                'name' => $product['name']
+            ]);
+        }
+
+        return $data;
     }
 
     /**

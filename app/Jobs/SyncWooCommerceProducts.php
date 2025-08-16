@@ -218,11 +218,11 @@ class SyncWooCommerceProducts implements ShouldQueue
             // کالای مادر و محصولات ساده همیشه draft می‌مانند
 
             $data = [
-                'unique_id' => $item['item_id'] ?? $item['ItemId'] ?? null,
-                'sku' => $item['barcode'] ?? $item['Barcode'] ?? '',
-                'item_id' => $item['item_id'] ?? $item['ItemId'] ?? null,
+                'unique_id' => $item['ItemID'] ?? $item['item_id'] ?? $item['ItemId'] ?? null,
+                'sku' => $item['Barcode'] ?? $item['barcode'] ?? '',
+                'item_id' => $item['ItemID'] ?? $item['item_id'] ?? $item['ItemId'] ?? null,
                 'status' => $status,
-                'barcode' => $item['barcode'] ?? $item['Barcode'] ?? '',
+                'barcode' => $item['Barcode'] ?? $item['barcode'] ?? '',
                 'is_variant' => $isVariant,
                 'parent_id' => $parentId
             ];
@@ -239,20 +239,28 @@ class SyncWooCommerceProducts implements ShouldQueue
             // For inserts, name is always required by WooCommerce API
             // For updates, we respect the enable_name_update setting
             if ($this->operation === 'insert' || $userSettings->enable_name_update) {
-                $data['name'] = $item['name'] ?? $item['item_name'] ?? $item['ItemName'] ?? '';
+                $data['name'] = $item['Name'] ?? $item['name'] ?? $item['item_name'] ?? $item['ItemName'] ?? '';
             }
 
             // برای درج، همیشه قیمت و موجودی را شامل کن
             if ($this->operation === 'insert' || $userSettings->enable_price_update) {
-                $data['regular_price'] = (string)($item['price_amount'] ?? $item['PriceAmount'] ?? 0);
-                if (!empty($item['price_after_discount'] ?? $item['PriceAfterDiscount']) && ($item['price_after_discount'] ?? $item['PriceAfterDiscount']) > 0) {
-                    $data['sale_price'] = (string)($item['price_after_discount'] ?? $item['PriceAfterDiscount']);
+                // استفاده از ساختار صحیح RainSale API
+                $regularPrice = (float)($item['Price'] ?? $item['price'] ?? $item['price_amount'] ?? $item['PriceAmount'] ?? 0);
+                $data['regular_price'] = (string)$regularPrice;
+
+                // محاسبه قیمت با تخفیف از CurrentDiscount
+                $currentDiscount = (float)($item['CurrentDiscount'] ?? $item['current_discount'] ?? 0);
+                if ($currentDiscount > 0 && $regularPrice > 0) {
+                    $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
+                    $data['sale_price'] = (string)$salePrice;
                 }
             }
 
             if ($this->operation === 'insert' || $userSettings->enable_stock_update) {
-                $data['stock_quantity'] = (int)($item['total_count'] ?? $item['TotalCount'] ?? 0);
-                $data['stock_status'] = ($item['total_count'] ?? $item['TotalCount'] ?? 0) > 0 ? 'instock' : 'outofstock';
+                // استفاده از ساختار صحیح RainSale API
+                $stockQuantity = (int)($item['CurrentUnitCount'] ?? $item['current_unit_count'] ?? $item['total_count'] ?? $item['TotalCount'] ?? 0);
+                $data['stock_quantity'] = $stockQuantity;
+                $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
                 $data['manage_stock'] = true;
             }
 

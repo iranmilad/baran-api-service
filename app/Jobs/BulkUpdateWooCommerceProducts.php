@@ -68,15 +68,16 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
             $productsToInsert = [];
 
             foreach ($this->products as $product) {
-                if (empty($product['item_id'])) {
+                // بررسی وجود محصول در دیتابیس
+                $itemId = $product['ItemID'] ?? $product['item_id'] ?? $product['ItemId'] ?? null;
+                if (empty($itemId)) {
                     Log::warning('شناسه یکتای محصول خالی است', [
                         'product' => $product
                     ]);
                     continue;
                 }
 
-                // بررسی وجود محصول در دیتابیس
-                $existingProduct = Product::where('item_id', $product['item_id'])
+                $existingProduct = Product::where('item_id', $itemId)
                     ->where('license_id', $this->license_id)
                     ->first();
 
@@ -85,7 +86,7 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                     $productsToUpdate[] = $this->prepareProductData($product, $userSetting);
                 } else {
                     // محصول وجود ندارد، به عنوان محصول جدید درج کن
-                    Log::info("محصول با item_id {$product['item_id']} در دیتابیس یافت نشد، به عنوان محصول جدید درج می‌شود");
+                    Log::info("محصول با ItemID {$itemId} در دیتابیس یافت نشد، به عنوان محصول جدید درج می‌شود");
                     $productsToInsert[] = $product;
                 }
             }
@@ -280,44 +281,93 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
         // تبدیل به آرایه اگر آبجکت است
         $productData = is_array($product) ? $product : (array)$product;
 
+        // لاگ کردن داده‌های ورودی برای debugging
+        Log::info('آماده‌سازی داده‌های محصول برای به‌روزرسانی', [
+            'license_id' => $this->license_id,
+            'item_id' => $productData['ItemID'] ?? $productData['item_id'] ?? $productData['ItemId'] ?? 'نامشخص',
+            'received_fields' => array_keys($productData),
+            'enable_price_update' => $userSetting->enable_price_update,
+            'enable_stock_update' => $userSetting->enable_stock_update,
+            'enable_name_update' => $userSetting->enable_name_update
+        ]);
+
         $data = [
-            'unique_id' => (string)$productData['item_id'],
-            'sku' => (string)($productData['barcode'] ?? $productData['sku'] ?? '')
+            'unique_id' => (string)($productData['ItemID'] ?? $productData['item_id']),
+            'sku' => (string)($productData['Barcode'] ?? $productData['barcode'] ?? $productData['sku'] ?? '')
         ];
 
         if ($userSetting->enable_name_update) {
-            $data['name'] = $productData['name'] ?? $productData['item_name'] ?? '';
+            $data['name'] = $productData['Name'] ?? $productData['name'] ?? $productData['item_name'] ?? $productData['ItemName'] ?? '';
         }
 
         if ($userSetting->enable_price_update) {
-            // استفاده از price_amount برای قیمت اصلی
-            $regularPrice = (float)($productData['regular_price'] ?? 0);
+            // استفاده از فیلدهای صحیح RainSale API بر اساس response structure
+            // Response: {"GetItemInfosResult": [{"Price": 490000000.000, ...}]}
+            $regularPrice = (float)($productData['Price'] ?? $productData['price'] ?? $productData['price_amount'] ?? $productData['PriceAmount'] ?? $productData['regular_price'] ?? 0);
 
-            // استفاده از price_after_discount برای قیمت با تخفیف
-            $salePrice = (float)($productData['sale_price'] ?? 0);
+            // برای قیمت با تخفیف از CurrentDiscount استفاده می‌کنیم
+            $currentDiscount = (float)($productData['CurrentDiscount'] ?? $productData['current_discount'] ?? 0);
+            $salePrice = 0;
+
+            // محاسبه قیمت با تخفیف اگر تخفیف وجود دارد
+            if ($currentDiscount > 0) {
+                $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
+            }
+
+            // لاگ کردن قیمت‌های دریافتی
+            Log::info('قیمت‌های دریافت شده برای محصول', [
+                'license_id' => $this->license_id,
+                'item_id' => $productData['ItemID'] ?? $productData['item_id'] ?? 'نامشخص',
+                'regular_price_raw' => $regularPrice,
+                'current_discount' => $currentDiscount,
+                'calculated_sale_price' => $salePrice,
+                'rain_sale_unit' => $userSetting->rain_sale_price_unit,
+                'woocommerce_unit' => $userSetting->woocommerce_price_unit
+            ]);
 
             // تبدیل قیمت‌ها به واحد ووکامرس
-            $data['regular_price'] = (string)$this->convertPriceUnit(
-                $regularPrice,
-                $userSetting->rain_sale_price_unit,
-                $userSetting->woocommerce_price_unit
-            );
-
-            // اگر قیمت با تخفیف کمتر از قیمت اصلی است، آن را تنظیم می‌کنیم
-            if ($salePrice > 0 && $salePrice < $regularPrice) {
-                $data['sale_price'] = (string)$this->convertPriceUnit(
-                    $salePrice,
+            if ($regularPrice > 0) {
+                $data['regular_price'] = (string)$this->convertPriceUnit(
+                    $regularPrice,
                     $userSetting->rain_sale_price_unit,
                     $userSetting->woocommerce_price_unit
                 );
+
+                // اگر تخفیف وجود دارد، قیمت فروش را تنظیم می‌کنیم
+                if ($salePrice > 0 && $salePrice < $regularPrice) {
+                    $data['sale_price'] = (string)$this->convertPriceUnit(
+                        $salePrice,
+                        $userSetting->rain_sale_price_unit,
+                        $userSetting->woocommerce_price_unit
+                    );
+                }
             }
         }
 
         if ($userSetting->enable_stock_update) {
+            // استفاده از فیلدهای صحیح RainSale API برای موجودی
+            // Response: {"GetItemInfosResult": [{"CurrentUnitCount": 0, ...}]}
+            $stockQuantity = (int)($productData['CurrentUnitCount'] ?? $productData['current_unit_count'] ?? $productData['total_count'] ?? $productData['TotalCount'] ?? $productData['stock_quantity'] ?? 0);
+
+            // لاگ کردن موجودی دریافتی
+            Log::info('موجودی دریافت شده برای محصول', [
+                'license_id' => $this->license_id,
+                'item_id' => $productData['ItemID'] ?? $productData['item_id'] ?? 'نامشخص',
+                'stock_quantity' => $stockQuantity,
+                'barcode' => $productData['Barcode'] ?? $productData['barcode'] ?? 'نامشخص'
+            ]);
+
             $data['manage_stock'] = true;
-            $data['stock_quantity'] = (int)($productData['stock_quantity'] ?? 0);
-            $data['stock_status'] = ($productData['stock_quantity'] ?? 0) > 0 ? 'instock' : 'outofstock';
+            $data['stock_quantity'] = $stockQuantity;
+            $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
         }
+
+        // لاگ کردن داده‌های نهایی آماده شده
+        Log::info('داده‌های نهایی آماده شده برای WooCommerce', [
+            'license_id' => $this->license_id,
+            'item_id' => $productData['ItemID'] ?? $productData['item_id'] ?? $productData['ItemId'] ?? 'نامشخص',
+            'prepared_data' => $data
+        ]);
 
         return $data;
     }
