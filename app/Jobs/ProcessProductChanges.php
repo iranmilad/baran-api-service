@@ -20,9 +20,9 @@ class ProcessProductChanges implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $tries = 3; // تعداد تلاش‌های مجدد
-    public $timeout = 120; // زمان‌بندی اجرا (ثانیه)
+    public $timeout = 50; // کاهش زمان‌بندی اجرا به 50 ثانیه
     public $maxExceptions = 3; // حداکثر تعداد خطاها
-    public $backoff = [30, 60, 120]; // زمان انتظار بین تلاش‌های مجدد (ثانیه)
+    public $backoff = [15, 30, 60]; // کاهش زمان انتظار بین تلاش‌های مجدد (ثانیه)
 
     protected $changes;
     protected $license_id;

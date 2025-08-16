@@ -21,9 +21,9 @@ class UpdateWooCommerceProducts implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $tries = 3;
-    public $timeout = 900; // افزایش تایم‌اوت به 15 دقیقه
+    public $timeout = 55; // کاهش تایم‌اوت به 55 ثانیه
     public $maxExceptions = 3;
-    public $backoff = [180, 300, 600]; // افزایش به 3، 5 و 10 دقیقه
+    public $backoff = [10, 30, 60]; // کاهش به 10، 30 و 60 ثانیه
 
     protected $products;
     protected $license_id;

@@ -166,13 +166,13 @@ class ProductController extends Controller
                 }
 
                 // Process changes in batches
-                $batchSize = 10;
+                $batchSize = 5; // کاهش اندازه batch از 10 به 5
                 foreach (array_chunk($changes, $batchSize) as $batchIndex => $batch) {
                     try {
                         // Dispatch batch changes to queue with increasing delay
                         ProcessProductChanges::dispatch($batch, $license->id)
                             ->onQueue('products')
-                            ->delay(now()->addSeconds($batchIndex * 15));
+                            ->delay(now()->addSeconds($batchIndex * 20)); // افزایش delay از 15 به 20
 
                     } catch (\Exception $e) {
                         Log::error('Error dispatching batch: ' . $e->getMessage());
@@ -259,8 +259,8 @@ class ProductController extends Controller
             // دریافت barcodes از درخواست
             $barcodes = $request->input('barcodes', []);
 
-            // تعیین اندازه هر دسته (بهتر است که دسته‌های کوچکتر باشند تا از مشکلات جلوگیری شود)
-            $batchSize = 100; // هر دسته حداکثر 100 محصول
+            // تعیین اندازه هر دسته - کاهش برای جلوگیری از timeout
+            $batchSize = 50; // کاهش از 100 به 50 محصول در هر دسته
 
             // ثبت لاگ قبل از شروع عملیات به‌روزرسانی
             Log::info('Bulk update request received', [
@@ -268,6 +268,7 @@ class ProductController extends Controller
                 'website_url' => $license->website_url,
                 'barcodes_count' => count($barcodes),
                 'update_type' => empty($barcodes) ? 'all_products' : 'selected_products',
+                'batch_size' => $batchSize,
                 'timestamp' => now()->toDateTimeString()
             ]);
 
@@ -276,7 +277,7 @@ class ProductController extends Controller
                 // صف یکپارچه برای همه محصولات با تنظیم پارامتر batch_size
                 UpdateWooCommerceProducts::dispatch($license->id, 'bulk', [], $batchSize)
                     ->onQueue('bulk-update')
-                    ->delay(now()->addSeconds(5));
+                    ->delay(now()->addSeconds(10)); // افزایش delay
 
                 Log::info('Queued bulk update for all products with batch size', [
                     'license_id' => $license->id,
@@ -297,7 +298,7 @@ class ProductController extends Controller
                 // ارسال هر دسته به صف با تاخیر افزایشی
                 foreach ($chunks as $index => $chunk) {
                     // افزایش تاخیر برای هر دسته به منظور جلوگیری از اورلود شدن سرور
-                    $delaySeconds = 5 + ($index * 30); // 5 ثانیه اولیه + 30 ثانیه به ازای هر دسته
+                    $delaySeconds = 10 + ($index * 45); // 10 ثانیه اولیه + 45 ثانیه به ازای هر دسته
 
                     UpdateWooCommerceProducts::dispatch($license->id, 'bulk', $chunk, $batchSize)
                         ->onQueue('bulk-update')
@@ -307,7 +308,8 @@ class ProductController extends Controller
                         'license_id' => $license->id,
                         'chunk_index' => $index + 1,
                         'chunk_size' => count($chunk),
-                        'delay_seconds' => $delaySeconds
+                        'delay_seconds' => $delaySeconds,
+                        'estimated_completion' => now()->addSeconds($delaySeconds)->format('H:i:s')
                     ]);
                 }
             }

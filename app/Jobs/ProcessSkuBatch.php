@@ -20,6 +20,26 @@ class ProcessSkuBatch implements ShouldQueue
     protected $skus;
 
     /**
+     * The number of times the job may be attempted.
+     */
+    public $tries = 3;
+
+    /**
+     * The maximum number of unhandled exceptions to allow before failing.
+     */
+    public $maxExceptions = 2;
+
+    /**
+     * The number of seconds the job can run before timing out.
+     */
+    public $timeout = 45; // 45 ثانیه
+
+    /**
+     * Calculate the number of seconds to wait before retrying the job.
+     */
+    public $backoff = [5, 15, 30];
+
+    /**
      * Create a new job instance.
      */
     public function __construct($licenseId, $skus)

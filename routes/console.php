@@ -3,6 +3,8 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /*
 |--------------------------------------------------------------------------
@@ -20,14 +22,60 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::call(function () {
-    \Log::info('Cron schedule executed at: ' . now());
+    Log::info('Cron schedule executed at: ' . now());
 })->everyTenMinutes();
 
-Schedule::command('queue:work --queue=category,woocommerce,woocommerce-update,invoices,default,products,bulk-update,woocommerce-insert,woocommerce-sync,unique-ids-sync,empty-unique-ids --stop-when-empty --max-jobs=50')
+Schedule::command('queue:work --queue=invoices,products,bulk-update,empty-unique-ids,unique-ids-sync,category,woocommerce,woocommerce-update,woocommerce-insert,woocommerce-sync,default --tries=3 --max-jobs=50 --stop-when-empty')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer()
     ->appendOutputTo(storage_path('logs/queue_work.log'));
+
+// Worker مخصوص برای invoice های حساس با timeout بالاتر
+Schedule::command('queue:work --queue=invoices --timeout=300 --tries=3 --max-jobs=10 --stop-when-empty --memory=256')
+    ->everyTwoMinutes()
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->appendOutputTo(storage_path('logs/queue_invoices.log'));
+
+// Restart workers هر 30 دقیقه برای جلوگیری از memory leak
+Schedule::command('queue:restart')
+    ->everyThirtyMinutes()
+    ->onOneServer();
+
+// پاک کردن failed jobs قدیمی‌تر از 7 روز
+Schedule::command('queue:flush')
+    ->weekly()
+    ->sundays()
+    ->at('02:00')
+    ->onOneServer();
+
+// Log پاک کردن برای monitoring
+Schedule::call(function () {
+    $failedJobs = DB::table('failed_jobs')->count();
+    $totalJobs = DB::table('jobs')->count();
+
+    Log::info('Queue monitoring report', [
+        'failed_jobs_count' => $failedJobs,
+        'pending_jobs_count' => $totalJobs,
+        'timestamp' => now()->toDateTimeString()
+    ]);
+})->hourly();
+
+// بررسی و پردازش فاکتورهای pending هر 15 دقیقه
+Schedule::call(function () {
+    $pendingInvoices = DB::table('invoices')
+        ->where('is_synced', false)
+        ->whereNull('sync_error')
+        ->count();
+
+    if ($pendingInvoices > 0) {
+        Log::info('Found pending invoices for processing', [
+            'pending_count' => $pendingInvoices,
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    }
+})->everyFifteenMinutes();
 
 
 
