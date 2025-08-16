@@ -408,40 +408,40 @@ class ProcessInvoice implements ShouldQueue
                 $itemId = $item['unique_id'];
 
                 // دریافت اطلاعات محصول از دیتابیس برای استخراج بارکد
-                $product = \App\Models\Product::where('item_id', $itemId)->first();
+                // $product = \App\Models\Product::where('item_id', $itemId)->first();
 
-                if (!$product || empty($product->barcode)) {
-                    $errorMessage = 'بارکد برای آیتم با کد یکتا ' . $itemId . ' نامعتبر است';
+                // if (!$product || empty($product->barcode)) {
+                //     $errorMessage = 'بارکد برای آیتم با کد یکتا ' . $itemId . ' نامعتبر است';
 
-                    Log::error('بارکد محصول یافت نشد یا نامعتبر است', [
-                        'invoice_id' => $this->invoice->id,
-                        'order_id' => $this->invoice->woocommerce_order_id,
-                        'item_index' => $index,
-                        'item' => $item,
-                        'item_id' => $itemId,
-                        'product_found' => (bool) $product,
-                        'barcode_empty' => empty($product->barcode ?? null)
-                    ]);
+                //     Log::error('بارکد محصول یافت نشد یا نامعتبر است', [
+                //         'invoice_id' => $this->invoice->id,
+                //         'order_id' => $this->invoice->woocommerce_order_id,
+                //         'item_index' => $index,
+                //         'item' => $item,
+                //         'item_id' => $itemId,
+                //         'product_found' => (bool) $product,
+                //         'barcode_empty' => empty($product->barcode ?? null)
+                //     ]);
 
-                    // ذخیره خطا در دیتابیس
-                    $this->invoice->update([
-                        'rain_sale_response' => [
-                            'function' => 'SaveSaleInvoiceByOrder',
-                            'error' => $errorMessage,
-                            'item_index' => $index,
-                            'item_data' => $item,
-                            'status' => 'error'
-                        ],
-                        'is_synced' => false,
-                        'sync_error' => $this->limitSyncError($errorMessage)
-                    ]);
+                //     // ذخیره خطا در دیتابیس
+                //     $this->invoice->update([
+                //         'rain_sale_response' => [
+                //             'function' => 'SaveSaleInvoiceByOrder',
+                //             'error' => $errorMessage,
+                //             'item_index' => $index,
+                //             'item_data' => $item,
+                //             'status' => 'error'
+                //         ],
+                //         'is_synced' => false,
+                //         'sync_error' => $this->limitSyncError($errorMessage)
+                //     ]);
 
-                    // ارسال خطا به ووکامرس
-                    $this->updateWooCommerceStatus(false, $errorMessage);
-                    return;
-                }
+                //     // ارسال خطا به ووکامرس
+                //     $this->updateWooCommerceStatus(false, $errorMessage);
+                //     return;
+                // }
 
-                $barcode = $product->barcode;
+                // $barcode = $product->barcode;
 
                 // محاسبه مقدار total در صورت عدم وجود
                 $itemPrice = (float)$item['price'];
@@ -451,7 +451,7 @@ class ProcessInvoice implements ShouldQueue
                 $items[] = [
                     'IsPriceWithTax' => true,
                     'ItemId' => $itemId,
-                    'Barcode' => $barcode,
+                    //'Barcode' => $barcode,
                     'LineItemID' => count($items) + 1,
                     'NetAmount' => $total,
                     'OperationType' => 1,
