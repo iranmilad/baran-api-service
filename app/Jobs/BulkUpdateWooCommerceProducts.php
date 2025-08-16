@@ -125,7 +125,7 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                         ]);
 
                         try {
-                            $response = Http::withOptions([
+                            $httpClient = Http::withOptions([
                                 'verify' => false,
                                 'timeout' => 180,
                                 'connect_timeout' => 60
@@ -152,7 +152,21 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                             ])->withBasicAuth(
                                 $wooCommerceApiKey->api_key,
                                 $wooCommerceApiKey->api_secret
-                            )->put($license->website_url . '/wp-json/wc/v3/products/unique/batch/update', [
+                            );
+
+                            // لاگ کردن ساختار دقیق درخواست برای بررسی
+                            Log::info('ارسال درخواست batch update به ووکامرس', [
+                                'license_id' => $this->license_id,
+                                'chunk_index' => $index + 1,
+                                'url' => $license->website_url . '/wp-json/wc/v3/products/unique/batch/update',
+                                'products_count' => count($chunk),
+                                'sample_product' => $chunk[0] ?? null, // نمونه اول برای بررسی ساختار
+                                'request_structure' => [
+                                    'products' => count($chunk)
+                                ]
+                            ]);
+
+                            $response = $httpClient->put($license->website_url . '/wp-json/wc/v3/products/unique/batch/update', [
                                 'products' => $chunk
                             ]);
                         } catch (\Exception $connectionException) {
