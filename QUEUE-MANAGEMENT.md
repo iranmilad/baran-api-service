@@ -122,9 +122,17 @@ php artisan queue:work --verbose --timeout=60 --tries=1
 ## صفوف (Queues) موجود
 
 - `invoices`: پردازش فاکتورها (timeout: 300s)
-- `products`: تغییرات محصولات (timeout: 60s)  
-- `bulk-update`: به‌روزرسانی انبوه (timeout: 120s)
+- `products`: تغییرات محصولات و batch processing (timeout: 40-60s)  
+- `bulk-update`: به‌روزرسانی انبوه (timeout: 55s)
 - `empty-unique-ids`: پردازش کدهای یکتا خالی (timeout: 60s)
 - `unique-ids-sync`: همگام‌سازی کدهای یکتا (timeout: 60s)
 - `category`: دسته‌بندی‌ها (timeout: 60s)
 - `default`: پیش‌فرض (timeout: 60s)
+
+## Job های جدید
+
+### ProcessProductBatch
+- **هدف**: پردازش batch های کوچک محصولات (10-15 آیتم)
+- **Timeout**: 40 ثانیه
+- **مزایا**: جلوگیری از timeout در bulk operations
+- **استفاده**: جایگزین UpdateWooCommerceProducts برای batch های کوچک

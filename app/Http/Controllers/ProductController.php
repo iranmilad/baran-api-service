@@ -298,10 +298,11 @@ class ProductController extends Controller
                 // ارسال هر دسته به صف با تاخیر افزایشی
                 foreach ($chunks as $index => $chunk) {
                     // افزایش تاخیر برای هر دسته به منظور جلوگیری از اورلود شدن سرور
-                    $delaySeconds = 10 + ($index * 45); // 10 ثانیه اولیه + 45 ثانیه به ازای هر دسته
+                    $delaySeconds = 10 + ($index * 30); // 10 ثانیه اولیه + 30 ثانیه به ازای هر دسته
 
-                    UpdateWooCommerceProducts::dispatch($license->id, 'bulk', $chunk, $batchSize)
-                        ->onQueue('bulk-update')
+                    // استفاده از job جدید ProcessProductBatch برای batch های کوچکتر
+                    \App\Jobs\ProcessProductBatch::dispatch($license->id, $chunk, 15)
+                        ->onQueue('products')
                         ->delay(now()->addSeconds($delaySeconds));
 
                     Log::info('Queued chunk for bulk update', [
@@ -309,7 +310,8 @@ class ProductController extends Controller
                         'chunk_index' => $index + 1,
                         'chunk_size' => count($chunk),
                         'delay_seconds' => $delaySeconds,
-                        'estimated_completion' => now()->addSeconds($delaySeconds)->format('H:i:s')
+                        'estimated_completion' => now()->addSeconds($delaySeconds)->format('H:i:s'),
+                        'job_type' => 'ProcessProductBatch'
                     ]);
                 }
             }

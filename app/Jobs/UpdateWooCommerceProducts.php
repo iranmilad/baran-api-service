@@ -41,24 +41,17 @@ class UpdateWooCommerceProducts implements ShouldQueue
 
     public function handle()
     {
-        try {
+        $startTime = microtime(true);
+        $maxExecutionTime = 45; // 45 ثانیه - کمتر از timeout
 
+        try {
             // لاگ شروع صف
             Log::info('شروع پردازش صف به‌روزرسانی محصولات ووکامرس', [
                 'license_id' => $this->license_id,
                 'operation' => $this->operation,
-                'barcodes_count' => count($this->barcodes)
+                'barcodes_count' => count($this->barcodes),
+                'start_time' => date('Y-m-d H:i:s')
             ]);
-
-            // لاگ اطلاع از ارسال barcode
-            if (!empty($this->barcodes)) {
-                Log::info('بارکدهای مشخص شده برای به‌روزرسانی', [
-                    'license_id' => $this->license_id,
-                    'barcodes' => $this->barcodes
-                ]);
-            }
-
-
 
             $license = License::with(['userSetting', 'woocommerceApiKey'])->find($this->license_id);
             if (!$license || !$license->isActive()) {
@@ -71,8 +64,8 @@ class UpdateWooCommerceProducts implements ShouldQueue
             $userSettings = $license->userSetting;
             $wooApiKey = $license->woocommerceApiKey;
 
-            if (!$userSettings) {
-                Log::error('تنظیمات کاربر ووکامرس یافت نشد', [
+            if (!$userSettings || !$wooApiKey) {
+                Log::error('تنظیمات یا کلید API ووکامرس یافت نشد', [
                     'license_id' => $license->id
                 ]);
                 return;
@@ -84,6 +77,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 ]);
                 return;
             }
+
             $woocommerce = new Client(
                 $license->website_url,
                 $wooApiKey->api_key,
@@ -91,11 +85,11 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 [
                     'version' => 'wc/v3',
                     'verify_ssl' => false,
-                    'timeout' => 300
+                    'timeout' => 30 // کاهش timeout
                 ]
             );
 
-            // دریافت کدهای یکتا از ووکامرس
+            // دریافت محصولات از ووکامرس
             $wooProducts = $this->getWooCommerceProducts($woocommerce);
 
             if (empty($wooProducts)) {
@@ -105,63 +99,140 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 return;
             }
 
-            // اگر barcodes مشخص شده باشد، فقط آنها را فیلتر می‌کنیم
+            // فیلتر کردن بر اساس barcodes اگر مشخص شده باشد
             if (!empty($this->barcodes)) {
                 $wooProducts = array_filter($wooProducts, function($product) {
                     return in_array($product['barcode'], $this->barcodes);
                 });
             }
 
-            // استخراج بارکدها
-            $barcodes = collect($wooProducts)->pluck('barcode')->filter(function($barcode) {
-                return !is_null($barcode) && !empty($barcode);
-            })->values()->toArray();
+            // بررسی زمان - اگر نزدیک timeout شدیم، کار را تقسیم کنیم
+            $elapsedTime = microtime(true) - $startTime;
+            if ($elapsedTime > $maxExecutionTime - 15) {
+                Log::info('نزدیک timeout شدیم، تقسیم کار', [
+                    'license_id' => $this->license_id,
+                    'elapsed_time' => round($elapsedTime, 2),
+                    'products_count' => count($wooProducts)
+                ]);
 
-            // تقسیم بارکدها به دسته‌های 100 تایی
-            $barcodeChunks = array_chunk($barcodes, 100);
+                // تقسیم محصولات به batch های کوچکتر
+                $productChunks = array_chunk($wooProducts, 15);
 
-            //log::info(json_encode($barcodeChunks));
+                foreach ($productChunks as $index => $chunk) {
+                    $chunkBarcodes = array_column($chunk, 'barcode');
 
-            $allProducts = [];
-            foreach ($barcodeChunks as $chunk) {
-                $rainProducts = $this->getRainProducts($chunk);
+                    // ایجاد job جدید برای هر chunk
+                    UpdateWooCommerceProducts::dispatch(
+                        $this->license_id,
+                        'chunk',
+                        $chunkBarcodes,
+                        15
+                    )
+                    ->onQueue('bulk-update')
+                    ->delay(now()->addSeconds(($index + 1) * 15));
 
-                if (!empty($rainProducts)) {
-                    $allProducts = array_merge($allProducts, $rainProducts);
+                    Log::info('ارسال chunk جدید', [
+                        'license_id' => $this->license_id,
+                        'chunk_index' => $index,
+                        'chunk_size' => count($chunk),
+                        'delay_seconds' => ($index + 1) * 15
+                    ]);
                 }
+
+                return; // خروج از job فعلی
             }
 
-            if (!empty($allProducts)) {
-                $productsToUpdate = [];
-                foreach ($allProducts as $rainProduct) {
-                    // پیدا کردن محصول ووکامرس متناظر
-                    $wooProduct = collect($wooProducts)->first(function ($product) use ($rainProduct) {
-                        return $product['barcode'] === $rainProduct["Barcode"];
-                    });
-
-                    if ($wooProduct) {
-                        $productsToUpdate[] = $this->prepareProductData([
-                            'barcode' => $rainProduct["Barcode"],
-                            'unique_id' => $rainProduct["ItemID"],
-                            'name' => $rainProduct["Name"],
-                            'regular_price' => $rainProduct["Price"],
-                            'stock_quantity' => $rainProduct["CurrentUnitCount"],
-                            'product_id' => $wooProduct['product_id'],
-                            'variation_id' => $wooProduct['variation_id']
-                        ], $userSettings);
-                    }
-                }
-
-                if (!empty($productsToUpdate)) {
-                    $this->updateWooCommerceProducts($woocommerce, $productsToUpdate);
-                }
-            }
+            // ادامه پردازش عادی
+            $this->processProducts($wooProducts, $userSettings, $woocommerce, $startTime, $maxExecutionTime);
 
         } catch (\Exception $e) {
             Log::error('خطا در به‌روزرسانی محصولات در ووکامرس: ' . $e->getMessage(), [
-                'license_id' => $this->license_id
+                'license_id' => $this->license_id,
+                'trace' => $e->getTraceAsString()
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * پردازش محصولات با مدیریت زمان
+     */
+    private function processProducts($wooProducts, $userSettings, $woocommerce, $startTime, $maxExecutionTime)
+    {
+        // استخراج بارکدها
+        $barcodes = collect($wooProducts)->pluck('barcode')->filter(function($barcode) {
+            return !is_null($barcode) && !empty($barcode);
+        })->values()->toArray();
+
+        // تقسیم بارکدها به دسته‌های کوچکتر
+        $barcodeChunks = array_chunk($barcodes, 20); // کاهش از 100 به 20
+
+        $allProducts = [];
+        foreach ($barcodeChunks as $chunkIndex => $chunk) {
+            // بررسی زمان قبل از هر chunk
+            $elapsedTime = microtime(true) - $startTime;
+            if ($elapsedTime > $maxExecutionTime - 10) {
+                Log::info('زمان به پایان رسید، ارسال بقیه chunks به job جدید', [
+                    'license_id' => $this->license_id,
+                    'elapsed_time' => round($elapsedTime, 2),
+                    'processed_chunks' => $chunkIndex,
+                    'remaining_chunks' => count($barcodeChunks) - $chunkIndex
+                ]);
+
+                // ارسال chunks باقی‌مانده
+                $remainingChunks = array_slice($barcodeChunks, $chunkIndex);
+                $remainingBarcodes = array_merge(...$remainingChunks);
+
+                UpdateWooCommerceProducts::dispatch(
+                    $this->license_id,
+                    'continuation',
+                    $remainingBarcodes,
+                    20
+                )
+                ->onQueue('bulk-update')
+                ->delay(now()->addSeconds(10));
+
+                break;
+            }
+
+            $rainProducts = $this->getRainProducts($chunk);
+            if (!empty($rainProducts)) {
+                $allProducts = array_merge($allProducts, $rainProducts);
+            }
+        }
+
+        if (!empty($allProducts)) {
+            $this->updateProductsInWooCommerce($allProducts, $wooProducts, $userSettings, $woocommerce);
+        }
+    }
+
+    /**
+     * به‌روزرسانی محصولات در ووکامرس
+     */
+    private function updateProductsInWooCommerce($allProducts, $wooProducts, $userSettings, $woocommerce)
+    {
+        $productsToUpdate = [];
+        foreach ($allProducts as $rainProduct) {
+            // پیدا کردن محصول ووکامرس متناظر
+            $wooProduct = collect($wooProducts)->first(function ($product) use ($rainProduct) {
+                return $product['barcode'] === $rainProduct["Barcode"];
+            });
+
+            if ($wooProduct) {
+                $productsToUpdate[] = $this->prepareProductData([
+                    'barcode' => $rainProduct["Barcode"],
+                    'unique_id' => $rainProduct["ItemID"],
+                    'name' => $rainProduct["Name"],
+                    'regular_price' => $rainProduct["Price"],
+                    'stock_quantity' => $rainProduct["CurrentUnitCount"],
+                    'product_id' => $wooProduct['product_id'],
+                    'variation_id' => $wooProduct['variation_id']
+                ], $userSettings);
+            }
+        }
+
+        if (!empty($productsToUpdate)) {
+            $this->updateWooCommerceProducts($woocommerce, $productsToUpdate);
         }
     }
 
@@ -228,8 +299,8 @@ class UpdateWooCommerceProducts implements ShouldQueue
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 180,
-                'connect_timeout' => 60
+                'timeout' => 25, // کاهش از 180 به 25 ثانیه
+                'connect_timeout' => 10 // کاهش از 60 به 10 ثانیه
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
