@@ -67,6 +67,47 @@ class ProcessInvoice implements ShouldQueue
     }
 
     /**
+     * استاندارد کردن شماره موبایل به فرمت 09xxxxxxxxx
+     */
+    private function standardizeMobileNumber($mobile)
+    {
+        if (empty($mobile)) {
+            return null;
+        }
+
+        // حذف همه کاراکترهای غیر عددی
+        $mobile = preg_replace('/[^0-9]/', '', $mobile);
+
+        // بررسی و تبدیل فرمت‌های مختلف
+        if (strlen($mobile) == 10 && !str_starts_with($mobile, '0')) {
+            // شماره 10 رقمی بدون 0 اول (مثل 9124100137)
+            $mobile = '0' . $mobile;
+        } elseif (strlen($mobile) == 13 && str_starts_with($mobile, '98')) {
+            // شماره با کد کشور 98 (مثل 989124100137)
+            $mobile = '0' . substr($mobile, 2);
+        } elseif (strlen($mobile) == 14 && str_starts_with($mobile, '0098')) {
+            // شماره با 0098 (مثل 00989124100137)
+            $mobile = '0' . substr($mobile, 4);
+        } elseif (strlen($mobile) == 12 && str_starts_with($mobile, '98')) {
+            // شماره با +98 که + حذف شده (مثل 989124100137)
+            $mobile = '0' . substr($mobile, 2);
+        }
+
+        // بررسی نهایی: باید 11 رقم باشد و با 09 شروع شود
+        if (strlen($mobile) == 11 && str_starts_with($mobile, '09')) {
+            return $mobile;
+        }
+
+        // اگر هیچ فرمت معتبری پیدا نشد
+        Log::warning('شماره موبایل نامعتبر', [
+            'original_mobile' => $mobile,
+            'length' => strlen($mobile)
+        ]);
+
+        return null;
+    }
+
+    /**
      * پردازش پاسخ GetCustomerByCode
      */
     private function parseCustomerResponse($responseJson, $context = 'initial')
@@ -134,6 +175,42 @@ class ProcessInvoice implements ShouldQueue
 
     public function handle()
     {
+            // استاندارد کردن شماره موبایل مشتری
+            $originalMobile = $this->invoice->customer_mobile;
+            $standardizedMobile = $this->standardizeMobileNumber($originalMobile);
+
+            if (!$standardizedMobile) {
+                Log::error('شماره موبایل مشتری نامعتبر است', [
+                    'invoice_id' => $this->invoice->id,
+                    'original_mobile' => $originalMobile
+                ]);
+
+                $this->invoice->update([
+                    'rain_sale_response' => [
+                        'error' => 'شماره موبایل مشتری نامعتبر است',
+                        'original_mobile' => $originalMobile,
+                        'status' => 'error'
+                    ],
+                    'is_synced' => false,
+                    'sync_error' => $this->limitSyncError('شماره موبایل مشتری نامعتبر است')
+                ]);
+
+                $this->updateWooCommerceStatus(false, 'شماره موبایل مشتری نامعتبر است. شماره باید 11 رقم و با 09 شروع شود.');
+                return;
+            }
+
+            // به‌روزرسانی شماره موبایل استاندارد شده در invoice
+            if ($originalMobile !== $standardizedMobile) {
+                $this->invoice->customer_mobile = $standardizedMobile;
+                $this->invoice->save();
+
+                Log::info('شماره موبایل استاندارد شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'original' => $originalMobile,
+                    'standardized' => $standardizedMobile
+                ]);
+            }
+
             // بررسی وجود آدرس API در اطلاعات کاربر
             if (empty($this->user->api_webservice)) {
                 Log::error('آدرس API در تنظیمات کاربر تنظیم نشده است');
