@@ -31,12 +31,7 @@ Schedule::command('queue:work --queue=invoices,products,bulk-update,empty-unique
     ->onOneServer()
     ->appendOutputTo(storage_path('logs/queue_work.log'));
 
-// Worker مخصوص برای invoice های حساس با timeout بالاتر
-Schedule::command('queue:work --queue=invoices --timeout=300 --tries=3 --max-jobs=10 --stop-when-empty --memory=256')
-    ->everyTwoMinutes()
-    ->withoutOverlapping()
-    ->onOneServer()
-    ->appendOutputTo(storage_path('logs/queue_invoices.log'));
+
 
 // Restart workers هر 30 دقیقه برای جلوگیری از memory leak
 Schedule::command('queue:restart')
