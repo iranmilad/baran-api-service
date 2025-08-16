@@ -210,32 +210,43 @@ class SyncWooCommerceProducts implements ShouldQueue
             $isVariant = $item['is_variant'] ?? false;
             $parentId = (!empty($item['parent_id']) && trim($item['parent_id']) !== '') ? $item['parent_id'] : null;
 
-            // تعیین status بر اساس نوع محصول
-            $status = 'draft'; // پیش‌فرض همیشه draft
-            if ($isVariant && !empty($parentId)) {
-                // فقط واریانت‌هایی که والد دارند منتشر می‌شوند
-                $status = 'publish';
-            }
+            // REMOVED: Status updates are not allowed during regular updates
+            // تعیین status بر اساس نوع محصول - فقط برای insert
+            // $status = 'draft'; // پیش‌فرض همیشه draft
+            // if ($isVariant && !empty($parentId)) {
+            //     // فقط واریانت‌هایی که والد دارند منتشر می‌شوند
+            //     $status = 'publish';
+            // }
             // کالای مادر و محصولات ساده همیشه draft می‌مانند
 
             $data = [
                 'unique_id' => $item['ItemID'] ?? $item['item_id'] ?? $item['ItemId'] ?? null,
                 'sku' => $item['Barcode'] ?? $item['barcode'] ?? '',
                 'item_id' => $item['ItemID'] ?? $item['item_id'] ?? $item['ItemId'] ?? null,
-                'status' => $status,
                 'barcode' => $item['Barcode'] ?? $item['barcode'] ?? '',
                 'is_variant' => $isVariant,
                 'parent_id' => $parentId
             ];
 
-            // Add brand information if available
-            if (!empty($item['brand_id'])) {
-                $data['brand_id'] = $item['brand_id'];
+            // Status فقط برای insert عملیات تنظیم شود
+            if ($this->operation === 'insert') {
+                $status = 'draft'; // پیش‌فرض همیشه draft
+                if ($isVariant && !empty($parentId)) {
+                    // فقط واریانت‌هایی که والد دارند منتشر می‌شوند
+                    $status = 'publish';
+                }
+                $data['status'] = $status;
             }
 
-            if (!empty($item['brand'])) {
-                $data['brand'] = $item['brand'];
-            }
+            // Add brand information if available
+            // REMOVED: Brand updates are not allowed during regular updates
+            // if (!empty($item['brand_id'])) {
+            //     $data['brand_id'] = $item['brand_id'];
+            // }
+
+            // if (!empty($item['brand'])) {
+            //     $data['brand'] = $item['brand'];
+            // }
 
             // For inserts, name is always required by WooCommerce API
             // For updates, we respect the enable_name_update setting
@@ -296,44 +307,45 @@ class SyncWooCommerceProducts implements ShouldQueue
             }
 
             // اگر department_name وجود داشت و در دسته‌بندی‌ها بود، category_id را اضافه کن
-            if (!empty($item['department_name'] ?? $item['DepartmentName']) && isset($categories[$item['department_name'] ?? $item['DepartmentName']])) {
-                $data['category_id'] = $categories[$item['department_name'] ?? $item['DepartmentName']]['id'];
-            }
+            // REMOVED: Category updates are not allowed during regular updates
+            // if (!empty($item['department_name'] ?? $item['DepartmentName']) && isset($categories[$item['department_name'] ?? $item['DepartmentName']])) {
+            //     $data['category_id'] = $categories[$item['department_name'] ?? $item['DepartmentName']]['id'];
+            // }
 
             // تعیین نوع محصول بر اساس is_variant و parent_id
-            $isVariant = $item['is_variant'] ?? false;
-            $parentId = $data['parent_id']; // استفاده از parent_id که از قبل پردازش شده
+            // REMOVED: Product type updates are not allowed during regular updates
+            // $isVariant = $item['is_variant'] ?? false;
+            // $parentId = $data['parent_id']; // استفاده از parent_id که از قبل پردازش شده
 
-            if ($isVariant) {
-                if ($parentId) {
-                    // این یک واریانت است
-                    $data['type'] = 'variation';
-                    Log::info('نوع محصول: variation', [
-                        'barcode' => $data['barcode'],
-                        'parent_id' => $parentId
-                    ]);
-                } else {
-                    // این یک محصول مادر است
-                    $data['type'] = 'variable';
-                    Log::info('نوع محصول: variable (parent)', [
-                        'barcode' => $data['barcode']
-                    ]);
-                }
-            } else {
-                // محصول ساده
-                $data['type'] = 'simple';
-                Log::info('نوع محصول: simple', [
-                    'barcode' => $data['barcode']
-                ]);
-            }
+            // REMOVED: Product type classification is not allowed during regular updates
+            // if ($isVariant) {
+            //     if ($parentId) {
+            //         // این یک واریانت است
+            //         $data['type'] = 'variation';
+            //         Log::info('نوع محصول: variation', [
+            //             'barcode' => $data['barcode'],
+            //             'parent_id' => $parentId
+            //         ]);
+            //     } else {
+            //         // این یک محصول مادر است
+            //         $data['type'] = 'variable';
+            //         Log::info('نوع محصول: variable (parent)', [
+            //             'barcode' => $data['barcode']
+            //         ]);
+            //     }
+            // } else {
+            //     // محصول ساده
+            //     $data['type'] = 'simple';
+            //     Log::info('نوع محصول: simple', [
+            //         'barcode' => $data['barcode']
+            //     ]);
+            // }
 
             Log::info('آماده‌سازی داده محصول برای ووکامرس', [
                 'barcode' => $data['barcode'],
-                'type' => $data['type'],
-                'is_variant' => $isVariant,
-                'parent_id' => $parentId,
                 'name' => $data['name'] ?? 'no_name',
-                'operation' => $this->operation
+                'operation' => $this->operation,
+                'fields_updated' => array_keys($data)
             ]);
 
             return $data;
