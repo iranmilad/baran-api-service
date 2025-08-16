@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\License;
+use App\Models\Product;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -214,12 +215,37 @@ class ProcessSingleProductBatch implements ShouldQueue
                 });
 
                 if ($wooProduct) {
+                    // دریافت موجودی از دیتابیس محلی به جای RainSale API
+                    $itemId = $rainProduct["ItemID"];
+                    $localStockQuantity = 0;
+
+                    $localProduct = Product::where('item_id', $itemId)
+                        ->where('license_id', $this->licenseId)
+                        ->first();
+
+                    if ($localProduct) {
+                        $localStockQuantity = (int)$localProduct->total_count;
+
+                        Log::info('موجودی از دیتابیس محلی دریافت شد (ProcessSingleProductBatch)', [
+                            'license_id' => $this->licenseId,
+                            'item_id' => $itemId,
+                            'local_stock_quantity' => $localStockQuantity,
+                            'barcode' => $rainProduct["Barcode"]
+                        ]);
+                    } else {
+                        Log::warning('محصول در دیتابیس محلی یافت نشد، موجودی صفر تنظیم شد (ProcessSingleProductBatch)', [
+                            'license_id' => $this->licenseId,
+                            'item_id' => $itemId,
+                            'barcode' => $rainProduct["Barcode"]
+                        ]);
+                    }
+
                     $productsToUpdate[] = $this->prepareProductData([
                         'barcode' => $rainProduct["Barcode"],
                         'unique_id' => $rainProduct["ItemID"],
                         'name' => $rainProduct["Name"],
                         'regular_price' => $rainProduct["Price"], // قیمت از RainSale
-                        'stock_quantity' => $rainProduct["CurrentUnitCount"], // موجودی از RainSale
+                        'stock_quantity' => $localStockQuantity, // موجودی از دیتابیس محلی
                         'product_id' => $wooProduct['product_id'],
                         'variation_id' => $wooProduct['variation_id']
                     ], $userSettings);

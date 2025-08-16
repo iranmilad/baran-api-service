@@ -359,24 +359,42 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
         }
 
         if ($userSetting->enable_stock_update) {
-            // استفاده از فیلدهای صحیح RainSale API برای موجودی
-            // Response: {"GetItemInfosResult": [{"CurrentUnitCount": 0, ...}]}
-            $stockQuantity = (int)($productData['CurrentUnitCount'] ?? $productData['current_unit_count'] ?? $productData['total_count'] ?? $productData['TotalCount'] ?? $productData['stock_quantity'] ?? 0);
+            // دریافت موجودی از مدل Product محلی به جای API باران
+            $itemId = $productData['ItemID'] ?? $productData['item_id'] ?? $productData['ItemId'] ?? null;
+            $stockQuantity = 0;
 
-            // لاگ کردن موجودی دریافتی
-            Log::info('موجودی دریافت شده برای محصول', [
-                'license_id' => $this->license_id,
-                'item_id' => $productData['ItemID'] ?? $productData['item_id'] ?? 'نامشخص',
-                'stock_quantity' => $stockQuantity,
-                'barcode' => $productData['Barcode'] ?? $productData['barcode'] ?? 'نامشخص'
-            ]);
+            if ($itemId) {
+                $localProduct = Product::where('item_id', $itemId)
+                    ->where('license_id', $this->license_id)
+                    ->first();
+
+                if ($localProduct) {
+                    $stockQuantity = (int)$localProduct->total_count;
+
+                    Log::info('موجودی از دیتابیس محلی دریافت شد', [
+                        'license_id' => $this->license_id,
+                        'item_id' => $itemId,
+                        'local_stock_quantity' => $stockQuantity,
+                        'barcode' => $productData['Barcode'] ?? $productData['barcode'] ?? 'نامشخص'
+                    ]);
+                } else {
+                    Log::warning('محصول در دیتابیس محلی یافت نشد، موجودی صفر تنظیم شد', [
+                        'license_id' => $this->license_id,
+                        'item_id' => $itemId,
+                        'barcode' => $productData['Barcode'] ?? $productData['barcode'] ?? 'نامشخص'
+                    ]);
+                }
+            } else {
+                Log::warning('item_id برای محصول وجود ندارد، موجودی صفر تنظیم شد', [
+                    'license_id' => $this->license_id,
+                    'product_data' => $productData
+                ]);
+            }
 
             $data['manage_stock'] = true;
             $data['stock_quantity'] = $stockQuantity;
             $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
-        }
-
-        // لاگ کردن داده‌های نهایی آماده شده
+        }        // لاگ کردن داده‌های نهایی آماده شده
         Log::info('داده‌های نهایی آماده شده برای WooCommerce', [
             'license_id' => $this->license_id,
             'item_id' => $productData['ItemID'] ?? $productData['item_id'] ?? $productData['ItemId'] ?? 'نامشخص',

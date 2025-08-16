@@ -10,6 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use App\Models\License;
+use App\Models\Product;
 use App\Models\UserSetting;
 use App\Models\WooCommerceApiKey;
 
@@ -257,8 +258,38 @@ class SyncWooCommerceProducts implements ShouldQueue
             }
 
             if ($this->operation === 'insert' || $userSettings->enable_stock_update) {
-                // استفاده از ساختار صحیح RainSale API
-                $stockQuantity = (int)($item['CurrentUnitCount'] ?? $item['current_unit_count'] ?? $item['total_count'] ?? $item['TotalCount'] ?? 0);
+                // دریافت موجودی از مدل Product محلی به جای API باران
+                $itemId = $item['ItemID'] ?? $item['item_id'] ?? $item['ItemId'] ?? null;
+                $stockQuantity = 0;
+
+                if ($itemId) {
+                    $localProduct = Product::where('item_id', $itemId)
+                        ->where('license_id', $this->license_id)
+                        ->first();
+
+                    if ($localProduct) {
+                        $stockQuantity = (int)$localProduct->total_count;
+
+                        Log::info('موجودی از دیتابیس محلی دریافت شد (SyncWooCommerceProducts)', [
+                            'license_id' => $this->license_id,
+                            'item_id' => $itemId,
+                            'local_stock_quantity' => $stockQuantity,
+                            'barcode' => $item['Barcode'] ?? $item['barcode'] ?? 'نامشخص'
+                        ]);
+                    } else {
+                        Log::warning('محصول در دیتابیس محلی یافت نشد، موجودی صفر تنظیم شد (SyncWooCommerceProducts)', [
+                            'license_id' => $this->license_id,
+                            'item_id' => $itemId,
+                            'barcode' => $item['Barcode'] ?? $item['barcode'] ?? 'نامشخص'
+                        ]);
+                    }
+                } else {
+                    Log::warning('item_id برای محصول وجود ندارد، موجودی صفر تنظیم شد (SyncWooCommerceProducts)', [
+                        'license_id' => $this->license_id,
+                        'item_data' => $item
+                    ]);
+                }
+
                 $data['stock_quantity'] = $stockQuantity;
                 $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
                 $data['manage_stock'] = true;
