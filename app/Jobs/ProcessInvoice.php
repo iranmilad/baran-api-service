@@ -472,14 +472,37 @@ class ProcessInvoice implements ShouldQueue
 
             // محاسبه مبلغ کل شامل هزینه ارسال
             $orderTotal = (float)$this->invoice->order_data['total'];
-            $deliveryCost = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
-            $totalAmount = $orderTotal + $deliveryCost;
+            $shippingTotal = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
+            
+            // بررسی اینکه آیا total قبلاً شامل هزینه ارسال است یا نه
+            // اگر total = sum(items) + shipping باشد، نباید shipping را دوباره اضافه کنیم
+            $itemsTotal = 0;
+            foreach ($this->invoice->order_data['items'] as $item) {
+                $itemsTotal += (float)$item['total'];
+            }
+            
+            // اگر total برابر با مجموع items + shipping باشد، یعنی shipping قبلاً اضافه شده
+            $totalAmount = $orderTotal;
+            $deliveryCost = $shippingTotal;
+            
+            if (abs($orderTotal - ($itemsTotal + $shippingTotal)) < 1) {
+                // total قبلاً شامل shipping است، نیازی به اضافه کردن نیست
+                $deliveryCost = $shippingTotal;
+                $totalAmount = $orderTotal;
+            } else {
+                // total شامل shipping نیست، باید اضافه کنیم
+                $deliveryCost = $shippingTotal;
+                $totalAmount = $orderTotal + $deliveryCost;
+            }
 
             Log::info('محاسبه مبلغ کل پرداخت', [
                 'invoice_id' => $this->invoice->id,
+                'items_total' => $itemsTotal,
                 'order_total' => $orderTotal,
+                'shipping_total' => $shippingTotal,
                 'delivery_cost' => $deliveryCost,
-                'final_total' => $totalAmount
+                'final_total' => $totalAmount,
+                'calculation_method' => abs($orderTotal - ($itemsTotal + $shippingTotal)) < 1 ? 'total_includes_shipping' : 'total_excludes_shipping'
             ]);
 
             $payments[] = [
