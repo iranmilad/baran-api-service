@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Invoice;
 use App\Models\License;
+use App\Models\UserSetting;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -175,6 +176,17 @@ class ProcessInvoice implements ShouldQueue
 
     public function handle()
     {
+            // دریافت تنظیمات کاربر
+            $userSettings = UserSetting::where('license_id', $this->license->id)->first();
+            $shippingCostMethod = $userSettings ? $userSettings->shipping_cost_method : 'expense';
+            $shippingProductUniqueId = $userSettings ? $userSettings->shipping_product_unique_id : '';
+
+            Log::info('تنظیمات حمل و نقل', [
+                'invoice_id' => $this->invoice->id,
+                'shipping_cost_method' => $shippingCostMethod,
+                'shipping_product_unique_id' => $shippingProductUniqueId
+            ]);
+
             // استاندارد کردن شماره موبایل مشتری
             $originalMobile = $this->invoice->customer_mobile;
             $standardizedMobile = $this->standardizeMobileNumber($originalMobile);
@@ -535,6 +547,30 @@ class ProcessInvoice implements ShouldQueue
                 ];
             }
 
+            // بررسی نیاز به اضافه کردن هزینه حمل و نقل به عنوان آیتم
+            $shippingTotal = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
+
+            if ($shippingCostMethod === 'product' && $shippingTotal > 0) {
+                // اضافه کردن هزینه حمل و نقل به عنوان یک آیتم
+                $items[] = [
+                    'IsPriceWithTax' => true,
+                    'ItemId' => $shippingProductUniqueId,
+                    'LineItemID' => count($items) + 1,
+                    'NetAmount' => $shippingTotal,
+                    'OperationType' => 1,
+                    'Price' => $shippingTotal,
+                    'Quantity' => 1,
+                    'Tax' => 0,
+                    'Type' => 302
+                ];
+
+                Log::info('هزینه حمل و نقل به عنوان آیتم اضافه شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'shipping_unique_id' => $shippingProductUniqueId,
+                    'shipping_amount' => $shippingTotal
+                ]);
+            }
+
             // آماده‌سازی پرداخت‌ها
             $payments = [];
             $paymentTypeId = 1; // پیش‌فرض برای پرداخت نقدی
@@ -542,29 +578,35 @@ class ProcessInvoice implements ShouldQueue
                 $paymentTypeId = 1; // پرداخت نقدی
             }
 
-            // محاسبه مبلغ کل شامل هزینه ارسال
+            // محاسبه مبلغ کل بر اساس تنظیمات حمل و نقل
             $orderTotal = (float)$this->invoice->order_data['total'];
-            $shippingTotal = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
+            // $shippingTotal قبلاً محاسبه شده است
 
             // بررسی اینکه آیا total قبلاً شامل هزینه ارسال است یا نه
-            // اگر total = sum(items) + shipping باشد، نباید shipping را دوباره اضافه کنیم
             $itemsTotal = 0;
             foreach ($this->invoice->order_data['items'] as $item) {
                 $itemsTotal += (float)$item['total'];
             }
 
-            // اگر total برابر با مجموع items + shipping باشد، یعنی shipping قبلاً اضافه شده
+            // محاسبه مبلغ کل و DeliveryCost بر اساس روش حمل و نقل
+            $deliveryCost = 0;
             $totalAmount = $orderTotal;
-            $deliveryCost = $shippingTotal;
 
-            if (abs($orderTotal - ($itemsTotal + $shippingTotal)) < 1) {
-                // total قبلاً شامل shipping است، نیازی به اضافه کردن نیست
+            if ($shippingCostMethod === 'expense') {
+                // حمل و نقل به عنوان هزینه - در DeliveryCost قرار می‌گیرد
                 $deliveryCost = $shippingTotal;
-                $totalAmount = $orderTotal;
+
+                if (abs($orderTotal - ($itemsTotal + $shippingTotal)) < 1) {
+                    // total قبلاً شامل shipping است
+                    $totalAmount = $orderTotal;
+                } else {
+                    // total شامل shipping نیست، باید اضافه کنیم
+                    $totalAmount = $orderTotal + $deliveryCost;
+                }
             } else {
-                // total شامل shipping نیست، باید اضافه کنیم
-                $deliveryCost = $shippingTotal;
-                $totalAmount = $orderTotal + $deliveryCost;
+                // حمل و نقل به عنوان محصول - در آیتم‌ها قرار گرفته، DeliveryCost صفر
+                $deliveryCost = 0;
+                $totalAmount = $orderTotal; // مبلغ کل همان total سفارش است
             }
 
             Log::info('محاسبه مبلغ کل پرداخت', [
@@ -572,9 +614,9 @@ class ProcessInvoice implements ShouldQueue
                 'items_total' => $itemsTotal,
                 'order_total' => $orderTotal,
                 'shipping_total' => $shippingTotal,
+                'shipping_method' => $shippingCostMethod,
                 'delivery_cost' => $deliveryCost,
-                'final_total' => $totalAmount,
-                'calculation_method' => abs($orderTotal - ($itemsTotal + $shippingTotal)) < 1 ? 'total_includes_shipping' : 'total_excludes_shipping'
+                'final_total' => $totalAmount
             ]);
 
             $payments[] = [

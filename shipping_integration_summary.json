@@ -1,0 +1,84 @@
+{
+  "summary": "پیاده‌سازی تنظیمات حمل و نقل در ProcessInvoice",
+  "description": "تغییرات انجام شده برای اعمال تنظیمات shipping_cost_method و shipping_product_unique_id در فرایند ثبت فاکتور",
+  "changes": {
+    "imports": {
+      "added": "use App\\Models\\UserSetting;",
+      "description": "اضافه کردن import برای دسترسی به تنظیمات کاربر"
+    },
+    "user_settings_retrieval": {
+      "location": "ابتدای متد handle",
+      "code": [
+        "$userSettings = UserSetting::where('license_id', $this->license->id)->first();",
+        "$shippingCostMethod = $userSettings ? $userSettings->shipping_cost_method : 'expense';",
+        "$shippingProductUniqueId = $userSettings ? $userSettings->shipping_product_unique_id : 'SHIPPING-001';"
+      ],
+      "description": "دریافت تنظیمات حمل و نقل کاربر با مقادیر پیش‌فرض"
+    },
+    "shipping_as_product_item": {
+      "location": "بعد از حلقه آیتم‌های فاکتور",
+      "logic": "اگر shipping_cost_method === 'product' باشد، هزینه حمل به عنوان یک آیتم با unique_id مشخص شده اضافه می‌شود",
+      "item_structure": {
+        "ItemId": "shipping_product_unique_id",
+        "Price": "shipping_total",
+        "Quantity": 1,
+        "NetAmount": "shipping_total",
+        "Type": 302
+      }
+    },
+    "delivery_cost_calculation": {
+      "expense_method": {
+        "DeliveryCost": "مبلغ هزینه حمل",
+        "description": "هزینه حمل در پارامتر DeliveryCost ارسال می‌شود"
+      },
+      "product_method": {
+        "DeliveryCost": 0,
+        "description": "هزینه حمل به عنوان آیتم اضافه شده، DeliveryCost صفر است"
+      }
+    },
+    "payment_calculation": {
+      "description": "محاسبه مبلغ کل پرداخت بر اساس روش حمل و نقل",
+      "logic": "در هر دو حالت، مبلغ کل برابر order_total است چون هزینه حمل یا در DeliveryCost یا در آیتم‌ها لحاظ شده"
+    }
+  },
+  "test_scenarios": {
+    "expense_method": {
+      "shipping_cost_method": "expense",
+      "shipping_total": 50000,
+      "expected": {
+        "DeliveryCost": 50000,
+        "shipping_item_added": false,
+        "total_calculation": "order_total (شامل shipping)"
+      }
+    },
+    "product_method": {
+      "shipping_cost_method": "product",
+      "shipping_product_unique_id": "SHIPPING-001",
+      "shipping_total": 50000,
+      "expected": {
+        "DeliveryCost": 0,
+        "shipping_item_added": true,
+        "shipping_item": {
+          "ItemId": "SHIPPING-001",
+          "Price": 50000,
+          "Quantity": 1
+        }
+      }
+    }
+  },
+  "logging": {
+    "added_logs": [
+      "تنظیمات حمل و نقل در ابتدای پردازش",
+      "اضافه شدن آیتم حمل و نقل (در صورت نیاز)",
+      "محاسبه مبلغ کل با روش حمل و نقل"
+    ]
+  },
+  "status": "completed",
+  "compatibility": {
+    "backward_compatible": true,
+    "default_values": {
+      "shipping_cost_method": "expense",
+      "shipping_product_unique_id": "SHIPPING-001"
+    }
+  }
+}
