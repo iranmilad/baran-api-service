@@ -65,7 +65,9 @@ class UserSetting extends Model
         'payment_gateways',
         'invoice_settings',
         'rain_sale_price_unit',
-        'woocommerce_price_unit'
+        'woocommerce_price_unit',
+        'shipping_cost_method',
+        'shipping_product_unique_id'
     ];
 
     protected $casts = [

@@ -1,0 +1,57 @@
+{
+  "summary": "تست فیلدهای جدید shipping در UserSetting API",
+  "description": "این فایل شامل خلاصه‌ای از تغییرات انجام شده برای اضافه کردن فیلدهای shipping_cost_method و shipping_product_unique_id است.",
+  "changes": {
+    "migration": {
+      "file": "2025_08_18_000001_add_shipping_settings_to_user_settings_table.php",
+      "description": "میگریشن جدید برای اضافه کردن دو فیلد:",
+      "fields": [
+        {
+          "name": "shipping_cost_method",
+          "type": "enum('product', 'expense')",
+          "default": "product"
+        },
+        {
+          "name": "shipping_product_unique_id",
+          "type": "string(100)",
+          "nullable": true
+        }
+      ]
+    },
+    "model": {
+      "file": "app/Models/UserSetting.php",
+      "changes": [
+        "اضافه کردن فیلدهای جدید به آرایه fillable",
+        "فیلدهای جدید به صورت خودکار در toPluginArray و fromPluginArray پردازش می‌شوند"
+      ]
+    },
+    "controller": {
+      "file": "app/Http/Controllers/UserSettingController.php",
+      "changes": [
+        "اضافه کردن مقادیر پیش‌فرض برای فیلدهای جدید در متد get",
+        "اضافه کردن validation rules برای فیلدهای جدید در متد update",
+        "اضافه کردن فیلدهای جدید به allowedKeys",
+        "رفع مشکلات Log facade"
+      ]
+    }
+  },
+  "default_values": {
+    "shipping_cost_method": "product",
+    "shipping_product_unique_id": "SHIPPING-001"
+  },
+  "validation_rules": {
+    "shipping_cost_method": "required|in:product,expense",
+    "shipping_product_unique_id": "nullable|string|max:100"
+  },
+  "api_endpoints": {
+    "get_settings": "GET /api/v1/settings",
+    "update_settings": "POST /api/v1/settings"
+  },
+  "status": "completed",
+  "notes": [
+    "میگریشن با موفقیت اجرا شد",
+    "تمام فایل‌های مربوطه به‌روزرسانی شدند",
+    "خطاهای syntax برطرف شدند",
+    "سرور Laravel برای تست راه‌اندازی شد"
+  ]
+}

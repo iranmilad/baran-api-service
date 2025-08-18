@@ -69,6 +69,8 @@ class UserSettingController extends Controller
                         'invoice_cancelled_type' => 'off',
                         'invoice_refunded_type' => 'off',
                         'invoice_failed_type' => 'off',
+                        'shipping_cost_method' => 'expense',
+                        'shipping_product_unique_id' => '',
                     ];
                     return response()->json([
                         'success' => true,
@@ -98,7 +100,9 @@ class UserSettingController extends Controller
                     'invoice_cancelled_type',
                     'invoice_refunded_type',
                     'invoice_failed_type',
-                    'payment_gateways'
+                    'payment_gateways',
+                    'shipping_cost_method',
+                    'shipping_product_unique_id'
                 ];
                 // اگر invoice_settings به صورت آرایه وجود داشت، کلیدهای آن را به سطح بالا اضافه کن
                 if (isset($settings->invoice_settings) && is_array($settings->invoice_settings)) {
@@ -165,7 +169,7 @@ class UserSettingController extends Controller
                         'message' => 'توکن نامعتبر - لایسنس یافت نشد'
                     ], 401);
                 }
-                \Log::info('درخواست به‌روزرسانی تنظیمات کاربر', [
+                Log::info('درخواست به‌روزرسانی تنظیمات کاربر', [
                     'license_id' => $license->id,
                     'incoming_settings' => $request->settings
                 ]);
@@ -189,6 +193,8 @@ class UserSettingController extends Controller
                     'settings.woocommerce_price_unit' => 'required|in:rial,toman',
                     'settings.enable_invoice' => 'required|boolean',
                     'settings.enable_cart_sync' => 'required|boolean',
+                    'settings.shipping_cost_method' => 'required|in:product,expense',
+                    'settings.shipping_product_unique_id' => 'nullable|string|max:100',
                     'settings.invoice_settings' => 'required|array',
                     'settings.invoice_settings.cash_on_delivery' => 'required|in:cash,credit',
                     'settings.invoice_settings.invoice_pending_type' => 'required|in:off,invoice,proforma,order',
@@ -205,7 +211,7 @@ class UserSettingController extends Controller
                     ], 422);
                 }
 
-                \Log::info('درخواست به‌روزرسانی تنظیمات کاربر', [
+                Log::info('درخواست به‌روزرسانی تنظیمات کاربر', [
                     'license_id' => $license->id,
                     'incoming_settings' => $request->settings
                 ]);
@@ -221,7 +227,7 @@ class UserSettingController extends Controller
                     // ارسال رویداد به‌روزرسانی تنظیمات
                     event(new SettingsUpdated( $license,$settings));
 
-                \Log::info('تنظیمات کاربر ذخیره شد', [
+                Log::info('تنظیمات کاربر ذخیره شد', [
                     'license_id' => $settings->license_id,
                     'saved_settings' => $settings->toArray()
                 ]);
