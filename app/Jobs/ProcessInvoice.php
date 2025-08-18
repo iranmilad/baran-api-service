@@ -283,7 +283,6 @@ class ProcessInvoice implements ShouldQueue
                     ]
                 ];
 
-
                 // ثبت مشتری در RainSale
                 $saveCustomerResponse = Http::withHeaders([
                     'Content-Type' => 'application/json',
@@ -291,35 +290,43 @@ class ProcessInvoice implements ShouldQueue
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveCustomer', $customerData);
 
                 if (!$saveCustomerResponse->successful()) {
-                $responseBody = $saveCustomerResponse->body();
-                $logData = [
-                    'invoice_id' => $this->invoice->id,
-                    'order_id' => $this->invoice->woocommerce_order_id,
-                    'status_code' => $saveCustomerResponse->status()
-                ];
+                    $responseBody = $saveCustomerResponse->body();
+                    $logData = [
+                        'invoice_id' => $this->invoice->id,
+                        'order_id' => $this->invoice->woocommerce_order_id,
+                        'status_code' => $saveCustomerResponse->status()
+                    ];
 
-                if ($this->shouldLogResponse($responseBody)) {
-                    $logData['response'] = $responseBody;
+                    if ($this->shouldLogResponse($responseBody)) {
+                        $logData['response'] = $responseBody;
+                    }
+
+                    Log::error('خطا در ثبت مشتری', $logData);
+
+                    // ذخیره پاسخ سرویس باران در ستون rain_sale_response
+                    $this->invoice->update([
+                        'rain_sale_response' => [
+                            'error' => 'خطا در ثبت مشتری',
+                            'response' => $saveCustomerResponse->body(),
+                            'status_code' => $saveCustomerResponse->status(),
+                            'status' => 'error'
+                        ],
+                        'is_synced' => false,
+                        'sync_error' => $this->limitSyncError('خطا در ثبت مشتری: ' . $saveCustomerResponse->body())
+                    ]);
+
+                    // ارسال پیام مناسب به ووکامرس به جای fail کردن
+                    $this->updateWooCommerceStatus(false, 'خطا در ثبت مشتری در سیستم انبار. لطفاً مجدداً تلاش کنید.');
+                    return;
                 }
 
-                Log::error('خطا در ثبت مشتری', $logData);
-
-                // ذخیره پاسخ سرویس باران در ستون rain_sale_response
-                $this->invoice->update([
-                    'rain_sale_response' => [
-                        'error' => 'خطا در ثبت مشتری',
-                        'response' => $saveCustomerResponse->body(),
-                        'status_code' => $saveCustomerResponse->status(),
-                        'status' => 'error'
-                    ],
-                    'is_synced' => false,
-                    'sync_error' => $this->limitSyncError('خطا در ثبت مشتری: ' . $saveCustomerResponse->body())
+                Log::info('مشتری با موفقیت در RainSale ثبت شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'customer_mobile' => $this->invoice->customer_mobile
                 ]);
 
-                // ارسال پیام مناسب به ووکامرس به جای fail کردن
-                $this->updateWooCommerceStatus(false, 'خطا در ثبت مشتری در سیستم انبار. لطفاً مجدداً تلاش کنید.');
-                return;
-            }
+                // انتظار 10 ثانیه قبل از استعلام مجدد
+                sleep(10);
 
                 // استعلام مجدد برای دریافت CustomerID
                 $customerResponse = Http::withHeaders([
@@ -361,7 +368,7 @@ class ProcessInvoice implements ShouldQueue
                 $responseJson = $customerResponse->json();
                 $customerResult = $this->parseCustomerResponse($responseJson, 'after_save');
 
-                if (!$customerResult) {
+                if (!$customerResult || !isset($customerResult['CustomerID']) || empty($customerResult['CustomerID'])) {
                     // اگر بعد از ثبت هم null است، یعنی مشکلی در ثبت بوده
                     Log::error('مشتری بعد از ثبت در RainSale پیدا نشد', [
                         'invoice_id' => $this->invoice->id,
@@ -383,10 +390,10 @@ class ProcessInvoice implements ShouldQueue
                     return;
                 }
 
-                Log::info('نتیجه پردازش شده مشتری بعد از ثبت', [
+                Log::info('CustomerID مشتری پس از ثبت دریافت شد', [
                     'invoice_id' => $this->invoice->id,
-                    'customer_result_keys' => $customerResult ? array_keys($customerResult) : 'null_result',
-                    'has_customer_id' => isset($customerResult['CustomerID'])
+                    'customer_id' => $customerResult['CustomerID'],
+                    'customer_mobile' => $this->invoice->customer_mobile
                 ]);
             }
 

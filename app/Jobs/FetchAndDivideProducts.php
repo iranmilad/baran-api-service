@@ -25,7 +25,7 @@ class FetchAndDivideProducts implements ShouldQueue
     /**
      * The number of seconds the job can run before timing out.
      */
-    public $timeout = 45;
+    public $timeout = 60;
 
     /**
      * Create a new job instance.
@@ -41,7 +41,7 @@ class FetchAndDivideProducts implements ShouldQueue
     public function handle(): void
     {
         $startTime = microtime(true);
-        $maxExecutionTime = 35; // 35 ثانیه
+        $maxExecutionTime = 60; // 60 ثانیه
 
         try {
             Log::info('شروع دریافت و تقسیم همه محصولات', [

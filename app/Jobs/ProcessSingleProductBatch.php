@@ -11,7 +11,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
-use Automattic\WooCommerce\Client;
 
 class ProcessSingleProductBatch implements ShouldQueue
 {
@@ -33,7 +32,7 @@ class ProcessSingleProductBatch implements ShouldQueue
     /**
      * The number of seconds the job can run before timing out.
      */
-    public $timeout = 35; // 35 ثانیه - کوتاه و ایمن
+    public $timeout = 60; // 35 ثانیه - کوتاه و ایمن
 
     /**
      * Calculate the number of seconds to wait before retrying the job.
@@ -55,7 +54,7 @@ class ProcessSingleProductBatch implements ShouldQueue
     public function handle(): void
     {
         $startTime = microtime(true);
-        $maxExecutionTime = 30; // 30 ثانیه برای اطمینان
+        $maxExecutionTime = 60; // 60 ثانیه برای اطمینان
 
         try {
             Log::info('شروع پردازش batch محصولات', [
@@ -186,74 +185,49 @@ class ProcessSingleProductBatch implements ShouldQueue
     private function updateWooCommerceProducts($rainProducts, $license, $userSettings, $wooApiKey)
     {
         try {
-            $woocommerce = new Client(
-                $license->website_url,
-                $wooApiKey->api_key,
-                $wooApiKey->api_secret,
-                [
-                    'version' => 'wc/v3',
-                    'verify_ssl' => false,
-                    'timeout' => 15 // timeout کوتاه
-                ]
-            );
-
-            // دریافت محصولات WooCommerce
-            $wooProducts = $this->getWooProductsByBarcodes($woocommerce, $this->barcodes);
-
-            if (empty($wooProducts)) {
-                Log::info('هیچ محصول WooCommerce ای یافت نشد', [
-                    'license_id' => $this->licenseId,
-                    'barcodes' => $this->barcodes
-                ]);
-                return;
-            }
-
+            // آماده‌سازی محصولات برای batch update
             $productsToUpdate = [];
             foreach ($rainProducts as $rainProduct) {
-                $wooProduct = collect($wooProducts)->first(function ($product) use ($rainProduct) {
-                    return $product['barcode'] === $rainProduct["Barcode"];
-                });
+                // دریافت موجودی از دیتابیس محلی به جای RainSale API
+                $itemId = $rainProduct["ItemID"];
+                $localStockQuantity = 0;
 
-                if ($wooProduct) {
-                    // دریافت موجودی از دیتابیس محلی به جای RainSale API
-                    $itemId = $rainProduct["ItemID"];
-                    $localStockQuantity = 0;
+                $localProduct = Product::where('item_id', $itemId)
+                    ->where('license_id', $this->licenseId)
+                    ->first();
 
-                    $localProduct = Product::where('item_id', $itemId)
-                        ->where('license_id', $this->licenseId)
-                        ->first();
+                if ($localProduct) {
+                    $localStockQuantity = (int)$localProduct->total_count;
 
-                    if ($localProduct) {
-                        $localStockQuantity = (int)$localProduct->total_count;
+                    Log::info('موجودی از دیتابیس محلی دریافت شد (ProcessSingleProductBatch)', [
+                        'license_id' => $this->licenseId,
+                        'item_id' => $itemId,
+                        'local_stock_quantity' => $localStockQuantity,
+                        'barcode' => $rainProduct["Barcode"]
+                    ]);
+                } else {
+                    Log::warning('محصول در دیتابیس محلی یافت نشد، موجودی صفر تنظیم شد (ProcessSingleProductBatch)', [
+                        'license_id' => $this->licenseId,
+                        'item_id' => $itemId,
+                        'barcode' => $rainProduct["Barcode"]
+                    ]);
+                }
 
-                        Log::info('موجودی از دیتابیس محلی دریافت شد (ProcessSingleProductBatch)', [
-                            'license_id' => $this->licenseId,
-                            'item_id' => $itemId,
-                            'local_stock_quantity' => $localStockQuantity,
-                            'barcode' => $rainProduct["Barcode"]
-                        ]);
-                    } else {
-                        Log::warning('محصول در دیتابیس محلی یافت نشد، موجودی صفر تنظیم شد (ProcessSingleProductBatch)', [
-                            'license_id' => $this->licenseId,
-                            'item_id' => $itemId,
-                            'barcode' => $rainProduct["Barcode"]
-                        ]);
-                    }
+                $productData = $this->prepareProductDataForBatchUpdate([
+                    'unique_id' => $rainProduct["ItemID"],
+                    'barcode' => $rainProduct["Barcode"],
+                    'name' => $rainProduct["Name"],
+                    'regular_price' => $rainProduct["Price"], // قیمت از RainSale
+                    'stock_quantity' => $localStockQuantity, // موجودی از دیتابیس محلی
+                ], $userSettings);
 
-                    $productsToUpdate[] = $this->prepareProductData([
-                        'barcode' => $rainProduct["Barcode"],
-                        'unique_id' => $rainProduct["ItemID"],
-                        'name' => $rainProduct["Name"],
-                        'regular_price' => $rainProduct["Price"], // قیمت از RainSale
-                        'stock_quantity' => $localStockQuantity, // موجودی از دیتابیس محلی
-                        'product_id' => $wooProduct['product_id'],
-                        'variation_id' => $wooProduct['variation_id']
-                    ], $userSettings);
+                if (!empty($productData)) {
+                    $productsToUpdate[] = $productData;
                 }
             }
 
             if (!empty($productsToUpdate)) {
-                $this->performWooCommerceUpdate($woocommerce, $productsToUpdate);
+                $this->performBatchUpdate($productsToUpdate, $license, $wooApiKey);
             }
 
         } catch (\Exception $e) {
@@ -265,7 +239,9 @@ class ProcessSingleProductBatch implements ShouldQueue
 
     /**
      * دریافت محصولات WooCommerce بر اساس barcodes
+     * DEPRECATED: این متد دیگر استفاده نمی‌شود چون از batch update استفاده می‌کنیم
      */
+    /*
     private function getWooProductsByBarcodes($woocommerce, $barcodes)
     {
         try {
@@ -293,10 +269,61 @@ class ProcessSingleProductBatch implements ShouldQueue
             return [];
         }
     }
+    */
+
+    /**
+     * آماده‌سازی داده‌های محصول برای batch update
+     */
+    private function prepareProductDataForBatchUpdate($product, $userSettings)
+    {
+        $data = [
+            'unique_id' => $product['unique_id']
+        ];
+
+        // بررسی تنظیمات کاربر برای قیمت
+        if ($userSettings->enable_price_update && !empty($product['regular_price'])) {
+            $data['regular_price'] = (string) $product['regular_price'];
+
+            Log::info('قیمت محصول برای batch update آماده شد', [
+                'license_id' => $this->licenseId,
+                'unique_id' => $product['unique_id'],
+                'regular_price' => $product['regular_price']
+            ]);
+        }
+
+        // بررسی تنظیمات کاربر برای موجودی
+        if ($userSettings->enable_stock_update) {
+            $stockQuantity = (int) $product['stock_quantity'];
+            $data['stock_quantity'] = $stockQuantity;
+            $data['manage_stock'] = true;
+            $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
+
+            Log::info('موجودی محصول برای batch update آماده شد', [
+                'license_id' => $this->licenseId,
+                'unique_id' => $product['unique_id'],
+                'stock_quantity' => $stockQuantity
+            ]);
+        }
+
+        // بررسی تنظیمات کاربر برای نام محصول
+        if ($userSettings->enable_name_update && !empty($product['name'])) {
+            $data['name'] = $product['name'];
+
+            Log::info('نام محصول برای batch update آماده شد', [
+                'license_id' => $this->licenseId,
+                'unique_id' => $product['unique_id'],
+                'name' => $product['name']
+            ]);
+        }
+
+        return $data;
+    }
 
     /**
      * آماده‌سازی داده‌های محصول
+     * DEPRECATED: این متد دیگر استفاده نمی‌شود چون از batch update استفاده می‌کنیم
      */
+    /*
     private function prepareProductData($product, $userSettings)
     {
         $data = [
@@ -352,10 +379,63 @@ class ProcessSingleProductBatch implements ShouldQueue
 
         return $data;
     }
+    */
+
+    /**
+     * انجام batch update در WooCommerce
+     */
+    private function performBatchUpdate($productsToUpdate, $license, $wooApiKey)
+    {
+        try {
+            Log::info('شروع batch update در WooCommerce', [
+                'license_id' => $this->licenseId,
+                'products_count' => count($productsToUpdate),
+                'url' => $license->website_url . '/wp-json/wc/v3/products/unique/batch/update'
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 30,
+                'connect_timeout' => 10
+            ])->withHeaders([
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ])->withBasicAuth(
+                $wooApiKey->api_key,
+                $wooApiKey->api_secret
+            )->put($license->website_url . '/wp-json/wc/v3/products/unique/batch/update', [
+                'products' => $productsToUpdate
+            ]);
+
+            if ($response->successful()) {
+                Log::info('Batch update با موفقیت انجام شد', [
+                    'license_id' => $this->licenseId,
+                    'products_updated' => count($productsToUpdate),
+                    'response_status' => $response->status()
+                ]);
+            } else {
+                Log::error('خطا در batch update', [
+                    'license_id' => $this->licenseId,
+                    'status' => $response->status(),
+                    'response' => $response->body(),
+                    'products_count' => count($productsToUpdate)
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('خطا در انجام batch update: ' . $e->getMessage(), [
+                'license_id' => $this->licenseId,
+                'products_count' => count($productsToUpdate),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
 
     /**
      * انجام به‌روزرسانی در WooCommerce
+     * DEPRECATED: این متد دیگر استفاده نمی‌شود چون از batch update استفاده می‌کنیم
      */
+    /*
     private function performWooCommerceUpdate($woocommerce, $productsToUpdate)
     {
         try {
@@ -424,4 +504,5 @@ class ProcessSingleProductBatch implements ShouldQueue
             ]);
         }
     }
+    */
 }
