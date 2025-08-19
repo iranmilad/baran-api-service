@@ -12,6 +12,7 @@ class Invoice extends Model
         'customer_mobile',
         'status',
         'customer_id',
+        'customer_request_data',
         'order_data',
         'rain_sale_response',
         'is_synced',
@@ -20,6 +21,7 @@ class Invoice extends Model
 
     protected $casts = [
         'order_data' => 'array',
+        'customer_request_data' => 'array',
         'rain_sale_response' => 'array',
         'is_synced' => 'boolean'
     ];

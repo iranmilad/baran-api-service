@@ -1,0 +1,129 @@
+{
+    "title": "اضافه کردن ستون customer_request_data به جدول invoices",
+    "date": "2025-08-19",
+    "summary": "ستون جدیدی برای ثبت تمام درخواست‌های مربوط به مشتری قبل از ارسال به وب‌سرویس باران اضافه شد",
+    "changes": {
+        "database": {
+            "migration_file": "2025_08_19_000002_add_customer_request_data_to_invoices_table.php",
+            "table": "invoices",
+            "new_column": {
+                "name": "customer_request_data",
+                "type": "json",
+                "nullable": true,
+                "position": "after customer_id",
+                "comment": "داده‌های درخواست ثبت مشتری به وب‌سرویس باران"
+            }
+        },
+        "model": {
+            "file": "app/Models/Invoice.php",
+            "changes": [
+                "اضافه کردن 'customer_request_data' به آرایه fillable",
+                "اضافه کردن 'customer_request_data' => 'array' به آرایه casts"
+            ]
+        },
+        "job": {
+            "file": "app/Jobs/ProcessInvoice.php",
+            "changes": [
+                "ثبت داده‌های درخواست اولیه GetCustomerByCode",
+                "ثبت داده‌های درخواست SaveCustomer قبل از ثبت مشتری",
+                "ثبت داده‌های درخواست مجدد GetCustomerByCode پس از ثبت مشتری"
+            ]
+        }
+    },
+    "data_structure": {
+        "customer_request_data": {
+            "action": "نوع عملیات (GetCustomerByCode, SaveCustomer, GetCustomerByCode_AfterSave)",
+            "request_data": "داده‌های کامل درخواست ارسالی",
+            "timestamp": "زمان ثبت درخواست",
+            "endpoint": "آدرس endpoint وب‌سرویس",
+            "note": "توضیحات اضافی (اختیاری)"
+        }
+    },
+    "scenarios": {
+        "scenario_1": {
+            "description": "استعلام اولیه مشتری",
+            "action": "GetCustomerByCode",
+            "timing": "قبل از ارسال درخواست استعلام اولیه",
+            "data_example": {
+                "action": "GetCustomerByCode",
+                "request_data": {
+                    "customerCode": "09123456789"
+                },
+                "timestamp": "2025-08-19 10:30:00",
+                "endpoint": "/RainSaleService.svc/GetCustomerByCode"
+            }
+        },
+        "scenario_2": {
+            "description": "ثبت مشتری جدید",
+            "action": "SaveCustomer",
+            "timing": "قبل از ارسال درخواست ثبت مشتری",
+            "data_example": {
+                "action": "SaveCustomer",
+                "request_data": {
+                    "customer": {
+                        "Address": "تهران، خیابان ولیعصر",
+                        "FirstName": "علی",
+                        "LastName": "احمدی",
+                        "Mobile": "09123456789",
+                        "CustomerCode": "09123456789",
+                        "IsMale": "1",
+                        "IsActive": "1"
+                    }
+                },
+                "timestamp": "2025-08-19 10:31:00",
+                "endpoint": "/RainSaleService.svc/SaveCustomer"
+            }
+        },
+        "scenario_3": {
+            "description": "استعلام مجدد پس از ثبت",
+            "action": "GetCustomerByCode_AfterSave",
+            "timing": "قبل از ارسال درخواست استعلام مجدد",
+            "data_example": {
+                "action": "GetCustomerByCode_AfterSave",
+                "request_data": {
+                    "customerCode": "09123456789"
+                },
+                "timestamp": "2025-08-19 10:31:15",
+                "endpoint": "/RainSaleService.svc/GetCustomerByCode",
+                "note": "استعلام مجدد پس از ثبت مشتری"
+            }
+        }
+    },
+    "benefits": [
+        "قابلیت ردیابی کامل درخواست‌های مربوط به مشتری",
+        "امکان بررسی دقیق داده‌های ارسالی در صورت بروز خطا",
+        "تسهیل فرآیند debugging و رفع اشکال",
+        "ثبت تاریخچه کامل عملیات مربوط به هر فاکتور",
+        "امکان تحلیل الگوهای درخواست‌ها"
+    ],
+    "implementation_details": {
+        "update_timing": "قبل از هر درخواست HTTP",
+        "data_format": "JSON",
+        "storage_method": "در همان رکورد فاکتور",
+        "overwrite_behavior": "هر درخواست جدید، داده قبلی را جایگزین می‌کند",
+        "logging": "همراه با لاگ‌گذاری مناسب"
+    },
+    "code_examples": {
+        "update_before_request": [
+            "$this->invoice->update([",
+            "    'customer_request_data' => [",
+            "        'action' => 'GetCustomerByCode',",
+            "        'request_data' => $customerRequestData,",
+            "        'timestamp' => now()->toDateTimeString(),",
+            "        'endpoint' => '/RainSaleService.svc/GetCustomerByCode'",
+            "    ]",
+            "]);"
+        ]
+    },
+    "testing": {
+        "model_verification": "✅ فیلدها در fillable و casts اضافه شدند",
+        "job_verification": "✅ همه سه نوع درخواست ثبت می‌شوند",
+        "database_verification": "میگریشن اجرا شد (بدون خطا)"
+    },
+    "maintenance_notes": [
+        "داده‌های customer_request_data در صورت نیاز می‌توانند برای آنالیز استفاده شوند",
+        "این داده‌ها شامل اطلاعات حساس مشتری هستند و باید محافظت شوند",
+        "در آینده می‌توان مکانیزم آرشیو برای این داده‌ها در نظر گرفت",
+        "برای بهبود کارایی، می‌توان index مناسب روی این ستون ایجاد کرد"
+    ]
+}

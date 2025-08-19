@@ -248,6 +248,20 @@ class ProcessInvoice implements ShouldQueue
                 'customerCode' => $this->invoice->customer_mobile
             ];
 
+            // ذخیره داده‌های درخواست استعلام مشتری قبل از ارسال
+            $this->invoice->update([
+                'customer_request_data' => [
+                    'action' => 'GetCustomerByCode',
+                    'request_data' => $customerRequestData,
+                    'timestamp' => now()->toDateTimeString(),
+                    'endpoint' => '/RainSaleService.svc/GetCustomerByCode'
+                ]
+            ]);
+
+            Log::info('داده‌های درخواست استعلام مشتری ذخیره شد', [
+                'invoice_id' => $this->invoice->id,
+                'customer_mobile' => $this->invoice->customer_mobile
+            ]);
 
             $customerResponse = Http::withHeaders([
                 'Content-Type' => 'application/json',
@@ -295,6 +309,21 @@ class ProcessInvoice implements ShouldQueue
                     ]
                 ];
 
+                // ذخیره داده‌های درخواست ثبت مشتری قبل از ارسال
+                $this->invoice->update([
+                    'customer_request_data' => [
+                        'action' => 'SaveCustomer',
+                        'request_data' => $customerData,
+                        'timestamp' => now()->toDateTimeString(),
+                        'endpoint' => '/RainSaleService.svc/SaveCustomer'
+                    ]
+                ]);
+
+                Log::info('داده‌های درخواست ثبت مشتری ذخیره شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'customer_mobile' => $this->invoice->customer_mobile
+                ]);
+
                 // ثبت مشتری در RainSale
                 $saveCustomerResponse = Http::withHeaders([
                     'Content-Type' => 'application/json',
@@ -339,6 +368,22 @@ class ProcessInvoice implements ShouldQueue
 
                 // انتظار 10 ثانیه قبل از استعلام مجدد
                 sleep(10);
+
+                // به‌روزرسانی داده‌های درخواست برای استعلام مجدد
+                $this->invoice->update([
+                    'customer_request_data' => [
+                        'action' => 'GetCustomerByCode_AfterSave',
+                        'request_data' => $customerRequestData,
+                        'timestamp' => now()->toDateTimeString(),
+                        'endpoint' => '/RainSaleService.svc/GetCustomerByCode',
+                        'note' => 'استعلام مجدد پس از ثبت مشتری'
+                    ]
+                ]);
+
+                Log::info('داده‌های درخواست استعلام مجدد مشتری ذخیره شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'customer_mobile' => $this->invoice->customer_mobile
+                ]);
 
                 // استعلام مجدد برای دریافت CustomerID
                 $customerResponse = Http::withHeaders([
