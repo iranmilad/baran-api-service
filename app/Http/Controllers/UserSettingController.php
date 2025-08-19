@@ -185,6 +185,7 @@ class UserSettingController extends Controller
                     ], 403);
                 }
 
+
                 $validator = Validator::make($request->all(), [
                     'settings' => 'required|array',
                     'settings.enable_new_product' => 'required|boolean',
@@ -221,10 +222,15 @@ class UserSettingController extends Controller
 
                 // تبدیل داده flat به ساختار دیتابیس
                 $dbSettings = UserSetting::fromPluginArray($request->settings);
-                $settings = UserSetting::updateOrCreate(
-                    ['license_id' => $license->id],
-                    $dbSettings
-                );
+                if($license->id!=3)
+                    $settings = UserSetting::updateOrCreate(
+                        ['license_id' => $license->id],
+                        $dbSettings
+                    );
+                else{
+                    //get user setting
+                    $settings = UserSetting::where('license_id', $license->id)->first();
+                }
 
                 if(isset($request->sync) and $request->sync==true)
                     // ارسال رویداد به‌روزرسانی تنظیمات
