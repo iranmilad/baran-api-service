@@ -328,6 +328,7 @@ class ProcessInvoice implements ShouldQueue
                         'LastName' => $this->invoice->order_data['customer']['last_name'],
                         'Mobile' => $this->invoice->customer_mobile,
                         'CustomerCode' => $this->invoice->customer_mobile,
+                        'CustomFields' => [],
                         'IsMale' => '1',
                         'IsActive' => '1'
                     ]
