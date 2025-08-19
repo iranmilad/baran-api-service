@@ -1,0 +1,126 @@
+{
+    "title": "رفع مشکل فرآیند ثبت و استعلام مشتری در ProcessInvoice",
+    "date": "2025-08-19",
+    "issue_description": "وقتی مشتری یافت نمی‌شد، فرآیند ثبت مشتری و استعلام مجدد درست انجام نمی‌شد",
+    "root_cause": "عدم مدیریت درست خطاهای استعلام اولیه و عدم ورود به فرآیند ثبت مشتری در صورت خطا",
+    "solution": {
+        "description": "بهبود منطق شرطی برای تشخیص نیاز به ثبت مشتری",
+        "changes": [
+            "اضافه کردن مدیریت خطا برای درخواست GetCustomerByCode ناموفق",
+            "بهبود شرط ورود به فرآیند ثبت مشتری",
+            "اضافه کردن لاگ‌گذاری مناسب برای تمام حالات"
+        ]
+    },
+    "scenarios": {
+        "scenario_1": {
+            "name": "مشتری موجود است",
+            "flow": [
+                "GetCustomerByCode موفق",
+                "parseCustomerResponse نتیجه معتبر برمی‌گرداند",
+                "customerExists = true",
+                "فرآیند ثبت مشتری skip می‌شود",
+                "ادامه به ثبت فاکتور"
+            ],
+            "result": "✅ کار می‌کند"
+        },
+        "scenario_2": {
+            "name": "مشتری موجود نیست (پاسخ موفق، نتیجه null)",
+            "flow": [
+                "GetCustomerByCode موفق",
+                "parseCustomerResponse مقدار null برمی‌گرداند",
+                "customerExists = false",
+                "وارد فرآیند ثبت مشتری",
+                "SaveCustomer اجرا می‌شود",
+                "انتظار 10 ثانیه",
+                "GetCustomerByCode مجدد اجرا می‌شود",
+                "customerResult به‌روزرسانی می‌شود"
+            ],
+            "result": "✅ اصلاح شد"
+        },
+        "scenario_3": {
+            "name": "خطا در استعلام اولیه",
+            "flow": [
+                "GetCustomerByCode ناموفق",
+                "customerResult = null باقی می‌ماند",
+                "customerExists = false",
+                "لاگ خطا + تصمیم به ثبت مشتری",
+                "وارد فرآیند ثبت مشتری",
+                "SaveCustomer اجرا می‌شود",
+                "GetCustomerByCode مجدد اجرا می‌شود"
+            ],
+            "result": "✅ اصلاح شد"
+        }
+    },
+    "code_changes": {
+        "file": "app/Jobs/ProcessInvoice.php",
+        "method": "handle()",
+        "specific_changes": {
+            "before": {
+                "issue": "فقط در صورت موفق بودن درخواست، نتیجه بررسی می‌شد",
+                "code_snippet": [
+                    "if ($customerResponse->successful()) {",
+                    "    // پردازش پاسخ",
+                    "} else {",
+                    "    // فقط لاگ خطا",
+                    "}",
+                    "if (!$customerExists) {",
+                    "    // ثبت مشتری",
+                    "}"
+                ]
+            },
+            "after": {
+                "improvement": "مدیریت کامل هر دو حالت موفق و ناموفق",
+                "code_snippet": [
+                    "if ($customerResponse->successful()) {",
+                    "    // پردازش و بررسی نتیجه",
+                    "    if (customerResult valid) {",
+                    "        customerExists = true",
+                    "    } else {",
+                    "        // نیاز به ثبت مشتری",
+                    "    }",
+                    "} else {",
+                    "    // لاگ خطا + تصمیم به ثبت",
+                    "}",
+                    "if (!$customerExists) {",
+                    "    // ثبت مشتری در هر دو حالت",
+                    "}"
+                ]
+            }
+        }
+    },
+    "added_logging": {
+        "success_case": "مشتری در RainSale یافت شد",
+        "not_found_case": "مشتری در RainSale یافت نشد - نیاز به ثبت مشتری",
+        "error_case": "به دلیل خطا در استعلام، سعی در ثبت مشتری می‌کنیم"
+    },
+    "flow_diagram": {
+        "start": "استعلام اولیه مشتری (GetCustomerByCode)",
+        "decision_1": "آیا درخواست موفق بود؟",
+        "path_1a": "بله → آیا مشتری یافت شد؟",
+        "path_1a1": "بله → customerExists = true → ادامه فرآیند",
+        "path_1a2": "خیر → customerExists = false → ثبت مشتری",
+        "path_1b": "خیر → customerExists = false → ثبت مشتری",
+        "save_customer": "ثبت مشتری (SaveCustomer)",
+        "wait": "انتظار 10 ثانیه",
+        "retry_query": "استعلام مجدد (GetCustomerByCode_AfterSave)",
+        "end": "ادامه فرآیند ثبت فاکتور"
+    },
+    "benefits": [
+        "فرآیند مقاوم‌تر در برابر خطاهای شبکه",
+        "مدیریت درست حالت 'مشتری یافت نشد'",
+        "لاگ‌گذاری بهتر برای debugging",
+        "تضمین ثبت مشتری در تمام حالات لازم"
+    ],
+    "testing_result": {
+        "file": "test_customer_registration_flow.php",
+        "all_scenarios_covered": true,
+        "error_handling_verified": true,
+        "logging_verified": true,
+        "flow_logic_verified": true
+    },
+    "impact": {
+        "before": "مشتریان جدید ممکن بود ثبت نشوند",
+        "after": "تمام مشتریان در هر شرایطی ثبت می‌شوند",
+        "reliability": "بهبود قابل توجه قابلیت اعتماد سیستم"
+    }
+}

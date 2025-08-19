@@ -284,6 +284,11 @@ class ProcessInvoice implements ShouldQueue
                         'customer_id' => $customerResult['CustomerID'],
                         'customer_mobile' => $this->invoice->customer_mobile
                     ]);
+                } else {
+                    Log::info('مشتری در RainSale یافت نشد - نیاز به ثبت مشتری', [
+                        'invoice_id' => $this->invoice->id,
+                        'customer_mobile' => $this->invoice->customer_mobile
+                    ]);
                 }
             } else {
                 Log::error('درخواست GetCustomerByCode ناموفق', [
@@ -291,9 +296,15 @@ class ProcessInvoice implements ShouldQueue
                     'status_code' => $customerResponse->status(),
                     'response_body' => substr($customerResponse->body(), 0, 200)
                 ]);
+
+                // در صورت خطا در درخواست، باز هم سعی می‌کنیم مشتری را ثبت کنیم
+                Log::info('به دلیل خطا در استعلام، سعی در ثبت مشتری می‌کنیم', [
+                    'invoice_id' => $this->invoice->id,
+                    'customer_mobile' => $this->invoice->customer_mobile
+                ]);
             }
 
-            // اگر مشتری وجود نداشت، آن را ثبت می‌کنیم
+            // اگر مشتری وجود نداشت یا خطا در استعلام رخ داد، آن را ثبت می‌کنیم
             if (!$customerExists) {
 
                 // آماده‌سازی داده‌های مشتری برای ثبت
