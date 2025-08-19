@@ -7,7 +7,9 @@ use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Event;
 use App\Events\SettingsUpdated;
+use App\Events\WarehouseCodeChanged;
 use App\Listeners\NotifySettingsChange;
+use App\Listeners\UpdateProductStockIds;
 
 class EventServiceProvider extends ServiceProvider
 {
@@ -22,6 +24,9 @@ class EventServiceProvider extends ServiceProvider
         ],
         SettingsUpdated::class => [
             NotifySettingsChange::class,
+        ],
+        WarehouseCodeChanged::class => [
+            UpdateProductStockIds::class,
         ],
     ];
 

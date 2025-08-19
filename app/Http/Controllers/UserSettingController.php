@@ -71,6 +71,7 @@ class UserSettingController extends Controller
                         'invoice_failed_type' => 'off',
                         'shipping_cost_method' => 'expense',
                         'shipping_product_unique_id' => '',
+                        'default_warehouse_code' => '',
                     ];
                     return response()->json([
                         'success' => true,
@@ -102,7 +103,8 @@ class UserSettingController extends Controller
                     'invoice_failed_type',
                     'payment_gateways',
                     'shipping_cost_method',
-                    'shipping_product_unique_id'
+                    'shipping_product_unique_id',
+                    'default_warehouse_code'
                 ];
                 // اگر invoice_settings به صورت آرایه وجود داشت، کلیدهای آن را به سطح بالا اضافه کن
                 if (isset($settings->invoice_settings) && is_array($settings->invoice_settings)) {
@@ -195,6 +197,7 @@ class UserSettingController extends Controller
                     'settings.enable_cart_sync' => 'required|boolean',
                     'settings.shipping_cost_method' => 'required|in:product,expense',
                     'settings.shipping_product_unique_id' => 'nullable|string|max:100',
+                    'settings.default_warehouse_code' => 'nullable|string|max:100',
                     'settings.invoice_settings' => 'required|array',
                     'settings.invoice_settings.cash_on_delivery' => 'required|in:cash,credit',
                     'settings.invoice_settings.invoice_pending_type' => 'required|in:off,invoice,proforma,order',

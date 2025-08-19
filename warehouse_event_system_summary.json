@@ -1,0 +1,116 @@
+{
+  "summary": "پیاده‌سازی Event/Observer برای به‌روزرسانی stock_id محصولات هنگام تغییر default_warehouse_code",
+  "description": "سیستم کاملی برای تشخیص تغییر default_warehouse_code و به‌روزرسانی خودکار stock_id تمام محصولات لایسنس",
+  "components": {
+    "event": {
+      "file": "app/Events/WarehouseCodeChanged.php",
+      "description": "Event که هنگام تغییر warehouse code فعال می‌شود",
+      "properties": [
+        "License $license - لایسنس مربوطه",
+        "?string $oldWarehouseCode - کد انبار قبلی",
+        "?string $newWarehouseCode - کد انبار جدید"
+      ]
+    },
+    "listener": {
+      "file": "app/Listeners/UpdateProductStockIds.php",
+      "description": "Listener که stock_id محصولات را به‌روزرسانی می‌کند",
+      "features": [
+        "ShouldQueue - اجرا در صف",
+        "InteractsWithQueue - مدیریت صف",
+        "بررسی تغییر واقعی",
+        "لاگ‌گذاری کامل",
+        "مدیریت خطا"
+      ],
+      "operation": "UPDATE products SET stock_id = ? WHERE license_id = ?"
+    },
+    "observer": {
+      "file": "app/Observers/UserSettingObserver.php",
+      "description": "Observer که تغییرات UserSetting را رصد می‌کند",
+      "methods": {
+        "created": "برای تنظیم اولیه warehouse code",
+        "updated": "برای تشخیص تغییر default_warehouse_code"
+      },
+      "trigger_condition": "isDirty('default_warehouse_code') && old !== new"
+    },
+    "service_providers": {
+      "EventServiceProvider": {
+        "registration": "WarehouseCodeChanged::class => [UpdateProductStockIds::class]"
+      },
+      "AppServiceProvider": {
+        "registration": "UserSetting::observe(UserSettingObserver::class)"
+      }
+    }
+  },
+  "workflow": {
+    "steps": [
+      "1. کاربر default_warehouse_code را تغییر می‌دهد",
+      "2. UserSetting::update() اجرا می‌شود",
+      "3. UserSettingObserver::updated() فعال می‌شود",
+      "4. Observer بررسی می‌کند که آیا default_warehouse_code تغییر کرده",
+      "5. WarehouseCodeChanged Event منتشر می‌شود",
+      "6. UpdateProductStockIds Listener در صف قرار می‌گیرد",
+      "7. Listener تمام محصولات لایسنس را به‌روزرسانی می‌کند"
+    ]
+  },
+  "database_impact": {
+    "table": "products",
+    "field": "stock_id",
+    "scope": "تمام محصولات یک لایسنس",
+    "operation": "UPDATE",
+    "performance": "اجرا در صف برای جلوگیری از تأخیر"
+  },
+  "logging": {
+    "observer_logs": [
+      "تشخیص تغییر default_warehouse_code",
+      "مقادیر قبلی و جدید"
+    ],
+    "listener_logs": [
+      "شروع به‌روزرسانی",
+      "تعداد محصولات تأثیرپذیر",
+      "تکمیل موفق یا خطا"
+    ]
+  },
+  "error_handling": {
+    "listener_failure": "در صورت خطا، job مجدداً در صف قرار می‌گیرد",
+    "observer_stability": "Observer از try-catch محافظت شده",
+    "data_integrity": "بررسی تغییر واقعی قبل از اجرا"
+  },
+  "testing": {
+    "scenarios": [
+      "تغییر warehouse code از خالی به مقدار",
+      "تغییر warehouse code از مقدار به مقدار دیگر",
+      "تغییر warehouse code به همان مقدار (بدون اجرا)",
+      "ایجاد تنظیمات جدید با warehouse code"
+    ]
+  },
+  "configuration": {
+    "queue_required": true,
+    "cache_cleared": true,
+    "events_registered": true,
+    "observer_registered": true
+  },
+  "usage_example": {
+    "api_call": {
+      "method": "POST",
+      "url": "/api/v1/settings",
+      "body": {
+        "settings": {
+          "default_warehouse_code": "NEW-WAREHOUSE-001"
+        }
+      }
+    },
+    "result": {
+      "immediate": "تنظیمات به‌روزرسانی می‌شود",
+      "background": "محصولات در صف به‌روزرسانی می‌شوند",
+      "logs": "فرایند کامل لاگ می‌شود"
+    }
+  },
+  "status": "completed",
+  "notes": [
+    "سیستم کاملاً خودکار است",
+    "عملکرد بهینه با استفاده از صف",
+    "لاگ‌گذاری کامل برای رصد",
+    "مدیریت خطای جامع",
+    "سازگار با سیستم موجود"
+  ]
+}
