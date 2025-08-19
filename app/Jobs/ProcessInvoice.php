@@ -703,7 +703,8 @@ class ProcessInvoice implements ShouldQueue
                 'shipping_total' => $shippingTotal,
                 'shipping_method' => $shippingCostMethod,
                 'delivery_cost' => $deliveryCost,
-                'final_total' => $totalAmount
+                'final_total' => $totalAmount,
+                'code_version' => 'FIXED_VERSION_28200000' // نشانگر نسخه اصلاح شده
             ]);
 
             $payments[] = [
