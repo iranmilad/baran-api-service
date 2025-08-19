@@ -133,10 +133,27 @@ class ProcessSingleProductBatch implements ShouldQueue
         try {
             if (!$user->api_webservice || !$user->api_username || !$user->api_password) {
                 Log::warning('اطلاعات API RainSale یافت نشد', [
-                    'user_id' => $user->id,
                     'license_id' => $this->licenseId
                 ]);
                 return [];
+            }
+
+            // دریافت لایسنس با تنظیمات برای دسترسی به default_warehouse_code
+            $license = License::with('userSetting')->find($this->licenseId);
+            $stockId = $license && $license->userSetting ? $license->userSetting->default_warehouse_code : '';
+
+            Log::info('استفاده از default_warehouse_code برای stockId', [
+                'license_id' => $this->licenseId,
+                'stock_id' => $stockId,
+                'has_user_settings' => !is_null($license ? $license->userSetting : null)
+            ]);
+
+            // آماده‌سازی body درخواست
+            $requestBody = ['barcodes' => $barcodes];
+
+            // اضافه کردن stockId فقط در صورت وجود مقدار
+            if (!empty($stockId)) {
+                $requestBody['stockId'] = $stockId;
             }
 
             $response = Http::withOptions([
@@ -146,9 +163,7 @@ class ProcessSingleProductBatch implements ShouldQueue
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
-            ])->post($user->api_webservice . "/RainSaleService.svc/GetItemInfos", [
-                'barcodes' => $barcodes
-            ]);
+            ])->post($user->api_webservice . "/RainSaleService.svc/GetItemInfos", $requestBody);
 
             if (!$response->successful()) {
                 Log::warning('خطا در دریافت از RainSale API', [

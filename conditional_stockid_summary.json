@@ -1,0 +1,103 @@
+{
+    "title": "پیاده‌سازی منطق شرطی stockId در درخواست‌های API",
+    "date": "2025-08-19",
+    "summary": "stockId فقط در صورت وجود مقدار معتبر در default_warehouse_code به درخواست اضافه می‌شود",
+    "improvement": {
+        "previous_behavior": "stockId همیشه در درخواست ارسال می‌شد (حتی با مقدار خالی)",
+        "new_behavior": "stockId فقط زمانی ارسال می‌شود که default_warehouse_code خالی نباشد",
+        "reason": "جلوگیری از ارسال پارامترهای غیرضروری و بهبود کارایی API"
+    },
+    "implementation_pattern": {
+        "before": {
+            "code": "->post($url, ['barcodes' => $barcodes, 'stockId' => $stockId])",
+            "issue": "همیشه stockId ارسال می‌شد (حتی با مقدار '' یا null)"
+        },
+        "after": {
+            "code": [
+                "$requestBody = ['barcodes' => $barcodes];",
+                "if (!empty($stockId)) {",
+                "    $requestBody['stockId'] = $stockId;",
+                "}",
+                "->post($url, $requestBody)"
+            ],
+            "benefit": "stockId فقط با مقدار معتبر ارسال می‌شود"
+        }
+    },
+    "test_scenarios": {
+        "scenario_1": {
+            "description": "کد انبار معتبر",
+            "default_warehouse_code": "WH001",
+            "result": "stockId در درخواست ارسال می‌شود",
+            "request_body": "{\"barcodes\":[...], \"stockId\":\"WH001\"}"
+        },
+        "scenario_2": {
+            "description": "کد انبار خالی",
+            "default_warehouse_code": "",
+            "result": "stockId در درخواست ارسال نمی‌شود",
+            "request_body": "{\"barcodes\":[...]}"
+        },
+        "scenario_3": {
+            "description": "بدون تنظیمات",
+            "default_warehouse_code": null,
+            "result": "stockId در درخواست ارسال نمی‌شود",
+            "request_body": "{\"barcodes\":[...]}"
+        },
+        "scenario_4": {
+            "description": "کد انبار با فاصله",
+            "default_warehouse_code": "   ",
+            "result": "stockId در درخواست ارسال می‌شود (empty() فاصله‌ها را خالی نمی‌داند)",
+            "request_body": "{\"barcodes\":[...], \"stockId\":\"   \"}"
+        }
+    },
+    "affected_files": {
+        "app/Jobs/UpdateWooCommerceProducts.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "method": "getRainProducts",
+            "changes": "اضافه کردن منطق شرطی برای stockId"
+        },
+        "app/Jobs/ProcessSingleProductBatch.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "method": "getRainProducts",
+            "changes": "اضافه کردن منطق شرطی برای stockId"
+        },
+        "app/Jobs/ProcessSkuBatch.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "method": "getUniqueIdsBySkusFromBaran",
+            "changes": "اضافه کردن منطق شرطی برای stockId"
+        },
+        "app/Jobs/ProcessProductBatch.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "method": "getRainProducts",
+            "changes": "اضافه کردن منطق شرطی برای stockId"
+        },
+        "app/Http/Controllers/ProductController.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "method": "getUniqueIdsBySkus",
+            "changes": "اضافه کردن منطق شرطی برای stockId"
+        }
+    },
+    "benefits": [
+        "کاهش حجم درخواست‌های API",
+        "جلوگیری از ارسال پارامترهای غیرضروری",
+        "بهبود خوانایی و منطق کد",
+        "پیشگیری از خطاهای احتمالی در سمت سرور API",
+        "استفاده بهینه از منابع شبکه"
+    ],
+    "verification": {
+        "test_file": "test_conditional_stockid.php",
+        "all_scenarios_passed": true,
+        "all_files_updated": true,
+        "pattern_consistency": "الگوی یکسان در همه فایل‌ها پیاده‌سازی شد"
+    },
+    "api_behavior": {
+        "endpoint": "/RainSaleService.svc/GetItemInfos",
+        "with_stockId": "جستجو در انبار مشخص شده",
+        "without_stockId": "جستجو در همه انبارها (رفتار پیش‌فرض API)"
+    },
+    "notes": [
+        "empty() function از PHP استفاده شده که null، ''، 0، false را خالی تشخیص می‌دهد",
+        "string های حاوی فقط فاصله خالی تشخیص داده نمی‌شوند (رفتار عمدی)",
+        "این تغییر backward compatible است",
+        "هیچ تغییری در رفتار موجود سیستم ایجاد نمی‌شود"
+    ]
+}

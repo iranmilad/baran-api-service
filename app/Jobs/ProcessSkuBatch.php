@@ -83,8 +83,18 @@ class ProcessSkuBatch implements ShouldQueue
                 return;
             }
 
+            // بارگذاری تنظیمات کاربر برای دسترسی به default_warehouse_code
+            $license->load('userSetting');
+            $stockId = $license->userSetting ? $license->userSetting->default_warehouse_code : '';
+
+            Log::info('استفاده از default_warehouse_code برای stockId', [
+                'license_id' => $this->licenseId,
+                'stock_id' => $stockId,
+                'has_user_settings' => !is_null($license->userSetting)
+            ]);
+
             // Get unique IDs from Baran API
-            $uniqueIdMapping = $this->getUniqueIdsBySkusFromBaran($this->skus, $user);
+            $uniqueIdMapping = $this->getUniqueIdsBySkusFromBaran($this->skus, $user, $stockId);
 
             if (!empty($uniqueIdMapping)) {
                 // Update products with unique IDs using the new endpoint
@@ -116,14 +126,23 @@ class ProcessSkuBatch implements ShouldQueue
     /**
      * Get unique IDs by SKUs from Baran API
      */
-    private function getUniqueIdsBySkusFromBaran($skus, $user)
+    private function getUniqueIdsBySkusFromBaran($skus, $user, $stockId)
     {
         $uniqueIdMapping = [];
 
         try {
             Log::info('Fetching unique IDs from Baran API', [
-                'sku_count' => count($skus)
+                'sku_count' => count($skus),
+                'stock_id' => $stockId
             ]);
+
+            // آماده‌سازی body درخواست
+            $requestBody = ['barcodes' => $skus];
+
+            // اضافه کردن stockId فقط در صورت وجود مقدار
+            if (!empty($stockId)) {
+                $requestBody['stockId'] = $stockId;
+            }
 
             $response = Http::withOptions([
                 'verify' => false,
@@ -132,9 +151,7 @@ class ProcessSkuBatch implements ShouldQueue
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
-            ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfos', [
-                'barcodes' => $skus
-            ]);
+            ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfos', $requestBody);
 
             if ($response->successful()) {
                 $body = $response->json();

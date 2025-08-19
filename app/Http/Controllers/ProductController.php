@@ -499,6 +499,16 @@ class ProductController extends Controller
                 ], 404);
             }
 
+            // دریافت تنظیمات کاربر برای دسترسی به default_warehouse_code
+            $license->load('userSetting');
+            $stockId = $license->userSetting ? $license->userSetting->default_warehouse_code : '';
+
+            Log::info('استفاده از default_warehouse_code برای stockId', [
+                'license_id' => $license->id,
+                'stock_id' => $stockId,
+                'has_user_settings' => !is_null($license->userSetting)
+            ]);
+
             // Validate input
             $request->validate([
                 'barcodes' => 'required|array|min:1',
@@ -506,6 +516,14 @@ class ProductController extends Controller
             ]);
 
             $barcodes = $request->input('barcodes');
+
+            // آماده‌سازی body درخواست
+            $requestBody = ['barcodes' => $barcodes];
+
+            // اضافه کردن stockId فقط در صورت وجود مقدار
+            if (!empty($stockId)) {
+                $requestBody['stockId'] = $stockId;
+            }
 
             // Call external API with array of barcodes
             $response = Http::withOptions([
@@ -515,9 +533,7 @@ class ProductController extends Controller
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
-            ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfos', [
-                'barcodes' => $barcodes
-            ]);
+            ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfos', $requestBody);
 
             if (!$response->successful()) {
                 return response()->json([

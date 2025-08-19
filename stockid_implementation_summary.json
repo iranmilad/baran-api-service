@@ -1,0 +1,104 @@
+{
+    "title": "اعمال منطق stockId در همه فایل‌های استفاده‌کننده از GetItemInfos API",
+    "date": "2025-08-19",
+    "summary": "منطق default_warehouse_code (stockId) در همه فایل‌هایی که از RainSale API GetItemInfos استفاده می‌کنند، پیاده‌سازی شد",
+    "changes": {
+        "app/Jobs/UpdateWooCommerceProducts.php": {
+            "status": "✅ تکمیل شده (قبلاً)",
+            "description": "منطق stockId از قبل پیاده‌سازی شده بود",
+            "features": [
+                "دریافت default_warehouse_code از userSetting",
+                "ارسال stockId در درخواست API",
+                "لاگ‌گذاری کامل"
+            ]
+        },
+        "app/Jobs/ProcessSingleProductBatch.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "description": "اضافه کردن منطق stockId به متد getRainProducts",
+            "changes": [
+                "دریافت License با userSetting relation",
+                "استخراج default_warehouse_code از تنظیمات",
+                "ارسال stockId در API request",
+                "اضافه کردن لاگ مناسب"
+            ]
+        },
+        "app/Jobs/ProcessSkuBatch.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "description": "اضافه کردن منطق stockId به handle و getUniqueIdsBySkusFromBaran",
+            "changes": [
+                "بارگذاری userSetting در handle method",
+                "ارسال stockId به getUniqueIdsBySkusFromBaran",
+                "به‌روزرسانی signature متد getUniqueIdsBySkusFromBaran",
+                "اضافه کردن stockId به API request",
+                "اضافه کردن لاگ‌های مناسب"
+            ]
+        },
+        "app/Jobs/ProcessProductBatch.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "description": "اضافه کردن منطق stockId به متد getRainProducts",
+            "changes": [
+                "دریافت License با userSetting relation",
+                "استخراج default_warehouse_code از تنظیمات",
+                "ارسال stockId در API request",
+                "اضافه کردن لاگ مناسب"
+            ]
+        },
+        "app/Http/Controllers/ProductController.php": {
+            "status": "✅ به‌روزرسانی شد",
+            "description": "اضافه کردن منطق stockId به متد getUniqueIdsBySkus",
+            "changes": [
+                "بارگذاری userSetting برای license",
+                "استخراج default_warehouse_code از تنظیمات",
+                "ارسال stockId در API request",
+                "اضافه کردن لاگ مناسب"
+            ]
+        }
+    },
+    "technical_details": {
+        "approach": "یکسان‌سازی رویکرد در همه فایل‌ها",
+        "pattern": {
+            "step1": "بارگذاری License با userSetting relation",
+            "step2": "استخراج default_warehouse_code از userSetting (fallback به empty string)",
+            "step3": "اضافه کردن لاگ با اطلاعات stockId",
+            "step4": "ارسال stockId در body درخواست API"
+        },
+        "api_request_format": {
+            "endpoint": "/RainSaleService.svc/GetItemInfos",
+            "method": "POST",
+            "body": {
+                "barcodes": "array",
+                "stockId": "string (from default_warehouse_code)"
+            }
+        }
+    },
+    "testing": {
+        "test_file": "test_stockid_all_jobs.php",
+        "results": "همه 5 فایل با موفقیت به‌روزرسانی شدند",
+        "verification": [
+            "✅ وجود endpoint GetItemInfos",
+            "✅ وجود stockId در درخواست API",
+            "✅ وجود لاگ stockId"
+        ]
+    },
+    "impact": {
+        "description": "اکنون همه API call های GetItemInfos از warehouse code استفاده می‌کنند",
+        "benefits": [
+            "جستجوی هدفمند در انبار مشخص شده",
+            "کاهش حجم داده‌های بازگشتی",
+            "بهبود کارایی API",
+            "سازگاری کامل با سیستم مدیریت انبار"
+        ]
+    },
+    "affected_jobs": [
+        "UpdateWooCommerceProducts - به‌روزرسانی عمومی محصولات",
+        "ProcessSingleProductBatch - پردازش batch های تک محصول",
+        "ProcessSkuBatch - پردازش SKU ها برای unique ID",
+        "ProcessProductBatch - پردازش batch های محصول",
+        "ProductController::getUniqueIdsBySkus - دریافت unique ID های متعدد"
+    ],
+    "notes": [
+        "متد getUniqueIdBySku از GetItemInfo استفاده می‌کند نه GetItemInfos",
+        "همه تغییرات شامل fallback mechanism برای حالتی که userSetting وجود ندارد",
+        "لاگ‌گذاری یکسان در همه فایل‌ها پیاده‌سازی شد"
+    ]
+}

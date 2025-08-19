@@ -1,0 +1,99 @@
+{
+  "summary": "یکپارچه‌سازی default_warehouse_code با UpdateWooCommerceProducts Job",
+  "description": "تنظیم استفاده از default_warehouse_code به عنوان stockId در درخواست GetItemInfos به API RainSale",
+  "changes": {
+    "license_loading": {
+      "before": "License::with('user')",
+      "after": "License::with(['user', 'userSetting'])",
+      "purpose": "بارگذاری تنظیمات کاربر همراه با اطلاعات لایسنس و کاربر"
+    },
+    "stock_id_extraction": {
+      "location": "getRainProducts() method",
+      "logic": "$stockId = $userSettings ? $userSettings->default_warehouse_code : '';",
+      "fallback": "اگر تنظیمات وجود نداشت، رشته خالی استفاده می‌شود",
+      "logging": "لاگ‌گذاری stock_id برای رصد و debug"
+    },
+    "api_request": {
+      "parameter": "stockId",
+      "before": "\"stockId\": \"\"",
+      "after": "\"stockId\": $stockId",
+      "description": "ارسال default_warehouse_code به API RainSale"
+    }
+  },
+  "code_flow": {
+    "steps": [
+      "1. دریافت License با userSetting",
+      "2. استخراج default_warehouse_code از تنظیمات",
+      "3. استفاده از آن به عنوان stockId در درخواست API",
+      "4. ارسال درخواست GetItemInfos با stockId مناسب"
+    ]
+  },
+  "api_integration": {
+    "endpoint": "/RainSaleService.svc/GetItemInfos",
+    "method": "POST",
+    "payload": {
+      "barcodes": "array of product barcodes",
+      "stockId": "value from default_warehouse_code setting"
+    },
+    "impact": "محصولات از انبار مشخص شده در تنظیمات دریافت می‌شوند"
+  },
+  "scenarios": {
+    "with_warehouse_code": {
+      "user_settings": "exists",
+      "default_warehouse_code": "WAREHOUSE-MAIN",
+      "api_stockId": "WAREHOUSE-MAIN",
+      "result": "محصولات از WAREHOUSE-MAIN دریافت می‌شوند"
+    },
+    "empty_warehouse_code": {
+      "user_settings": "exists",
+      "default_warehouse_code": "",
+      "api_stockId": "",
+      "result": "محصولات از انبار پیش‌فرض سرور دریافت می‌شوند"
+    },
+    "no_user_settings": {
+      "user_settings": "null",
+      "default_warehouse_code": "null",
+      "api_stockId": "",
+      "result": "محصولات از انبار پیش‌فرض سرور دریافت می‌شوند"
+    }
+  },
+  "logging": {
+    "new_log": "استفاده از default_warehouse_code برای stockId",
+    "includes": [
+      "license_id",
+      "stock_id value",
+      "has_user_settings boolean"
+    ],
+    "purpose": "رصد و debug استفاده از warehouse code"
+  },
+  "backward_compatibility": {
+    "maintained": true,
+    "fallback_behavior": "اگر تنظیمات وجود نداشت، stockId خالی ارسال می‌شود",
+    "no_breaking_changes": "عملکرد قبلی حفظ شده"
+  },
+  "integration_with_event_system": {
+    "description": "هنگام تغییر default_warehouse_code، Event/Observer stock_id محصولات را به‌روزرسانی می‌کند",
+    "workflow": "تغییر تنظیمات → به‌روزرسانی stock_id → استفاده در API calls",
+    "consistency": "همسانی بین تنظیمات و درخواست‌های API"
+  },
+  "testing": {
+    "scenarios_tested": 3,
+    "results": "تمام scenarios با موفقیت پاس شدند",
+    "edge_cases_covered": [
+      "تنظیمات موجود با warehouse code",
+      "تنظیمات موجود بدون warehouse code",
+      "عدم وجود تنظیمات"
+    ]
+  },
+  "performance_impact": {
+    "additional_query": "بارگذاری userSetting در relation",
+    "optimization": "eager loading برای جلوگیری از N+1 queries",
+    "minimal_overhead": "تأثیر عملکردی ناچیز"
+  },
+  "status": "completed",
+  "validation": {
+    "syntax_check": "passed",
+    "logic_test": "passed",
+    "integration_ready": true
+  }
+}

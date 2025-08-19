@@ -279,7 +279,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
     protected function getRainProducts($barcodes)
     {
         try {
-            $license = License::with('user')->find($this->license_id);
+            $license = License::with(['user', 'userSetting'])->find($this->license_id);
 
             if (!$license || !$license->user) {
                 Log::error('لایسنس یا کاربر یافت نشد', [
@@ -289,12 +289,31 @@ class UpdateWooCommerceProducts implements ShouldQueue
             }
 
             $user = $license->user;
+            $userSettings = $license->userSetting;
+
+            // دریافت default_warehouse_code از تنظیمات
+            $stockId = $userSettings ? $userSettings->default_warehouse_code : '';
+
+            Log::info('استفاده از default_warehouse_code برای stockId', [
+                'license_id' => $this->license_id,
+                'stock_id' => $stockId,
+                'has_user_settings' => !is_null($userSettings)
+            ]);
+
             if (!$user->api_webservice || !$user->api_username || !$user->api_password) {
                 Log::warning('اطلاعات API باران کاربر یافت نشد، استفاده از داده‌های دیتابیس', [
                     'user_id' => $user->id,
                     'license_id' => $license->id
                 ]);
                 return $this->getProductsFromDatabase($barcodes);
+            }
+
+            // آماده‌سازی body درخواست
+            $requestBody = ['barcodes' => $barcodes];
+
+            // اضافه کردن stockId فقط در صورت وجود مقدار
+            if (!empty($stockId)) {
+                $requestBody['stockId'] = $stockId;
             }
 
             $response = Http::withOptions([
@@ -304,9 +323,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
-            ])->post($user->api_webservice."/RainSaleService.svc/GetItemInfos", [
-                'barcodes' => $barcodes
-            ]);
+            ])->post($user->api_webservice."/RainSaleService.svc/GetItemInfos", $requestBody);
 
             if (!$response->successful()) {
                 Log::warning('خطا در دریافت اطلاعات از API باران، استفاده از داده‌های دیتابیس', [
