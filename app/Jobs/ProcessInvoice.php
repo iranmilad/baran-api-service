@@ -680,23 +680,20 @@ class ProcessInvoice implements ShouldQueue
 
             // محاسبه مبلغ کل و DeliveryCost بر اساس روش حمل و نقل
             $deliveryCost = 0;
-            $totalAmount = $orderTotal;
 
             if ($shippingCostMethod === 'expense') {
                 // حمل و نقل به عنوان هزینه - در DeliveryCost قرار می‌گیرد
                 $deliveryCost = $shippingTotal;
-
-                if (abs($orderTotal - ($itemsTotal + $shippingTotal)) < 1) {
-                    // total قبلاً شامل shipping است
-                    $totalAmount = $orderTotal;
-                } else {
-                    // total شامل shipping نیست، باید اضافه کنیم
-                    $totalAmount = $orderTotal + $deliveryCost;
-                }
+                $totalAmount = $itemsTotal + $deliveryCost; // آیتم‌ها + DeliveryCost
             } else {
                 // حمل و نقل به عنوان محصول - در آیتم‌ها قرار گرفته، DeliveryCost صفر
                 $deliveryCost = 0;
-                $totalAmount = $orderTotal; // مبلغ کل همان total سفارش است
+                // محاسبه مجموع واقعی آیتم‌ها (شامل shipping item که اضافه شده)
+                $realItemsTotal = $itemsTotal;
+                if ($shippingTotal > 0) {
+                    $realItemsTotal += $shippingTotal; // اضافه کردن shipping که به عنوان item اضافه شده
+                }
+                $totalAmount = $realItemsTotal;
             }
 
             Log::info('محاسبه مبلغ کل پرداخت', [
