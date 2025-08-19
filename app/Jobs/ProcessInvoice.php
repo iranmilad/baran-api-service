@@ -174,8 +174,200 @@ class ProcessInvoice implements ShouldQueue
         }
     }
 
+    /**
+     * دریافت اطلاعات کامل سفارش از WooCommerce
+     */
+    private function fetchCompleteOrderFromWooCommerce()
+    {
+        try {
+            // بررسی وجود اطلاعات WooCommerce API
+            $wooCommerceApiKey = $this->license->woocommerceApiKey;
+
+            if (!$wooCommerceApiKey) {
+                Log::warning('کلید API WooCommerce برای دریافت سفارش کامل یافت نشد', [
+                    'license_id' => $this->license->id,
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id
+                ]);
+                return;
+            }
+
+            if (empty($wooCommerceApiKey->api_key) || empty($wooCommerceApiKey->api_secret)) {
+                Log::warning('اطلاعات WooCommerce API کامل نیست برای دریافت سفارش', [
+                    'license_id' => $this->license->id,
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id
+                ]);
+                return;
+            }
+
+            if (empty($this->license->website_url)) {
+                Log::warning('آدرس وب‌سایت موجود نیست برای دریافت سفارش', [
+                    'license_id' => $this->license->id,
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id
+                ]);
+                return;
+            }
+
+            Log::info('شروع دریافت اطلاعات کامل سفارش از WooCommerce', [
+                'invoice_id' => $this->invoice->id,
+                'order_id' => $this->invoice->woocommerce_order_id,
+                'website_url' => $this->license->website_url
+            ]);
+
+            // درخواست دریافت سفارش کامل
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60
+            ])->withBasicAuth(
+                $wooCommerceApiKey->api_key,
+                $wooCommerceApiKey->api_secret
+            )->get($this->license->website_url . '/wp-json/wc/v3/orders/' . $this->invoice->woocommerce_order_id);
+
+            if (!$response->successful()) {
+                Log::error('خطا در دریافت اطلاعات سفارش از WooCommerce', [
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id,
+                    'status_code' => $response->status(),
+                    'response_body' => substr($response->body(), 0, 500)
+                ]);
+                return;
+            }
+
+            $orderData = $response->json();
+
+            if (!$orderData || !isset($orderData['id'])) {
+                Log::error('داده‌های نامعتبر از WooCommerce دریافت شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'order_id' => $this->invoice->woocommerce_order_id,
+                    'response_keys' => $orderData ? array_keys($orderData) : 'null_response'
+                ]);
+                return;
+            }
+
+            // تبدیل داده‌های WooCommerce به فرمت مورد نیاز
+            $processedOrderData = $this->processWooCommerceOrderData($orderData);
+
+            // به‌روزرسانی order_data در دیتابیس
+            $this->invoice->update([
+                'order_data' => $processedOrderData,
+                'customer_mobile' => $this->extractMobileFromOrderData($processedOrderData)
+            ]);
+
+            Log::info('اطلاعات کامل سفارش از WooCommerce دریافت و ذخیره شد', [
+                'invoice_id' => $this->invoice->id,
+                'order_id' => $this->invoice->woocommerce_order_id,
+                'items_count' => count($processedOrderData['items'] ?? []),
+                'customer_mobile' => $processedOrderData['customer']['mobile'] ?? 'not_found',
+                'total' => $processedOrderData['total'] ?? 'not_found'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('خطا در دریافت اطلاعات سفارش از WooCommerce', [
+                'invoice_id' => $this->invoice->id,
+                'order_id' => $this->invoice->woocommerce_order_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * پردازش داده‌های WooCommerce و تبدیل به فرمت مورد نیاز
+     */
+    private function processWooCommerceOrderData($wooOrderData)
+    {
+        // استخراج آیتم‌ها
+        $items = [];
+        foreach ($wooOrderData['line_items'] ?? [] as $lineItem) {
+            $uniqueId = '';
+
+            // جستجو برای unique_id در meta_data
+            foreach ($lineItem['meta_data'] ?? [] as $meta) {
+                if ($meta['key'] === '_bim_unique_id' || $meta['key'] === 'unique_id') {
+                    $uniqueId = $meta['value'];
+                    break;
+                }
+            }
+
+            $items[] = [
+                'unique_id' => $uniqueId,
+                'sku' => $lineItem['sku'] ?? '',
+                'quantity' => $lineItem['quantity'] ?? 1,
+                'price' => (float)$lineItem['price'] ?? 0,
+                'name' => $lineItem['name'] ?? '',
+                'total' => (float)$lineItem['total'] ?? 0,
+                'product_id' => $lineItem['product_id'] ?? 0,
+                'variation_id' => $lineItem['variation_id'] ?? 0
+            ];
+        }
+
+        // استخراج اطلاعات مشتری
+        $customer = [
+            'first_name' => $wooOrderData['billing']['first_name'] ?? '',
+            'last_name' => $wooOrderData['billing']['last_name'] ?? '',
+            'email' => $wooOrderData['billing']['email'] ?? null,
+            'phone' => $wooOrderData['billing']['phone'] ?? '',
+            'mobile' => $wooOrderData['billing']['phone'] ?? '',
+            'address' => [
+                'address_1' => $wooOrderData['billing']['address_1'] ?? '',
+                'address_2' => $wooOrderData['billing']['address_2'] ?? '',
+                'city' => $wooOrderData['billing']['city'] ?? '',
+                'state' => $wooOrderData['billing']['state'] ?? '',
+                'postcode' => $wooOrderData['billing']['postcode'] ?? '',
+                'country' => $wooOrderData['billing']['country'] ?? ''
+            ]
+        ];
+
+        // بررسی shipping address در صورت تفاوت
+        if (!empty($wooOrderData['shipping']['address_1'])) {
+            $customer['shipping_address'] = [
+                'address_1' => $wooOrderData['shipping']['address_1'] ?? '',
+                'address_2' => $wooOrderData['shipping']['address_2'] ?? '',
+                'city' => $wooOrderData['shipping']['city'] ?? '',
+                'state' => $wooOrderData['shipping']['state'] ?? '',
+                'postcode' => $wooOrderData['shipping']['postcode'] ?? '',
+                'country' => $wooOrderData['shipping']['country'] ?? ''
+            ];
+        }
+
+        return [
+            'items' => $items,
+            'customer' => $customer,
+            'payment_method' => $wooOrderData['payment_method'] ?? '',
+            'payment_method_title' => $wooOrderData['payment_method_title'] ?? '',
+            'total' => $wooOrderData['total'] ?? '0',
+            'shipping_total' => $wooOrderData['shipping_total'] ?? '0',
+            'discount_total' => $wooOrderData['discount_total'] ?? '0',
+            'tax_total' => $wooOrderData['tax_total'] ?? '0',
+            'currency' => $wooOrderData['currency'] ?? 'IRR',
+            'status' => $wooOrderData['status'] ?? '',
+            'created_at' => $wooOrderData['date_created'] ?? '',
+            'updated_at' => $wooOrderData['date_modified'] ?? '',
+            'order_key' => $wooOrderData['order_key'] ?? '',
+            'customer_note' => $wooOrderData['customer_note'] ?? '',
+            'billing_details' => $wooOrderData['billing'] ?? [],
+            'shipping_details' => $wooOrderData['shipping'] ?? [],
+            'woo_raw_data' => $wooOrderData // ذخیره داده‌های خام برای مراجع آینده
+        ];
+    }
+
+    /**
+     * استخراج شماره موبایل از داده‌های سفارش
+     */
+    private function extractMobileFromOrderData($orderData)
+    {
+        $mobile = $orderData['customer']['mobile'] ?? $orderData['customer']['phone'] ?? '';
+        return $this->standardizeMobileNumber($mobile);
+    }
+
     public function handle()
     {
+            // مرحله 1: دریافت اطلاعات کامل سفارش از WooCommerce
+            $this->fetchCompleteOrderFromWooCommerce();
+
             // دریافت تنظیمات کاربر
             $userSettings = UserSetting::where('license_id', $this->license->id)->first();
             $shippingCostMethod = $userSettings ? $userSettings->shipping_cost_method : 'expense';
