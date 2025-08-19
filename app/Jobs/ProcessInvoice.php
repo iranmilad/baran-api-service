@@ -249,13 +249,22 @@ class ProcessInvoice implements ShouldQueue
             ];
 
             // ذخیره داده‌های درخواست استعلام مشتری قبل از ارسال
+            $customerRequestLog = [
+                'action' => 'GetCustomerByCode',
+                'request_data' => $customerRequestData,
+                'timestamp' => now()->toDateTimeString(),
+                'endpoint' => '/RainSaleService.svc/GetCustomerByCode'
+            ];
+
+            // بررسی وجود لاگ قبلی و اضافه کردن به آرایه
+            $existingLogs = $this->invoice->customer_request_data ?? [];
+            if (!is_array($existingLogs)) {
+                $existingLogs = [];
+            }
+            $existingLogs[] = $customerRequestLog;
+
             $this->invoice->update([
-                'customer_request_data' => [
-                    'action' => 'GetCustomerByCode',
-                    'request_data' => $customerRequestData,
-                    'timestamp' => now()->toDateTimeString(),
-                    'endpoint' => '/RainSaleService.svc/GetCustomerByCode'
-                ]
+                'customer_request_data' => $existingLogs
             ]);
 
             Log::info('داده‌های درخواست استعلام مشتری ذخیره شد', [
@@ -263,7 +272,11 @@ class ProcessInvoice implements ShouldQueue
                 'customer_mobile' => $this->invoice->customer_mobile
             ]);
 
-            $customerResponse = Http::withHeaders([
+            $customerResponse = Http::withOptions([
+                'verify' => false,
+                'timeout' => 180,
+                'connect_timeout' => 60
+            ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
             ])->post($this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode', $customerRequestData);
@@ -321,13 +334,19 @@ class ProcessInvoice implements ShouldQueue
                 ];
 
                 // ذخیره داده‌های درخواست ثبت مشتری قبل از ارسال
+                $saveCustomerLog = [
+                    'action' => 'SaveCustomer',
+                    'request_data' => $customerData,
+                    'timestamp' => now()->toDateTimeString(),
+                    'endpoint' => '/RainSaleService.svc/SaveCustomer'
+                ];
+
+                // اضافه کردن به لاگ‌های موجود
+                $existingLogs = $this->invoice->customer_request_data ?? [];
+                $existingLogs[] = $saveCustomerLog;
+
                 $this->invoice->update([
-                    'customer_request_data' => [
-                        'action' => 'SaveCustomer',
-                        'request_data' => $customerData,
-                        'timestamp' => now()->toDateTimeString(),
-                        'endpoint' => '/RainSaleService.svc/SaveCustomer'
-                    ]
+                    'customer_request_data' => $existingLogs
                 ]);
 
                 Log::info('داده‌های درخواست ثبت مشتری ذخیره شد', [
@@ -336,7 +355,11 @@ class ProcessInvoice implements ShouldQueue
                 ]);
 
                 // ثبت مشتری در RainSale
-                $saveCustomerResponse = Http::withHeaders([
+                $saveCustomerResponse = Http::withOptions([
+                    'verify' => false,
+                    'timeout' => 180,
+                    'connect_timeout' => 60
+                ])->withHeaders([
                     'Content-Type' => 'application/json',
                     'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/SaveCustomer', $customerData);
@@ -381,14 +404,20 @@ class ProcessInvoice implements ShouldQueue
                 sleep(10);
 
                 // به‌روزرسانی داده‌های درخواست برای استعلام مجدد
+                $retryCustomerLog = [
+                    'action' => 'GetCustomerByCode_AfterSave',
+                    'request_data' => $customerRequestData,
+                    'timestamp' => now()->toDateTimeString(),
+                    'endpoint' => '/RainSaleService.svc/GetCustomerByCode',
+                    'note' => 'استعلام مجدد پس از ثبت مشتری'
+                ];
+
+                // اضافه کردن به لاگ‌های موجود
+                $existingLogs = $this->invoice->customer_request_data ?? [];
+                $existingLogs[] = $retryCustomerLog;
+
                 $this->invoice->update([
-                    'customer_request_data' => [
-                        'action' => 'GetCustomerByCode_AfterSave',
-                        'request_data' => $customerRequestData,
-                        'timestamp' => now()->toDateTimeString(),
-                        'endpoint' => '/RainSaleService.svc/GetCustomerByCode',
-                        'note' => 'استعلام مجدد پس از ثبت مشتری'
-                    ]
+                    'customer_request_data' => $existingLogs
                 ]);
 
                 Log::info('داده‌های درخواست استعلام مجدد مشتری ذخیره شد', [
@@ -397,7 +426,11 @@ class ProcessInvoice implements ShouldQueue
                 ]);
 
                 // استعلام مجدد برای دریافت CustomerID
-                $customerResponse = Http::withHeaders([
+                $customerResponse = Http::withOptions([
+                    'verify' => false,
+                    'timeout' => 180,
+                    'connect_timeout' => 60
+                ])->withHeaders([
                     'Content-Type' => 'application/json',
                     'Authorization' => 'Basic ' . base64_encode($this->user->api_username . ':' . $this->user->api_password)
                 ])->post($this->user->api_webservice.'/RainSaleService.svc/GetCustomerByCode', $customerRequestData);
