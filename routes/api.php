@@ -7,6 +7,7 @@ use App\Http\Controllers\LicenseController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PriceUnitSettingController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductStockController;
 use App\Http\Controllers\ProductSyncController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\UserSettingController;
@@ -164,6 +165,11 @@ Route::prefix('price-unit-settings')->group(function () {
 // Invoice routes
 Route::prefix('invoices')->group(function () {
     Route::post('/webhook', [InvoiceController::class, 'handleWebhook'])->middleware("jwt.auth");
+});
+
+// Product Stock routes
+Route::prefix('products')->middleware('jwt.auth')->group(function () {
+    Route::post('/stock', [ProductStockController::class, 'getStockByUniqueId']);
 });
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
