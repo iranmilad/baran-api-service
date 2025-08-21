@@ -29,7 +29,10 @@ class User extends Authenticatable
         'api_username',
         'api_password',
         'api_storeId',
-        'api_userId'
+        'api_userId',
+        'warehouse_api_url',
+        'warehouse_api_username',
+        'warehouse_api_password'
     ];
 
     /**
@@ -41,7 +44,8 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'mongo_password',
-        'api_password'
+        'api_password',
+        'warehouse_api_password'
     ];
 
     /**
