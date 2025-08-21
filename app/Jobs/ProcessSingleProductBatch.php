@@ -57,17 +57,8 @@ class ProcessSingleProductBatch implements ShouldQueue
         $maxExecutionTime = 60; // 60 ثانیه برای اطمینان
 
         try {
-            Log::info('شروع پردازش batch محصولات', [
-                'license_id' => $this->licenseId,
-                'barcodes_count' => count($this->barcodes),
-                'barcodes' => $this->barcodes
-            ]);
-
             $license = License::with(['userSetting', 'woocommerceApiKey', 'user'])->find($this->licenseId);
             if (!$license || !$license->isActive()) {
-                Log::error('لایسنس معتبر نیست', [
-                    'license_id' => $this->licenseId
-                ]);
                 return;
             }
 
@@ -76,12 +67,6 @@ class ProcessSingleProductBatch implements ShouldQueue
             $user = $license->user;
 
             if (!$userSettings || !$wooApiKey || !$user) {
-                Log::error('اطلاعات ضروری یافت نشد', [
-                    'license_id' => $license->id,
-                    'has_settings' => !!$userSettings,
-                    'has_api_key' => !!$wooApiKey,
-                    'has_user' => !!$user
-                ]);
                 return;
             }
 
@@ -89,37 +74,21 @@ class ProcessSingleProductBatch implements ShouldQueue
             $rainProducts = $this->getRainProducts($this->barcodes, $user);
 
             if (empty($rainProducts)) {
-                Log::info('هیچ محصولی از RainSale دریافت نشد', [
-                    'license_id' => $this->licenseId,
-                    'barcodes' => $this->barcodes
-                ]);
                 return;
             }
 
             // بررسی زمان
             $elapsedTime = microtime(true) - $startTime;
             if ($elapsedTime > $maxExecutionTime - 10) {
-                Log::warning('زمان کافی برای به‌روزرسانی WooCommerce نیست', [
-                    'license_id' => $this->licenseId,
-                    'elapsed_time' => round($elapsedTime, 2)
-                ]);
                 return;
             }
 
             // گام 2: به‌روزرسانی در WooCommerce
             $this->updateWooCommerceProducts($rainProducts, $license, $userSettings, $wooApiKey);
 
-            Log::info('پردازش batch محصولات تکمیل شد', [
-                'license_id' => $this->licenseId,
-                'products_processed' => count($rainProducts),
-                'execution_time' => round(microtime(true) - $startTime, 2)
-            ]);
-
         } catch (\Exception $e) {
             Log::error('خطا در پردازش batch محصولات: ' . $e->getMessage(), [
-                'license_id' => $this->licenseId,
-                'barcodes' => $this->barcodes,
-                'trace' => $e->getTraceAsString()
+                'license_id' => $this->licenseId
             ]);
             throw $e;
         }
@@ -132,21 +101,12 @@ class ProcessSingleProductBatch implements ShouldQueue
     {
         try {
             if (!$user->api_webservice || !$user->api_username || !$user->api_password) {
-                Log::warning('اطلاعات API RainSale یافت نشد', [
-                    'license_id' => $this->licenseId
-                ]);
                 return [];
             }
 
             // دریافت لایسنس با تنظیمات برای دسترسی به default_warehouse_code
             $license = License::with('userSetting')->find($this->licenseId);
             $stockId = $license && $license->userSetting ? $license->userSetting->default_warehouse_code : '';
-
-            Log::info('استفاده از default_warehouse_code برای stockId', [
-                'license_id' => $this->licenseId,
-                'stock_id' => $stockId,
-                'has_user_settings' => !is_null($license ? $license->userSetting : null)
-            ]);
 
             // آماده‌سازی body درخواست
             $requestBody = ['barcodes' => $barcodes];
@@ -166,29 +126,17 @@ class ProcessSingleProductBatch implements ShouldQueue
             ])->post($user->api_webservice . "/RainSaleService.svc/GetItemInfos", $requestBody);
 
             if (!$response->successful()) {
-                Log::warning('خطا در دریافت از RainSale API', [
-                    'license_id' => $this->licenseId,
-                    'status' => $response->status(),
-                    'barcodes' => $barcodes
-                ]);
                 return [];
             }
 
             $data = $response->json();
             $products = $data['GetItemInfosResult'] ?? [];
 
-            Log::info('محصولات از RainSale دریافت شد', [
-                'license_id' => $this->licenseId,
-                'requested_count' => count($barcodes),
-                'received_count' => count($products)
-            ]);
-
             return $products;
 
         } catch (\Exception $e) {
             Log::error('خطا در درخواست RainSale API: ' . $e->getMessage(), [
-                'license_id' => $this->licenseId,
-                'barcodes' => $barcodes
+                'license_id' => $this->licenseId
             ]);
             return [];
         }

@@ -68,32 +68,22 @@ class FetchAndDivideProducts implements ShouldQueue
             $allBarcodes = $this->getAllProductBarcodes($license, $wooApiKey, $startTime, $maxExecutionTime);
 
             if (empty($allBarcodes)) {
-                Log::info('هیچ بارکدی برای پردازش یافت نشد', [
-                    'license_id' => $this->licenseId
-                ]);
                 return;
             }
 
             // تقسیم به chunks و ارسال
-            $chunkSize = 8; // chunks کوچکتر برای همه محصولات
+            $chunkSize = 50; // افزایش chunk size برای سرعت بیشتر
             $chunks = array_chunk($allBarcodes, $chunkSize);
 
-            Log::info('تقسیم همه محصولات به chunks', [
-                'license_id' => $this->licenseId,
-                'total_barcodes' => count($allBarcodes),
-                'chunk_size' => $chunkSize,
-                'total_chunks' => count($chunks)
-            ]);
-
             foreach ($chunks as $index => $chunk) {
-                $delaySeconds = 5 + ($index * 8); // delay کمتر برای سرعت بیشتر
+                $delaySeconds = 3 + ($index * 5); // کاهش delay
 
                 ProcessSingleProductBatch::dispatch($this->licenseId, $chunk)
                     ->onQueue('product-processing')
                     ->delay(now()->addSeconds($delaySeconds));
 
-                // هر 100 chunk یک log
-                if (($index + 1) % 100 === 0) {
+                // هر 200 chunk یک log
+                if (($index + 1) % 200 === 0) {
                     Log::info('پیشرفت ارسال chunks', [
                         'license_id' => $this->licenseId,
                         'processed_chunks' => $index + 1,
@@ -102,16 +92,9 @@ class FetchAndDivideProducts implements ShouldQueue
                 }
             }
 
-            Log::info('تقسیم و ارسال همه محصولات تکمیل شد', [
-                'license_id' => $this->licenseId,
-                'total_chunks_sent' => count($chunks),
-                'execution_time' => round(microtime(true) - $startTime, 2)
-            ]);
-
         } catch (\Exception $e) {
             Log::error('خطا در دریافت و تقسیم محصولات: ' . $e->getMessage(), [
-                'license_id' => $this->licenseId,
-                'trace' => $e->getTraceAsString()
+                'license_id' => $this->licenseId
             ]);
             throw $e;
         }

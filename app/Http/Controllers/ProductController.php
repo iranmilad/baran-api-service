@@ -80,17 +80,17 @@ class ProductController extends Controller
                     ]);
                 }
 
-                if($user->id==5)
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Sync request queued successfully',
-                        'data' => [
-                            'processed_count' => 0,
-                            'error_count' => 0,
-                            'errors' => null,
-                            'queue_status' => 'processing'
-                        ]
-                    ]);
+                // if($user->id==5)
+                //     return response()->json([
+                //         'success' => true,
+                //         'message' => 'Sync request queued successfully',
+                //         'data' => [
+                //             'processed_count' => 0,
+                //             'error_count' => 0,
+                //             'errors' => null,
+                //             'queue_status' => 'processing'
+                //         ]
+                //     ]);
 
                 // Get user settings using license_id
                 $settings = UserSetting::where('license_id', $license->id)->first();

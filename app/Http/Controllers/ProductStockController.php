@@ -86,7 +86,7 @@ class ProductStockController extends Controller
                 ], 400);
             }
 
-            // درخواست به Warehouse API با آرایه کدهای یکتا (بدون warehouse_code)
+            // درخواست به Warehouse API با آرایه کدهای یکتا (بدون warehouse_code در درخواست)
             $response = Http::withOptions([
                 'verify' => false,
                 'timeout' => 180,

@@ -60,14 +60,10 @@ class CoordinateProductUpdate implements ShouldQueue
             }
 
             // تقسیم به chunk های کوچک
-            $chunkSize = 10; // فقط 10 محصول در هر job
+            $chunkSize = 50; // افزایش سایز chunk برای سرعت بیشتر
 
             if (empty($this->barcodes)) {
                 // اگر barcodes خالی باشد، یعنی همه محصولات
-                Log::info('ارسال job برای دریافت همه محصولات', [
-                    'license_id' => $this->licenseId
-                ]);
-
                 // ارسال job برای دریافت همه محصولات و تقسیم آنها
                 FetchAndDivideProducts::dispatch($this->licenseId)
                     ->onQueue('product-coordination')
@@ -77,39 +73,18 @@ class CoordinateProductUpdate implements ShouldQueue
                 // تقسیم barcodes موجود
                 $chunks = array_chunk($this->barcodes, $chunkSize);
 
-                Log::info('تقسیم barcodes به chunks', [
-                    'license_id' => $this->licenseId,
-                    'total_barcodes' => count($this->barcodes),
-                    'chunk_size' => $chunkSize,
-                    'total_chunks' => count($chunks)
-                ]);
-
                 foreach ($chunks as $index => $chunk) {
-                    $delaySeconds = 5 + ($index * 10); // 5، 15، 25، 35 ثانیه...
+                    $delaySeconds = 3 + ($index * 5); // کاهش delay برای سرعت بیشتر
 
                     ProcessSingleProductBatch::dispatch($this->licenseId, $chunk)
                         ->onQueue('product-processing')
                         ->delay(now()->addSeconds($delaySeconds));
-
-                    Log::info('ارسال chunk به صف پردازش', [
-                        'license_id' => $this->licenseId,
-                        'chunk_index' => $index + 1,
-                        'chunk_size' => count($chunk),
-                        'delay_seconds' => $delaySeconds,
-                        'queue' => 'product-processing'
-                    ]);
                 }
             }
 
-            Log::info('coordination تکمیل شد', [
-                'license_id' => $this->licenseId,
-                'chunks_dispatched' => empty($this->barcodes) ? 'fetch_job' : count(array_chunk($this->barcodes, $chunkSize))
-            ]);
-
         } catch (\Exception $e) {
             Log::error('خطا در coordination محصولات: ' . $e->getMessage(), [
-                'license_id' => $this->licenseId,
-                'trace' => $e->getTraceAsString()
+                'license_id' => $this->licenseId
             ]);
 
             // در صورت خطا، job را fail نکن، فقط log کن
