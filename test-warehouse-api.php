@@ -118,10 +118,10 @@ if (isset($data1['success']) && $data1['success']) {
     }
 }
 
-// تست 2: درخواست با یک unique_id
-echo "\n=== تست 2: درخواست تک محصول ===\n";
+// تست 2: درخواست با یک unique_id (باید در آرایه باشد)
+echo "\n=== تست 2: درخواست تک محصول (در آرایه) ===\n";
 $testData2 = [
-    'unique_id' => '80DEB248-1924-467C-8745-004BAF851746'
+    'unique_ids' => ['80DEB248-1924-467C-8745-004BAF851746']
 ];
 
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($testData2));
@@ -134,6 +134,23 @@ if (isset($data2['success']) && $data2['success']) {
 } else {
     echo "❌ تست تک محصول ناموفق!\n";
     echo "خطا: " . ($data2['message'] ?? 'نامشخص') . "\n";
+}
+
+// تست 3: درخواست نامعتبر (بدون unique_ids)
+echo "\n=== تست 3: درخواست نامعتبر (validation test) ===\n";
+$testData3 = [
+    'unique_id' => '80DEB248-1924-467C-8745-004BAF851746'  // این نباید کار کند
+];
+
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($testData3));
+$response3 = curl_exec($ch);
+$data3 = json_decode($response3, true);
+
+if (isset($data3['success']) && !$data3['success']) {
+    echo "✅ Validation درست کار می‌کند!\n";
+    echo "پیام خطا: " . ($data3['message'] ?? 'نامشخص') . "\n";
+} else {
+    echo "❌ Validation درست کار نمی‌کند!\n";
 }
 
 curl_close($ch);

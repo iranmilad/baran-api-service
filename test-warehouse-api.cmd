@@ -28,18 +28,24 @@ echo.
 echo Response saved to warehouse_response.json
 echo.
 
-echo === Test 2: Single unique_id ===
+echo === Test 2: Single unique_id (Validation Error Test) ===
 curl -X POST "%BASE_URL%/stock" ^
      -H "Content-Type: application/json" ^
      -H "Authorization: Bearer YOUR_TOKEN_HERE" ^
      -d "{\"unique_id\":\"80DEB248-1924-467C-8745-004BAF851746\"}" ^
-     -k
+     -k > validation_error_response.json
 
+echo.
+echo Validation error response saved to validation_error_response.json
 echo.
 echo.
 echo === Response Analysis ===
-echo Checking response structure...
+echo Checking successful response structure...
 type warehouse_response.json
+
+echo.
+echo Checking validation error response...
+type validation_error_response.json
 
 echo.
 echo.
@@ -51,7 +57,7 @@ echo 3. warehouse_api_password in users table
 echo 4. enable_stock_update in user_settings table
 echo 5. default_warehouse_code in user_settings table
 echo.
-echo Note: API endpoint is /api/itemlist/GetItemsByIds (similar to RainSale)
+echo Note: API now only accepts unique_ids parameter (array format)
 echo 6. WooCommerce API credentials
 
 echo.

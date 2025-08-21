@@ -17,22 +17,22 @@ Authorization: Bearer {token}
 
 ## Request Parameters
 
-API از دو نوع درخواست پشتیبانی می‌کند:
+API فقط از یک نوع درخواست پشتیبانی می‌کند:
 
-### 1. تک محصول (Single Product)
-```json
-{
-    "unique_id": "80DEB248-1924-467C-8745-004BAF851746"
-}
-```
-
-### 2. چند محصول (Multiple Products)
+### چند محصول (Multiple Products)
 ```json
 {
     "unique_ids": [
         "80DEB248-1924-467C-8745-004BAF851746",
         "29FDC941-FD16-4AE5-AB94-013CDE27CDBC"
     ]
+}
+```
+
+**نکته**: حتی برای یک محصول هم باید از آرایه استفاده کنید:
+```json
+{
+    "unique_ids": ["80DEB248-1924-467C-8745-004BAF851746"]
 }
 ```
 

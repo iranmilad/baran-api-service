@@ -44,34 +44,21 @@ class ProductStockController extends Controller
                 ], 404);
             }
 
-            // اعتبارسنجی ورودی - پشتیبانی از تک کد یا آرایه کدها
+            // اعتبارسنجی ورودی - فقط پارامتر unique_ids
             $validator = Validator::make($request->all(), [
                 'unique_ids' => 'required|array|min:1',
                 'unique_ids.*' => 'required|string'
             ]);
 
-            // اگر validation شکست خورد، سعی کن با unique_id تکی
             if ($validator->fails()) {
-                $singleValidator = Validator::make($request->all(), [
-                    'unique_id' => 'required|string'
-                ]);
-
-                if ($singleValidator->fails()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'مقدار unique_id یا unique_ids الزامی است',
-                        'errors' => [
-                            'unique_ids' => $validator->errors()->get('unique_ids'),
-                            'unique_id' => $singleValidator->errors()->get('unique_id')
-                        ]
-                    ], 422);
-                }
-
-                // تبدیل unique_id تکی به آرایه
-                $uniqueIds = [$request->unique_id];
-            } else {
-                $uniqueIds = $request->unique_ids;
+                return response()->json([
+                    'success' => false,
+                    'message' => 'پارامتر unique_ids الزامی است و باید آرایه‌ای از رشته‌ها باشد',
+                    'errors' => $validator->errors()
+                ], 422);
             }
+
+            $uniqueIds = $request->unique_ids;
 
             // دریافت تنظیمات کاربر
             $userSettings = UserSetting::where('license_id', $license->id)->first();
