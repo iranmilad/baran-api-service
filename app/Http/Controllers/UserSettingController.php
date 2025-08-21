@@ -222,15 +222,15 @@ class UserSettingController extends Controller
 
                 // تبدیل داده flat به ساختار دیتابیس
                 $dbSettings = UserSetting::fromPluginArray($request->settings);
-                if($license->id!=3)
+                // if($license->id!=3)
                     $settings = UserSetting::updateOrCreate(
                         ['license_id' => $license->id],
                         $dbSettings
                     );
-                else{
-                    //get user setting
-                    $settings = UserSetting::where('license_id', $license->id)->first();
-                }
+                // else{
+                //     //get user setting
+                //     $settings = UserSetting::where('license_id', $license->id)->first();
+                // }
 
                 if(isset($request->sync) and $request->sync==true)
                     // ارسال رویداد به‌روزرسانی تنظیمات
