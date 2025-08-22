@@ -43,7 +43,7 @@ class ProcessProductBatch implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct($licenseId, $barcodes, $batchSize = 10)
+    public function __construct($licenseId, $barcodes, $batchSize = 50)
     {
         $this->licenseId = $licenseId;
         $this->barcodes = $barcodes;
@@ -56,20 +56,16 @@ class ProcessProductBatch implements ShouldQueue
     public function handle(): void
     {
         $startTime = microtime(true);
-        $maxExecutionTime = 35; // 35 ثانیه
+        $maxExecutionTime = 35;
 
         try {
             Log::info('شروع پردازش batch محصولات', [
                 'license_id' => $this->licenseId,
-                'barcodes_count' => count($this->barcodes),
-                'batch_size' => $this->batchSize
+                'barcodes_count' => count($this->barcodes)
             ]);
 
             $license = License::with(['userSetting', 'woocommerceApiKey'])->find($this->licenseId);
             if (!$license || !$license->isActive()) {
-                Log::error('لایسنس معتبر نیست', [
-                    'license_id' => $this->licenseId
-                ]);
                 return;
             }
 
@@ -77,32 +73,23 @@ class ProcessProductBatch implements ShouldQueue
             $wooApiKey = $license->woocommerceApiKey;
 
             if (!$userSettings || !$wooApiKey) {
-                Log::error('تنظیمات یا کلید API ووکامرس یافت نشد', [
-                    'license_id' => $license->id
-                ]);
                 return;
             }
 
-            // تقسیم barcodes به chunk های کوچکتر
-            $barcodeChunks = array_chunk($this->barcodes, $this->batchSize);
+            // تقسیم barcodes به chunk های 50 تایی
+            $barcodeChunks = array_chunk($this->barcodes, 50);
             $processedChunks = 0;
 
             foreach ($barcodeChunks as $chunk) {
                 // بررسی زمان
                 $elapsedTime = microtime(true) - $startTime;
                 if ($elapsedTime > $maxExecutionTime) {
-                    Log::info('زمان به پایان رسید، ارسال chunks باقی‌مانده', [
-                        'license_id' => $this->licenseId,
-                        'processed_chunks' => $processedChunks,
-                        'remaining_chunks' => count($barcodeChunks) - $processedChunks
-                    ]);
-
                     // ارسال chunks باقی‌مانده به job جدید
                     $remainingBarcodes = array_merge(...array_slice($barcodeChunks, $processedChunks));
 
-                    ProcessProductBatch::dispatch($this->licenseId, $remainingBarcodes, $this->batchSize)
+                    ProcessProductBatch::dispatch($this->licenseId, $remainingBarcodes, 50)
                         ->onQueue('products')
-                        ->delay(now()->addSeconds(5));
+                        ->delay(now()->addSeconds(3));
 
                     break;
                 }
@@ -111,16 +98,14 @@ class ProcessProductBatch implements ShouldQueue
                 $processedChunks++;
             }
 
-            Log::info('پردازش batch محصولات کامل شد', [
+            Log::info('پایان پردازش batch محصولات', [
                 'license_id' => $this->licenseId,
-                'processed_chunks' => $processedChunks,
-                'execution_time' => round(microtime(true) - $startTime, 2)
+                'processed_chunks' => $processedChunks
             ]);
 
         } catch (\Exception $e) {
             Log::error('خطا در پردازش batch محصولات: ' . $e->getMessage(), [
-                'license_id' => $this->licenseId,
-                'trace' => $e->getTraceAsString()
+                'license_id' => $this->licenseId
             ]);
             throw $e;
         }
@@ -136,10 +121,6 @@ class ProcessProductBatch implements ShouldQueue
             $rainProducts = $this->getRainProducts($barcodes, $license->user);
 
             if (empty($rainProducts)) {
-                Log::info('هیچ محصولی از RainSale API دریافت نشد', [
-                    'license_id' => $this->licenseId,
-                    'barcodes' => $barcodes
-                ]);
                 return;
             }
 
@@ -148,8 +129,7 @@ class ProcessProductBatch implements ShouldQueue
 
         } catch (\Exception $e) {
             Log::error('خطا در پردازش chunk: ' . $e->getMessage(), [
-                'license_id' => $this->licenseId,
-                'barcodes' => $barcodes
+                'license_id' => $this->licenseId
             ]);
         }
     }
@@ -161,21 +141,12 @@ class ProcessProductBatch implements ShouldQueue
     {
         try {
             if (!$user->api_webservice || !$user->api_username || !$user->api_password) {
-                Log::warning('اطلاعات API باران یافت نشد', [
-                    'user_id' => $user->id
-                ]);
                 return [];
             }
 
             // دریافت لایسنس با تنظیمات برای دسترسی به default_warehouse_code
             $license = License::with('userSetting')->find($this->licenseId);
             $stockId = $license && $license->userSetting ? $license->userSetting->default_warehouse_code : '';
-
-            Log::info('استفاده از default_warehouse_code برای stockId', [
-                'license_id' => $this->licenseId,
-                'stock_id' => $stockId,
-                'has_user_settings' => !is_null($license ? $license->userSetting : null)
-            ]);
 
             // آماده‌سازی body درخواست
             $requestBody = ['barcodes' => $barcodes];
@@ -195,9 +166,8 @@ class ProcessProductBatch implements ShouldQueue
             ])->post($user->api_webservice . "/RainSaleService.svc/GetItemInfos", $requestBody);
 
             if (!$response->successful()) {
-                Log::warning('خطا در دریافت از RainSale API', [
-                    'status' => $response->status(),
-                    'barcodes' => $barcodes
+                Log::error('خطا در دریافت از RainSale API', [
+                    'status' => $response->status()
                 ]);
                 return [];
             }
@@ -206,9 +176,7 @@ class ProcessProductBatch implements ShouldQueue
             return $data['GetItemInfosResult'] ?? [];
 
         } catch (\Exception $e) {
-            Log::error('خطا در درخواست RainSale API: ' . $e->getMessage(), [
-                'barcodes' => $barcodes
-            ]);
+            Log::error('خطا در درخواست RainSale API: ' . $e->getMessage());
             return [];
         }
     }
@@ -220,9 +188,5 @@ class ProcessProductBatch implements ShouldQueue
     {
         // این قسمت می‌تواند پیاده‌سازی کوتاه‌تری داشته باشد
         // یا از طریق API مستقیم WooCommerce انجام شود
-        Log::info('به‌روزرسانی محصولات در WooCommerce', [
-            'license_id' => $this->licenseId,
-            'products_count' => count($rainProducts)
-        ]);
     }
 }

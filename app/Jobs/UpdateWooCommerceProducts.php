@@ -29,9 +29,9 @@ class UpdateWooCommerceProducts implements ShouldQueue
     protected $license_id;
     protected $operation;
     protected $barcodes;
-    protected $batchSize = 10; // تنظیم اندازه بسته به 10
+    protected $batchSize = 50; // افزایش به 50
 
-    public function __construct($license_id, $operation, $barcodes = [], $batchSize = 10)
+    public function __construct($license_id, $operation, $barcodes = [], $batchSize = 50)
     {
         $this->license_id = $license_id;
         $this->operation = $operation;
@@ -45,19 +45,14 @@ class UpdateWooCommerceProducts implements ShouldQueue
         $maxExecutionTime = 45; // 45 ثانیه - کمتر از timeout
 
         try {
-            // لاگ شروع صف
-            Log::info('شروع پردازش صف به‌روزرسانی محصولات ووکامرس', [
+            Log::info('شروع پردازش به‌روزرسانی محصولات ووکامرس', [
                 'license_id' => $this->license_id,
                 'operation' => $this->operation,
-                'barcodes_count' => count($this->barcodes),
-                'start_time' => date('Y-m-d H:i:s')
+                'barcodes_count' => count($this->barcodes)
             ]);
 
             $license = License::with(['userSetting', 'woocommerceApiKey'])->find($this->license_id);
             if (!$license || !$license->isActive()) {
-                Log::error('لایسنس معتبر نیست', [
-                    'license_id' => $this->license_id
-                ]);
                 return;
             }
 
@@ -65,16 +60,6 @@ class UpdateWooCommerceProducts implements ShouldQueue
             $wooApiKey = $license->woocommerceApiKey;
 
             if (!$userSettings || !$wooApiKey) {
-                Log::error('تنظیمات یا کلید API ووکامرس یافت نشد', [
-                    'license_id' => $license->id
-                ]);
-                return;
-            }
-
-            if (!$wooApiKey) {
-                Log::error('کلید API ووکامرس یافت نشد', [
-                    'license_id' => $license->id
-                ]);
                 return;
             }
 
@@ -93,9 +78,6 @@ class UpdateWooCommerceProducts implements ShouldQueue
             $wooProducts = $this->getWooCommerceProducts($woocommerce);
 
             if (empty($wooProducts)) {
-                Log::info('هیچ محصولی در ووکامرس یافت نشد', [
-                    'license_id' => $this->license_id
-                ]);
                 return;
             }
 
@@ -109,14 +91,8 @@ class UpdateWooCommerceProducts implements ShouldQueue
             // بررسی زمان - اگر نزدیک timeout شدیم، کار را تقسیم کنیم
             $elapsedTime = microtime(true) - $startTime;
             if ($elapsedTime > $maxExecutionTime - 15) {
-                Log::info('نزدیک timeout شدیم، تقسیم کار', [
-                    'license_id' => $this->license_id,
-                    'elapsed_time' => round($elapsedTime, 2),
-                    'products_count' => count($wooProducts)
-                ]);
-
-                // تقسیم محصولات به batch های کوچکتر
-                $productChunks = array_chunk($wooProducts, 15);
+                // تقسیم محصولات به batch های 50 تایی
+                $productChunks = array_chunk($wooProducts, 50);
 
                 foreach ($productChunks as $index => $chunk) {
                     $chunkBarcodes = array_column($chunk, 'barcode');
@@ -126,29 +102,26 @@ class UpdateWooCommerceProducts implements ShouldQueue
                         $this->license_id,
                         'chunk',
                         $chunkBarcodes,
-                        15
+                        50
                     )
                     ->onQueue('bulk-update')
-                    ->delay(now()->addSeconds(($index + 1) * 15));
-
-                    Log::info('ارسال chunk جدید', [
-                        'license_id' => $this->license_id,
-                        'chunk_index' => $index,
-                        'chunk_size' => count($chunk),
-                        'delay_seconds' => ($index + 1) * 15
-                    ]);
+                    ->delay(now()->addSeconds($index * 5)); // کاهش delay
                 }
 
-                return; // خروج از job فعلی
+                return;
             }
 
             // ادامه پردازش عادی
             $this->processProducts($wooProducts, $userSettings, $woocommerce, $startTime, $maxExecutionTime);
 
+            Log::info('پایان پردازش به‌روزرسانی محصولات ووکامرس', [
+                'license_id' => $this->license_id,
+                'operation' => $this->operation
+            ]);
+
         } catch (\Exception $e) {
             Log::error('خطا در به‌روزرسانی محصولات در ووکامرس: ' . $e->getMessage(), [
-                'license_id' => $this->license_id,
-                'trace' => $e->getTraceAsString()
+                'license_id' => $this->license_id
             ]);
             throw $e;
         }
@@ -164,21 +137,14 @@ class UpdateWooCommerceProducts implements ShouldQueue
             return !is_null($barcode) && !empty($barcode);
         })->values()->toArray();
 
-        // تقسیم بارکدها به دسته‌های کوچکتر
-        $barcodeChunks = array_chunk($barcodes, 20); // کاهش از 100 به 20
+        // تقسیم بارکدها به دسته‌های 50 تایی
+        $barcodeChunks = array_chunk($barcodes, 50);
 
         $allProducts = [];
         foreach ($barcodeChunks as $chunkIndex => $chunk) {
             // بررسی زمان قبل از هر chunk
             $elapsedTime = microtime(true) - $startTime;
             if ($elapsedTime > $maxExecutionTime - 10) {
-                Log::info('زمان به پایان رسید، ارسال بقیه chunks به job جدید', [
-                    'license_id' => $this->license_id,
-                    'elapsed_time' => round($elapsedTime, 2),
-                    'processed_chunks' => $chunkIndex,
-                    'remaining_chunks' => count($barcodeChunks) - $chunkIndex
-                ]);
-
                 // ارسال chunks باقی‌مانده
                 $remainingChunks = array_slice($barcodeChunks, $chunkIndex);
                 $remainingBarcodes = array_merge(...$remainingChunks);
@@ -187,10 +153,10 @@ class UpdateWooCommerceProducts implements ShouldQueue
                     $this->license_id,
                     'continuation',
                     $remainingBarcodes,
-                    20
+                    50
                 )
                 ->onQueue('bulk-update')
-                ->delay(now()->addSeconds(10));
+                ->delay(now()->addSeconds(5));
 
                 break;
             }
@@ -245,9 +211,6 @@ class UpdateWooCommerceProducts implements ShouldQueue
             $response = $woocommerce->get('products/unique');
 
             if (!isset($response->success) || !$response->success || !isset($response->data)) {
-                Log::error('پاسخ نامعتبر از API ووکامرس', [
-                    'response' => $response
-                ]);
                 return [];
             }
 
@@ -260,11 +223,6 @@ class UpdateWooCommerceProducts implements ShouldQueue
                     'variation_id' => $product->variation_id ?? null
                 ];
             }
-
-            Log::info('تعداد محصولات دریافت شده از ووکامرس', [
-                'count' => count($products),
-                'license_id' => $this->license_id
-            ]);
 
             return $products;
         } catch (\Exception $e) {
@@ -282,9 +240,6 @@ class UpdateWooCommerceProducts implements ShouldQueue
             $license = License::with(['user', 'userSetting'])->find($this->license_id);
 
             if (!$license || !$license->user) {
-                Log::error('لایسنس یا کاربر یافت نشد', [
-                    'license_id' => $this->license_id
-                ]);
                 return $this->getProductsFromDatabase($barcodes);
             }
 
@@ -294,17 +249,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
             // دریافت default_warehouse_code از تنظیمات
             $stockId = $userSettings ? $userSettings->default_warehouse_code : '';
 
-            Log::info('استفاده از default_warehouse_code برای stockId', [
-                'license_id' => $this->license_id,
-                'stock_id' => $stockId,
-                'has_user_settings' => !is_null($userSettings)
-            ]);
-
             if (!$user->api_webservice || !$user->api_username || !$user->api_password) {
-                Log::warning('اطلاعات API باران کاربر یافت نشد، استفاده از داده‌های دیتابیس', [
-                    'user_id' => $user->id,
-                    'license_id' => $license->id
-                ]);
                 return $this->getProductsFromDatabase($barcodes);
             }
 
@@ -326,10 +271,8 @@ class UpdateWooCommerceProducts implements ShouldQueue
             ])->post($user->api_webservice."/RainSaleService.svc/GetItemInfos", $requestBody);
 
             if (!$response->successful()) {
-                Log::warning('خطا در دریافت اطلاعات از API باران، استفاده از داده‌های دیتابیس', [
-                    'response' => $response->body(),
-                    'user_id' => $user->id,
-                    'license_id' => $license->id
+                Log::error('خطا در دریافت اطلاعات از API باران، استفاده از داده‌های دیتابیس', [
+                    'license_id' => $this->license_id
                 ]);
                 return $this->getProductsFromDatabase($barcodes);
             }
@@ -337,7 +280,7 @@ class UpdateWooCommerceProducts implements ShouldQueue
             $data = $response->json();
             return $data['GetItemInfosResult'] ?? [];
         } catch (\Exception $e) {
-            Log::warning('خطا در دریافت اطلاعات از API باران، استفاده از داده‌های دیتابیس: ' . $e->getMessage(), [
+            Log::error('خطا در دریافت اطلاعات از API باران، استفاده از داده‌های دیتابیس: ' . $e->getMessage(), [
                 'license_id' => $this->license_id
             ]);
             return $this->getProductsFromDatabase($barcodes);
@@ -368,11 +311,6 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 ];
             }
 
-            Log::info('اطلاعات محصولات از دیتابیس دریافت شد', [
-                'license_id' => $this->license_id,
-                'count' => count($result)
-            ]);
-
             return $result;
         } catch (\Exception $e) {
             Log::error('خطا در دریافت اطلاعات از دیتابیس: ' . $e->getMessage(), [
@@ -401,16 +339,9 @@ class UpdateWooCommerceProducts implements ShouldQueue
                 ];
             }, $products);
 
-            // تقسیم محصولات به دسته‌های کوچکتر برای جلوگیری از خطاهای JSON
-            $chunks = array_chunk($products, $this->batchSize);
+            // تقسیم محصولات به دسته‌های 50 تایی
+            $chunks = array_chunk($products, 50);
             $totalChunks = count($chunks);
-
-            Log::info('تقسیم محصولات به دسته‌های کوچکتر برای به‌روزرسانی', [
-                'total_products' => count($products),
-                'batch_size' => $this->batchSize,
-                'total_chunks' => $totalChunks,
-                'license_id' => $this->license_id
-            ]);
 
             $successfulUpdates = 0;
             $failedUpdates = 0;
@@ -418,13 +349,6 @@ class UpdateWooCommerceProducts implements ShouldQueue
 
             foreach ($chunks as $index => $chunk) {
                 try {
-                    Log::info('به‌روزرسانی دسته محصولات', [
-                        'chunk_index' => $index + 1,
-                        'total_chunks' => $totalChunks,
-                        'chunk_size' => count($chunk),
-                        'license_id' => $this->license_id
-                    ]);
-
                     $response = $woocommerce->put('products/unique/batch/update', [
                         'products' => $chunk
                     ]);
@@ -433,15 +357,9 @@ class UpdateWooCommerceProducts implements ShouldQueue
                     $updatedInChunk = isset($response->data) ? count($response->data) : 0;
                     $successfulUpdates += $updatedInChunk;
 
-                    Log::info('دسته محصولات با موفقیت به‌روزرسانی شد', [
-                        'chunk_index' => $index + 1,
-                        'updated_count' => $updatedInChunk,
-                        'license_id' => $this->license_id
-                    ]);
-
-                    // اضافه کردن تاخیر بین درخواست‌ها برای جلوگیری از اورلود سرور
+                    // کاهش تاخیر بین درخواست‌ها
                     if ($index < $totalChunks - 1) {
-                        sleep(2); // 2 ثانیه تاخیر بین هر درخواست
+                        sleep(1); // کاهش از 2 به 1 ثانیه
                     }
 
                 } catch (\Exception $e) {
@@ -449,43 +367,28 @@ class UpdateWooCommerceProducts implements ShouldQueue
                     $errors[] = [
                         'chunk_index' => $index + 1,
                         'error_message' => $e->getMessage(),
-                        'products_count' => count($chunk),
-                        'first_few_skus' => array_slice(array_column($chunk, 'sku'), 0, 5) // نمایش 5 بارکد اول برای تشخیص
+                        'products_count' => count($chunk)
                     ];
 
                     Log::error('خطا در به‌روزرسانی دسته محصولات: ' . $e->getMessage(), [
                         'chunk_index' => $index + 1,
                         'products_count' => count($chunk),
-                        'license_id' => $this->license_id,
-                        'error_code' => $e->getCode()
+                        'license_id' => $this->license_id
                     ]);
 
-                    // ادامه اجرا با دسته بعدی، بدون توقف کامل فرآیند
                     continue;
                 }
             }
 
-            // گزارش نهایی به‌روزرسانی
-            Log::info('پایان فرآیند به‌روزرسانی محصولات', [
-                'total_products' => count($products),
-                'successful_updates' => $successfulUpdates,
-                'failed_updates' => $failedUpdates,
-                'total_chunks' => $totalChunks,
-                'errors_count' => count($errors),
-                'timestamp' => now()->toDateTimeString(),
-                'license_id' => $this->license_id
-            ]);
-
-            // اگر خطایی رخ داده باشد ولی بعضی موارد با موفقیت انجام شده باشند
-            if (!empty($errors) && $successfulUpdates > 0) {
-                Log::warning('به‌روزرسانی با برخی خطاها انجام شد', [
-                    'errors' => $errors,
+            // گزارش نهایی فقط در صورت وجود خطا
+            if (!empty($errors)) {
+                Log::error('خطاهای رخ داده در به‌روزرسانی محصولات', [
+                    'total_products' => count($products),
+                    'successful_updates' => $successfulUpdates,
+                    'failed_updates' => $failedUpdates,
+                    'errors_count' => count($errors),
                     'license_id' => $this->license_id
                 ]);
-            }
-            // اگر همه موارد با خطا مواجه شدند، استثنا پرتاب می‌کنیم
-            else if (count($errors) === $totalChunks) {
-                throw new \Exception('تمام دسته‌های به‌روزرسانی با خطا مواجه شدند');
             }
 
             return [

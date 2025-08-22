@@ -33,7 +33,7 @@ class ProcessProductPage implements ShouldQueue
     /**
      * The number of seconds the job can run before timing out.
      */
-    public $timeout = 50; // 50 ثانیه - کمی کمتر از 1 دقیقه
+    public $timeout = 50; // 50 ثانیه
 
     /**
      * Calculate the number of seconds to wait before retrying the job.
@@ -55,20 +55,16 @@ class ProcessProductPage implements ShouldQueue
     public function handle(): void
     {
         $startTime = microtime(true);
-        $maxExecutionTime = 45; // 45 ثانیه - کمی کمتر از timeout
+        $maxExecutionTime = 45; // 45 ثانیه
 
         try {
-            Log::info('Starting product page processing job', [
+            Log::info('شروع پردازش صفحه محصولات', [
                 'license_id' => $this->licenseId,
-                'page' => $this->page,
-                'start_time' => date('Y-m-d H:i:s')
+                'page' => $this->page
             ]);
 
             $license = License::find($this->licenseId);
             if (!$license || !$license->isActive()) {
-                Log::error('Invalid or inactive license in product page job', [
-                    'license_id' => $this->licenseId
-                ]);
                 return;
             }
 
@@ -76,9 +72,6 @@ class ProcessProductPage implements ShouldQueue
             $products = $this->getProductsPage($license, $this->page);
 
             if (empty($products)) {
-                Log::info('No products found on page', [
-                    'page' => $this->page
-                ]);
                 return;
             }
 
@@ -87,19 +80,11 @@ class ProcessProductPage implements ShouldQueue
             $processedProducts = 0;
 
             foreach ($products as $product) {
-                // بررسی زمان اجرا - اگر نزدیک timeout شدیم، باقی کار را به job جدید بسپاریم
+                // بررسی زمان اجرا
                 $currentTime = microtime(true);
                 $elapsedTime = $currentTime - $startTime;
 
                 if ($elapsedTime > $maxExecutionTime) {
-                    Log::info('Job approaching timeout, dispatching continuation', [
-                        'license_id' => $this->licenseId,
-                        'current_page' => $this->page,
-                        'processed_products' => $processedProducts,
-                        'total_products' => count($products),
-                        'elapsed_time' => round($elapsedTime, 2)
-                    ]);
-
                     // ارسال job جدید برای ادامه کار از همان صفحه
                     ProcessProductPage::dispatch($this->licenseId, $this->page)
                         ->onQueue('empty-unique-ids')
@@ -112,7 +97,7 @@ class ProcessProductPage implements ShouldQueue
                     $skus[] = $product['sku'];
                 }
 
-                // Handle variations for variable products (فقط اگر زمان کافی داشتیم)
+                // Handle variations for variable products
                 if ($product['type'] === 'variable' && $elapsedTime < ($maxExecutionTime - 10)) {
                     $variationSkus = $this->getVariationSkus($license, $product['id']);
                     $skus = array_merge($skus, $variationSkus);
@@ -122,47 +107,36 @@ class ProcessProductPage implements ShouldQueue
             }
 
             if (!empty($skus)) {
-                Log::info("Found {count} SKUs on page {page}, dispatching batch jobs", [
-                    'count' => count($skus),
-                    'page' => $this->page,
-                    'processed_products' => $processedProducts,
-                    'total_products' => count($products)
-                ]);
-
-                // Process SKUs in smaller batches
-                $skuBatches = array_chunk($skus, 15); // کاهش اندازه batch
+                // Process SKUs in batches of 50
+                $skuBatches = array_chunk($skus, 50);
 
                 foreach ($skuBatches as $batchIndex => $skuBatch) {
                     ProcessSkuBatch::dispatch($this->licenseId, $skuBatch)
                         ->onQueue('empty-unique-ids')
-                        ->delay(now()->addSeconds($batchIndex * 3)); // افزایش delay
+                        ->delay(now()->addSeconds($batchIndex * 2));
                 }
             }
 
-            // بررسی نهایی زمان - اگر همه محصولات پردازش شدند و زمان کافی داریم
+            // بررسی نهایی زمان
             $finalElapsedTime = microtime(true) - $startTime;
 
             // فقط اگر همه محصولات پردازش شدند و تعداد برابر 100 بود، صفحه بعد را پردازش کن
             if ($processedProducts === count($products) && count($products) === 100 && $finalElapsedTime < $maxExecutionTime) {
                 ProcessProductPage::dispatch($this->licenseId, $this->page + 1)
                     ->onQueue('empty-unique-ids')
-                    ->delay(now()->addSeconds(15)); // افزایش delay
+                    ->delay(now()->addSeconds(10));
             }
 
-            Log::info('Product page processing job completed', [
+            Log::info('پایان پردازش صفحه محصولات', [
                 'license_id' => $this->licenseId,
                 'page' => $this->page,
-                'processed_products' => $processedProducts,
-                'total_products' => count($products),
-                'execution_time' => round($finalElapsedTime, 2)
+                'processed_products' => $processedProducts
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error in product page processing job', [
+            Log::error('خطا در پردازش صفحه محصولات: ' . $e->getMessage(), [
                 'license_id' => $this->licenseId,
-                'page' => $this->page,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'page' => $this->page
             ]);
             throw $e;
         }
@@ -174,16 +148,11 @@ class ProcessProductPage implements ShouldQueue
     private function getProductsPage($license, $page)
     {
         try {
-            Log::info("Fetching products with empty bim_unique_id - page: {page}", ['page' => $page]);
-
             $websiteUrl = rtrim($license->website_url, '/');
             $url = $websiteUrl . '/wp-json/wc/v3/products';
 
             $wooApiKey = $license->woocommerceApiKey;
             if (!$wooApiKey) {
-                Log::error('WooCommerce API key not found for license', [
-                    'license_id' => $license->id
-                ]);
                 return [];
             }
 
@@ -202,18 +171,12 @@ class ProcessProductPage implements ShouldQueue
             if ($response->failed()) {
                 Log::error("WooCommerce API request failed", [
                     'status' => $response->status(),
-                    'response' => $response->body(),
                     'page' => $page
                 ]);
                 return [];
             }
 
             $products = $response->json();
-
-            Log::info("Fetched {count} products with empty bim_unique_id from page {page}", [
-                'count' => count($products),
-                'page' => $page
-            ]);
 
             return $products;
 
@@ -278,21 +241,13 @@ class ProcessProductPage implements ShouldQueue
                         $hasMore = false;
                     }
                 } else {
-                    Log::warning('Failed to fetch variations', [
+                    Log::error('Failed to fetch variations', [
                         'product_id' => $productId,
                         'page' => $page,
                         'status' => $response->status()
                     ]);
                     $hasMore = false;
                 }
-            }
-
-            if ($page > $maxPages) {
-                Log::info('Reached max pages limit for variations', [
-                    'product_id' => $productId,
-                    'max_pages' => $maxPages,
-                    'skus_found' => count($skus)
-                ]);
             }
 
         } catch (\Exception $e) {

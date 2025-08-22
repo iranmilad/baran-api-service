@@ -25,19 +25,21 @@ class ProcessProductSync implements ShouldQueue
     public function handle()
     {
         try {
+            Log::info('شروع همگام‌سازی محصول', [
+                'barcode' => $this->change['product']['barcode']
+            ]);
+
             DB::beginTransaction();
 
             $product = Product::where('barcode', $this->change['product']['barcode'])->first();
             $isNew = $this->change['change_type'] === 'new';
 
             if ($isNew && $product) {
-                Log::warning("محصول با بارکد {$this->change['product']['barcode']} قبلاً وجود دارد");
                 DB::rollBack();
                 return;
             }
 
             if (!$isNew && !$product) {
-                Log::warning("محصول با بارکد {$this->change['product']['barcode']} یافت نشد");
                 DB::rollBack();
                 return;
             }
@@ -84,6 +86,10 @@ class ProcessProductSync implements ShouldQueue
             }
 
             DB::commit();
+
+            Log::info('پایان همگام‌سازی محصول', [
+                'barcode' => $this->change['product']['barcode']
+            ]);
 
             // ارسال به ووکامرس برای به‌روزرسانی
             // این بخش باید بر اساس تنظیمات کاربر پیاده‌سازی شود

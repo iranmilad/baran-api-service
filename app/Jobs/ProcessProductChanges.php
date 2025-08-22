@@ -38,11 +38,7 @@ class ProcessProductChanges implements ShouldQueue
     {
         $this->changes = $changes;
         $this->license_id = $license_id;
-        $this->onQueue('products'); // نام صف
-        Log::info('ProcessProductChanges job created', [
-            'changes_count' => count($changes),
-            'license_id' => $license_id
-        ]);
+        $this->onQueue('products');
     }
 
     /**
@@ -52,6 +48,11 @@ class ProcessProductChanges implements ShouldQueue
      */
     public function handle()
     {
+        Log::info('شروع پردازش تغییرات محصولات', [
+            'changes_count' => count($this->changes),
+            'license_id' => $this->license_id
+        ]);
+
         DB::beginTransaction();
 
         try {
@@ -93,11 +94,10 @@ class ProcessProductChanges implements ShouldQueue
 
             DB::commit();
 
-            Log::info('تمام عملیات با موفقیت انجام شد', [
+            Log::info('پایان پردازش تغییرات محصولات', [
                 'updated' => count($processedUpdates),
                 'inserted' => count($processedInserts),
-                'variants' => count($processedVariants),
-                'deleted_variants' => count($variantsToDelete)
+                'variants' => count($processedVariants)
             ]);
 
             // ارسال محصولات به صف همگام‌سازی ووکامرس
@@ -105,11 +105,7 @@ class ProcessProductChanges implements ShouldQueue
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('خطا در پردازش تغییرات محصول: ' . $e->getMessage(), [
-                'exception' => get_class($e),
-                'line' => $e->getLine(),
-                'file' => $e->getFile()
-            ]);
+            Log::error('خطا در پردازش تغییرات محصول: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -575,10 +571,6 @@ class ProcessProductChanges implements ShouldQueue
             SyncWooCommerceProducts::dispatch($updatedProducts, $this->license_id, 'update')
                 ->onQueue('woocommerce-sync')
                 ->delay(now()->addSeconds(5));
-
-            Log::info('محصولات به‌روزرسانی شده به صف همگام‌سازی ووکامرس ارسال شدند', [
-                'count' => count($updatedProducts)
-            ]);
         }
 
         if (!empty($newProducts) || !empty($newVariants)) {
@@ -587,10 +579,6 @@ class ProcessProductChanges implements ShouldQueue
             SyncWooCommerceProducts::dispatch($allNewProducts, $this->license_id, 'insert')
                 ->onQueue('woocommerce-sync')
                 ->delay(now()->addSeconds(10));
-
-            Log::info('محصولات جدید به صف همگام‌سازی ووکامرس ارسال شدند', [
-                'count' => count($allNewProducts)
-            ]);
         }
     }
 
@@ -602,10 +590,6 @@ class ProcessProductChanges implements ShouldQueue
      */
     public function failed(\Throwable $exception)
     {
-        Log::error('خطا در پردازش صف تغییرات محصولات: ' . $exception->getMessage(), [
-            'exception' => get_class($exception),
-            'line' => $exception->getLine(),
-            'file' => $exception->getFile()
-        ]);
+        Log::error('خطا در پردازش صف تغییرات محصولات: ' . $exception->getMessage());
     }
 }

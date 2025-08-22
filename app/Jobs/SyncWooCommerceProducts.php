@@ -41,10 +41,6 @@ class SyncWooCommerceProducts implements ShouldQueue
         $this->license_id = $license_id;
         $this->operation = $operation;
         $this->onQueue('woocommerce-sync');
-        Log::info('SyncWooCommerceProducts job created', [
-            'products_count' => count($products),
-            'operation' => $operation
-        ]);
     }
 
     /**
@@ -90,31 +86,20 @@ class SyncWooCommerceProducts implements ShouldQueue
             // آماده‌سازی داده‌ها برای ارسال به API
             $preparedProducts = $this->prepareProductsData($userSettings, $categories);
 
-            // تغییر اندازه دسته به 10 محصول
-            $batchSize = 10;
+            // تغییر اندازه دسته به 50 محصول
+            $batchSize = 50;
             $chunks = array_chunk($preparedProducts, $batchSize);
 
             foreach ($chunks as $index => $chunk) {
-                // لاگ کردن بارکدهای هر دسته
-                $chunkBarcodes = collect($chunk)->pluck('sku')->toArray();
-                Log::info('ارسال دسته به صف ووکامرس:', [
-                    'batch_number' => $index + 1,
-                    'total_batches' => count($chunks),
-                    'unique_ids' => $chunkBarcodes,
-                    'count' => count($chunkBarcodes),
-                    'operation' => $this->operation,
-                    'license_id' => $this->license_id
-                ]);
-
                 // ارسال به صف مناسب بر اساس نوع عملیات
                 if ($this->operation === 'insert') {
                     BulkInsertWooCommerceProducts::dispatch($chunk, $this->license_id, $batchSize)
                         ->onQueue('woocommerce-insert')
-                        ->delay(now()->addSeconds($index * 15));
+                        ->delay(now()->addSeconds($index * 5));
                 } else {
                     BulkUpdateWooCommerceProducts::dispatch($chunk, $this->license_id, $batchSize)
                         ->onQueue('woocommerce-update')
-                        ->delay(now()->addSeconds($index * 15));
+                        ->delay(now()->addSeconds($index * 5));
                 }
             }
 
@@ -122,7 +107,6 @@ class SyncWooCommerceProducts implements ShouldQueue
                 'operation' => $this->operation,
                 'total_products' => count($this->products),
                 'total_batches' => count($chunks),
-                'batch_size' => $batchSize,
                 'license_id' => $this->license_id
             ]);
 
@@ -201,9 +185,6 @@ class SyncWooCommerceProducts implements ShouldQueue
     {
         $preparedProducts = collect($this->products)->map(function ($item) use ($userSettings, $categories) {
             if (empty($item['barcode'])) {
-                Log::warning('فیلد barcode برای محصول وجود ندارد', [
-                    'item' => $item
-                ]);
                 return null;
             }
 
@@ -280,25 +261,7 @@ class SyncWooCommerceProducts implements ShouldQueue
 
                     if ($localProduct) {
                         $stockQuantity = (int)$localProduct->total_count;
-
-                        Log::info('موجودی از دیتابیس محلی دریافت شد (SyncWooCommerceProducts)', [
-                            'license_id' => $this->license_id,
-                            'item_id' => $itemId,
-                            'local_stock_quantity' => $stockQuantity,
-                            'barcode' => $item['Barcode'] ?? $item['barcode'] ?? 'نامشخص'
-                        ]);
-                    } else {
-                        Log::warning('محصول در دیتابیس محلی یافت نشد، موجودی صفر تنظیم شد (SyncWooCommerceProducts)', [
-                            'license_id' => $this->license_id,
-                            'item_id' => $itemId,
-                            'barcode' => $item['Barcode'] ?? $item['barcode'] ?? 'نامشخص'
-                        ]);
                     }
-                } else {
-                    Log::warning('item_id برای محصول وجود ندارد، موجودی صفر تنظیم شد (SyncWooCommerceProducts)', [
-                        'license_id' => $this->license_id,
-                        'item_data' => $item
-                    ]);
                 }
 
                 $data['stock_quantity'] = $stockQuantity;
