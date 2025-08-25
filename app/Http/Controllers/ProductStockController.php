@@ -409,8 +409,8 @@ class ProductStockController extends Controller
             }
 
             // بررسی اطلاعات API باران
-            if (empty($user->warehouse_api_url) || 
-                empty($user->warehouse_api_username) || 
+            if (empty($user->warehouse_api_url) ||
+                empty($user->warehouse_api_username) ||
                 empty($user->warehouse_api_password)) {
                 return response()->json([
                     'success' => false,
@@ -427,7 +427,7 @@ class ProductStockController extends Controller
                 $warehouseCategories = LicenseWarehouseCategory::where('license_id', $license->id)
                     ->whereIn('category_name', $categories)
                     ->get();
-                
+
                 foreach ($warehouseCategories as $category) {
                     $warehouseIds = array_merge($warehouseIds, $category->warehouse_codes);
                 }
@@ -453,14 +453,14 @@ class ProductStockController extends Controller
 
             foreach ($uniqueIds as $uniqueId) {
                 $items = $groupedItems->get($uniqueId, collect());
-                
+
                 if ($items->isNotEmpty()) {
                     $totalStock = 0;
-                    
+
                     // اگر کتگوری‌ها مشخص شده باشند، فقط موجودی انبارهای مربوطه را محاسبه کن
                     if (!empty($warehouseIds)) {
                         foreach ($items as $item) {
-                            if (isset($item['stockID']) && 
+                            if (isset($item['stockID']) &&
                                 in_array($item['stockID'], $warehouseIds)) {
                                 $stockQuantity = (int)($item['stockQuantity'] ?? 0);
                                 // فقط موجودی مثبت را در نظر بگیریم
@@ -479,7 +479,7 @@ class ProductStockController extends Controller
                             }
                         }
                     }
-                    
+
                     $stockData[$uniqueId] = [
                         'stock_quantity' => $totalStock
                     ];
@@ -522,7 +522,7 @@ class ProductStockController extends Controller
                 $user->warehouse_api_username,
                 $user->warehouse_api_password
             )->timeout(30)->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', [
-                'ItemIDs' => $uniqueIds
+                $uniqueIds
             ]);
 
             if (!$response->successful()) {
@@ -549,7 +549,7 @@ class ProductStockController extends Controller
 
         } catch (\Exception $e) {
             Log::error('خطا در درخواست به API باران: ' . $e->getMessage());
-            
+
             return [
                 'success' => false,
                 'message' => 'خطا در ارتباط با وب‌سرویس باران'

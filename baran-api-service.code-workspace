@@ -10,5 +10,7 @@
 			"path": "../baran-sync"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"claudeCodeChat.permissions.yoloMode": true
+	}
 }
