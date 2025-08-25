@@ -104,7 +104,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/sync-on-cart', [ProductSyncController::class, 'syncOnCart']);
 
             // Get realtime stock from Baran API
-            Route::post('/realtime/stock', [ProductStockController::class, 'getRealtimeStock']);
+            Route::post('/realtime-stock', [ProductStockController::class, 'getRealtimeStock']);
 
             // Get unique ID by barcode
             Route::get('/unique-by-sku/{sku}', [ProductController::class, 'getUniqueIdBySku']);
