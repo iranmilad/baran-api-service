@@ -518,12 +518,10 @@ class ProductStockController extends Controller
     private function fetchStockFromBaran($user, $uniqueIds)
     {
         try {
-            $response = Http::withBasicAuth(
-                $user->warehouse_api_username,
-                $user->warehouse_api_password
-            )->timeout(30)->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', [
-                $uniqueIds
-            ]);
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
+            ])->timeout(30)->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
 
             if (!$response->successful()) {
                 return [
