@@ -57,6 +57,11 @@ class License extends Authenticatable implements JWTSubject
         return $this->hasMany(Product::class);
     }
 
+    public function warehouseCategories(): HasMany
+    {
+        return $this->hasMany(LicenseWarehouseCategory::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active' && $this->expires_at > now();

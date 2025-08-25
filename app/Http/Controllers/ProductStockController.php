@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\License;
+use App\Models\LicenseWarehouseCategory;
 use App\Models\UserSetting;
 use App\Models\WooCommerceApiKey;
 use Illuminate\Http\Request;
@@ -356,6 +357,202 @@ class ProductStockController extends Controller
                 'message' => 'خطای سیستمی در به‌روزرسانی وردپرس',
                 'updated_count' => 0,
                 'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * دریافت موجودی بلادرنگ محصولات از وب‌سرویس باران
+     */
+    public function getRealtimeStock(Request $request)
+    {
+        try {
+            // احراز هویت لایسنس
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid token - license not found'
+                ], 401);
+            }
+
+            if (!$license->isActive()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            // بررسی وجود کاربر
+            $user = $license->user;
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found for license'
+                ], 404);
+            }
+
+            // اعتبارسنجی ورودی
+            $validator = Validator::make($request->all(), [
+                'unique_ids' => 'required|array|min:1',
+                'unique_ids.*' => 'required|string',
+                'categories' => 'nullable|array',
+                'categories.*' => 'required|string'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // بررسی اطلاعات API باران
+            if (empty($user->warehouse_api_url) || 
+                empty($user->warehouse_api_username) || 
+                empty($user->warehouse_api_password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Warehouse API credentials not configured'
+                ], 400);
+            }
+
+            $uniqueIds = $request->unique_ids;
+            $categories = $request->categories ?? [];
+
+            // دریافت کدهای انبار برای کتگوری‌ها
+            $warehouseIds = [];
+            if (!empty($categories)) {
+                $warehouseCategories = LicenseWarehouseCategory::where('license_id', $license->id)
+                    ->whereIn('category_name', $categories)
+                    ->get();
+                
+                foreach ($warehouseCategories as $category) {
+                    $warehouseIds = array_merge($warehouseIds, $category->warehouse_codes);
+                }
+                $warehouseIds = array_unique($warehouseIds);
+            }
+
+            // دریافت موجودی از API باران
+            $baranResponse = $this->fetchStockFromBaran($user, $uniqueIds);
+
+            if (!$baranResponse['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $baranResponse['message']
+                ], 500);
+            }
+
+            // تبدیل پاسخ باران به فرمت مورد نظر
+            $stockData = [];
+            $baranItems = $baranResponse['data'] ?? [];
+
+            // گروه‌بندی آیتم‌ها بر اساس itemID
+            $groupedItems = collect($baranItems)->groupBy('itemID');
+
+            foreach ($uniqueIds as $uniqueId) {
+                $items = $groupedItems->get($uniqueId, collect());
+                
+                if ($items->isNotEmpty()) {
+                    $totalStock = 0;
+                    
+                    // اگر کتگوری‌ها مشخص شده باشند، فقط موجودی انبارهای مربوطه را محاسبه کن
+                    if (!empty($warehouseIds)) {
+                        foreach ($items as $item) {
+                            if (isset($item['stockID']) && 
+                                in_array($item['stockID'], $warehouseIds)) {
+                                $stockQuantity = (int)($item['stockQuantity'] ?? 0);
+                                // فقط موجودی مثبت را در نظر بگیریم
+                                if ($stockQuantity > 0) {
+                                    $totalStock += $stockQuantity;
+                                }
+                            }
+                        }
+                    } else {
+                        // اگر کتگوری مشخص نشده، مجموع موجودی همه انبارها را محاسبه کن
+                        foreach ($items as $item) {
+                            $stockQuantity = (int)($item['stockQuantity'] ?? 0);
+                            // فقط موجودی مثبت را در نظر بگیریم
+                            if ($stockQuantity > 0) {
+                                $totalStock += $stockQuantity;
+                            }
+                        }
+                    }
+                    
+                    $stockData[$uniqueId] = [
+                        'stock_quantity' => $totalStock
+                    ];
+                } else {
+                    $stockData[$uniqueId] = [
+                        'stock_quantity' => 0
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $stockData,
+                'warehouse_ids_used' => $warehouseIds,
+                'categories_processed' => $categories
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('خطا در دریافت موجودی بلادرنگ: ' . $e->getMessage(), [
+                'license_id' => $license->id ?? null,
+                'unique_ids' => $request->unique_ids ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'خطای سیستمی در دریافت موجودی'
+            ], 500);
+        }
+    }
+
+    /**
+     * دریافت موجودی از API باران
+     */
+    private function fetchStockFromBaran($user, $uniqueIds)
+    {
+        try {
+            $response = Http::withBasicAuth(
+                $user->warehouse_api_username,
+                $user->warehouse_api_password
+            )->timeout(30)->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', [
+                'ItemIDs' => $uniqueIds
+            ]);
+
+            if (!$response->successful()) {
+                return [
+                    'success' => false,
+                    'message' => 'خطا در ارتباط با وب‌سرویس باران: HTTP ' . $response->status()
+                ];
+            }
+
+            $data = $response->json();
+
+            // بررسی اینکه پاسخ آرایه‌ای مستقیم است
+            if (!is_array($data)) {
+                return [
+                    'success' => false,
+                    'message' => 'ساختار پاسخ نامعتبر از وب‌سرویس باران'
+                ];
+            }
+
+            return [
+                'success' => true,
+                'data' => $data
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در درخواست به API باران: ' . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'message' => 'خطا در ارتباط با وب‌سرویس باران'
             ];
         }
     }

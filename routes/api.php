@@ -14,6 +14,7 @@ use App\Http\Controllers\UserSettingController;
 use App\Http\Controllers\VersionController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\WooCommerceApiKeyController;
+use App\Http\Controllers\LicenseWarehouseCategoryController;
 use App\Http\Controllers\MongoDataController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
@@ -102,6 +103,9 @@ Route::prefix('v1')->group(function () {
             // Product sync routes
             Route::post('/sync-on-cart', [ProductSyncController::class, 'syncOnCart']);
 
+            // Get realtime stock from Baran API
+            Route::post('/realtime/stock', [ProductStockController::class, 'getRealtimeStock']);
+
             // Get unique ID by barcode
             Route::get('/unique-by-sku/{sku}', [ProductController::class, 'getUniqueIdBySku']);
 
@@ -128,6 +132,14 @@ Route::prefix('v1')->group(function () {
 
         // Categories and attributes routes
         Route::get('/categories-attributes', [ProductController::class, 'getCategoriesAndAttributes']);
+
+        // Warehouse categories routes
+        Route::prefix('warehouse-categories')->group(function () {
+            Route::get('/', [LicenseWarehouseCategoryController::class, 'index']);
+            Route::post('/', [LicenseWarehouseCategoryController::class, 'store']);
+            Route::put('/{id}', [LicenseWarehouseCategoryController::class, 'update']);
+            Route::delete('/{id}', [LicenseWarehouseCategoryController::class, 'destroy']);
+        });
 
     });
 
