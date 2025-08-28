@@ -91,6 +91,10 @@ Route::prefix('v1')->group(function () {
 
         // Product routes
         Route::prefix('products')->group(function () {
+            
+            // بروزرسانی موجودی ووکامرس بر اساس همه دسته‌بندی‌ها (Job)
+            Route::post('/update-woocommerce-stock-all-categories', [ProductStockController::class, 'updateWooCommerceStockAllCategories']);
+
             // Update products in WooCommerce
             Route::post('/sync', [ProductController::class, 'sync']);
 

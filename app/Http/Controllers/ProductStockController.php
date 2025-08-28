@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Jobs\UpdateWooCommerceStockByCategoryJob;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 
 class ProductStockController extends Controller
 {
@@ -423,6 +426,9 @@ class ProductStockController extends Controller
 
             // دریافت کدهای انبار برای کتگوری‌ها
             $warehouseIds = [];
+            $categoryWarehouseMap = [];
+            $userSettings = UserSetting::where('license_id', $license->id)->first();
+            $defaultWarehouseCode = $userSettings->default_warehouse_code ?? null;
             if (!empty($categories)) {
                 $warehouseCategories = LicenseWarehouseCategory::where('license_id', $license->id)
                     ->whereIn('category_name', $categories)
@@ -432,6 +438,14 @@ class ProductStockController extends Controller
                     $warehouseIds = array_merge($warehouseIds, $category->warehouse_codes);
                 }
                 $warehouseIds = array_unique($warehouseIds);
+            }
+            else{
+                if ($defaultWarehouseCode) {
+                    $warehouseIds[] = $defaultWarehouseCode;
+                }
+                else{
+                    $warehouseIds = [];
+                }
             }
 
             // دریافت موجودی از API باران
@@ -457,25 +471,21 @@ class ProductStockController extends Controller
                 if ($items->isNotEmpty()) {
                     $totalStock = 0;
 
-                    // اگر کتگوری‌ها مشخص شده باشند، فقط موجودی انبارهای مربوطه را محاسبه کن
-                    if (!empty($warehouseIds)) {
+                    // اگر warehouseIds خالی بود جمع کل انبارها، اگر مقدار داشت فقط جمع انبارهای موجود در warehouseIds
+                    if (empty($warehouseIds)) {
                         foreach ($items as $item) {
-                            if (isset($item['stockID']) &&
-                                in_array($item['stockID'], $warehouseIds)) {
-                                $stockQuantity = (int)($item['stockQuantity'] ?? 0);
-                                // فقط موجودی مثبت را در نظر بگیریم
-                                if ($stockQuantity > 0) {
-                                    $totalStock += $stockQuantity;
-                                }
+                            $stockQuantity = (int)($item['stockQuantity'] ?? 0);
+                            if ($stockQuantity > 0) {
+                                $totalStock += $stockQuantity;
                             }
                         }
                     } else {
-                        // اگر کتگوری مشخص نشده، مجموع موجودی همه انبارها را محاسبه کن
                         foreach ($items as $item) {
-                            $stockQuantity = (int)($item['stockQuantity'] ?? 0);
-                            // فقط موجودی مثبت را در نظر بگیریم
-                            if ($stockQuantity > 0) {
-                                $totalStock += $stockQuantity;
+                            if (isset($item['stockID']) && in_array($item['stockID'], $warehouseIds)) {
+                                $stockQuantity = (int)($item['stockQuantity'] ?? 0);
+                                if ($stockQuantity > 0) {
+                                    $totalStock += $stockQuantity;
+                                }
                             }
                         }
                     }
@@ -494,7 +504,8 @@ class ProductStockController extends Controller
                 'success' => true,
                 'data' => $stockData,
                 'warehouse_ids_used' => $warehouseIds,
-                'categories_processed' => $categories
+                'categories_processed' => $categories,
+                'category_warehouse_map' => $categoryWarehouseMap
             ]);
 
         } catch (\Exception $e) {
@@ -554,4 +565,44 @@ class ProductStockController extends Controller
             ];
         }
     }
+
+
+    /**
+     * بروزرسانی موجودی محصولات ووکامرس بر اساس همه دسته‌بندی‌ها (Job)
+     */
+    public function updateWooCommerceStockAllCategories(Request $request)
+    {
+        try {
+
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                return response()->json([
+                    'message' => 'Invalid token - license not found'
+                ], 401);
+            }
+            if (!$license->isActive()) {
+                return response()->json([
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            // فقط dispatch یک Job کلی برای همه دسته‌ها
+            dispatch(new \App\Jobs\UpdateWooCommerceStockByCategoryJob($license->id));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'فرایند بروزرسانی موجودی برای همه دسته‌بندی‌های ووکامرس در صف قرار گرفت.'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('خطا در بروزرسانی موجودی همه دسته‌بندی‌ها: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'خطای سیستمی در بروزرسانی موجودی'
+            ], 500);
+        }
+
+
+    }
+
+
 }
