@@ -109,13 +109,46 @@ class UpdateWooCommerceStockByCategoryJob implements ShouldQueue
                 $page++;
             } while (count($products) === 100); // تا زمانی که صفحه پر است ادامه بده
 
-            // 4. استخراج unique_id و regular_price محصولات
-
+            // 4. استخراج unique_id محصولات ساده و متغیر
             $uniqueIds = [];
             foreach ($allProducts as $product) {
-                $uniqueId = $product['bim_unique_id'] ?? null; // فرض: unique_id در meta_data
-                if (!$uniqueId) continue;
-                $uniqueIds[] = $uniqueId;
+                // اگر محصول ساده است
+                if (($product['type'] ?? '') === 'simple') {
+                    $uniqueId = $product['bim_unique_id'] ?? null;
+                    if ($uniqueId) {
+                        $uniqueIds[] = $uniqueId;
+                    }
+                }
+                // اگر محصول متغیر است
+                elseif (($product['type'] ?? '') === 'variable') {
+                    $parentId = $product['id'] ?? null;
+                    if ($parentId) {
+                        // دریافت همه variations این محصول
+                        $variationsUrl = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/' . $parentId . '/variations?per_page=100';
+                        $vPage = 1;
+                        do {
+                            $vPagedUrl = $variationsUrl . '&page=' . $vPage;
+                            $variationsResponse = Http::withOptions([
+                                'verify' => false,
+                                'timeout' => 60,
+                                'connect_timeout' => 20
+                            ])->withHeaders([
+                                'Content-Type' => 'application/json',
+                                'Authorization' => 'Basic ' . base64_encode($wooApiKey->api_key . ':' . $wooApiKey->api_secret)
+                            ])->get($vPagedUrl);
+                            if (!$variationsResponse->successful()) break;
+                            $variations = $variationsResponse->json();
+                            if (!is_array($variations) || empty($variations)) break;
+                            foreach ($variations as $variation) {
+                                $vUniqueId = $variation['bim_unique_id'] ?? null;
+                                if ($vUniqueId) {
+                                    $uniqueIds[] = $vUniqueId;
+                                }
+                            }
+                            $vPage++;
+                        } while (count($variations) === 100);
+                    }
+                }
             }
             if (empty($uniqueIds)) continue;
 
