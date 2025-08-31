@@ -160,6 +160,11 @@ class UpdateWooCommerceStockByCategoryJob implements ShouldQueue
             ])->timeout(60)->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
             if (!$baranResponse->successful()) {
                 Log::error('خطا در دریافت موجودی از باران برای دسته ' . $categoryName . ': ' . $baranResponse->status());
+                // اگر خطای 500 بود، ادامه این دسته را متوقف کن و برو سراغ دسته بعدی
+                if ($baranResponse->status() == 500) {
+                    continue;
+                }
+                // سایر خطاها: حلقه محصولات را ادامه بده (در صورت نیاز)
                 continue;
             }
             $baranItems = $baranResponse->json() ?? [];
