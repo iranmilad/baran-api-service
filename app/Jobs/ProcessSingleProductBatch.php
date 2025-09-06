@@ -124,6 +124,8 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
             ])->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
 
+
+
             if (!$response->successful()) {
                 Log::warning('فرآیند متوقف شد - درخواست API باران ناموفق', [
                     'license_id' => $this->licenseId,
@@ -144,15 +146,6 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             $allItems = $response->json() ?? [];
 
-            Log::info('پاسخ API باران دریافت شد', [
-                'license_id' => $this->licenseId,
-                'status_code' => $response->status(),
-                'response_body_raw' => $response->body(),
-                'all_items_count' => count($allItems),
-                'all_items_type' => gettype($allItems),
-                'default_warehouse_code' => $defaultWarehouseCode
-            ]);
-
             if (empty($allItems)) {
                 Log::warning('فرآیند متوقف شد - هیچ محصولی از API باران بازگردانده نشد', [
                     'license_id' => $this->licenseId,
@@ -163,22 +156,7 @@ class ProcessSingleProductBatch implements ShouldQueue
             }
             $filteredProducts = [];
 
-            Log::info('شروع فیلتر کردن محصولات', [
-                'license_id' => $this->licenseId,
-                'all_items_count' => count($allItems),
-                'default_warehouse_code' => $defaultWarehouseCode,
-                'warehouse_filter_enabled' => !empty($defaultWarehouseCode)
-            ]);
-
-            foreach ($allItems as $index => $item) {
-                Log::info('بررسی آیتم', [
-                    'license_id' => $this->licenseId,
-                    'item_index' => $index,
-                    'item_id' => $item['itemID'] ?? 'N/A',
-                    'stock_id' => $item['stockID'] ?? 'N/A',
-                    'default_warehouse_code' => $defaultWarehouseCode
-                ]);
-
+            foreach ($allItems as $item) {
                 // اگر default_warehouse_code تنظیم شده، فقط آیتم‌های مربوط به آن انبار را نگه دار
                 if (!empty($defaultWarehouseCode)) {
                     if (isset($item['stockID']) && $item['stockID'] === $defaultWarehouseCode) {
@@ -191,18 +169,6 @@ class ProcessSingleProductBatch implements ShouldQueue
                             'StockQuantity' => $item['stockQuantity'],
                             'StockID' => $item['stockID']
                         ];
-                        Log::info('آیتم به فیلتر شده اضافه شد', [
-                            'license_id' => $this->licenseId,
-                            'item_id' => $item['itemID'],
-                            'stock_id' => $item['stockID']
-                        ]);
-                    } else {
-                        Log::info('آیتم رد شد - انبار مطابقت نداشت', [
-                            'license_id' => $this->licenseId,
-                            'item_id' => $item['itemID'],
-                            'item_stock_id' => $item['stockID'],
-                            'expected_stock_id' => $defaultWarehouseCode
-                        ]);
                     }
                 } else {
                     // اگر default_warehouse_code تنظیم نشده، همه آیتم‌ها را نگه دار
@@ -215,19 +181,8 @@ class ProcessSingleProductBatch implements ShouldQueue
                         'StockQuantity' => $item['stockQuantity'],
                         'StockID' => $item['stockID']
                     ];
-                    Log::info('آیتم بدون فیلتر اضافه شد', [
-                        'license_id' => $this->licenseId,
-                        'item_id' => $item['itemID']
-                    ]);
                 }
             }
-
-            Log::info('نتیجه فیلتر کردن', [
-                'license_id' => $this->licenseId,
-                'original_count' => count($allItems),
-                'filtered_count' => count($filteredProducts),
-                'default_warehouse_code' => $defaultWarehouseCode
-            ]);
 
             return $filteredProducts;
 
