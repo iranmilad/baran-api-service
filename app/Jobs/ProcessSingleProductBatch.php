@@ -117,8 +117,8 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 100,
-                'connect_timeout' => 5
+                'timeout' => 180,
+                'connect_timeout' => 60
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
