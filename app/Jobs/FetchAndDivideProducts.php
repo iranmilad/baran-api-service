@@ -64,16 +64,19 @@ class FetchAndDivideProducts implements ShouldQueue
                 return;
             }
 
-            // دریافت محصولات از WooCommerce
-            $allBarcodes = $this->getAllProductBarcodes($license, $wooApiKey, $startTime, $maxExecutionTime);
+            // دریافت unique_id محصولات از WooCommerce
+            $allUniqueIds = $this->getAllProductUniqueIds($license, $wooApiKey, $startTime, $maxExecutionTime);
 
-            if (empty($allBarcodes)) {
+            if (empty($allUniqueIds)) {
+                Log::error('هیچ کد یکتایی برای محصولات یافت نشد', [
+                    'license_id' => $this->licenseId
+                ]);
                 return;
             }
 
             // تقسیم به chunks و ارسال
             $chunkSize = 50; // افزایش chunk size برای سرعت بیشتر
-            $chunks = array_chunk($allBarcodes, $chunkSize);
+            $chunks = array_chunk($allUniqueIds, $chunkSize);
 
             foreach ($chunks as $index => $chunk) {
                 $delaySeconds = 3 + ($index * 5); // کاهش delay
@@ -101,9 +104,9 @@ class FetchAndDivideProducts implements ShouldQueue
     }
 
     /**
-     * دریافت همه barcodes از WooCommerce
+     * دریافت همه unique_id های محصولات از WooCommerce
      */
-    private function getAllProductBarcodes($license, $wooApiKey, $startTime, $maxExecutionTime)
+    private function getAllProductUniqueIds($license, $wooApiKey, $startTime, $maxExecutionTime)
     {
         try {
             $woocommerce = new Client(
@@ -126,11 +129,11 @@ class FetchAndDivideProducts implements ShouldQueue
                 return [];
             }
 
-            // استخراج barcodes
-            $barcodes = [];
+            // استخراج unique_id
+            $uniqueIds = [];
             foreach ($response->data as $product) {
-                if (!empty($product->barcode)) {
-                    $barcodes[] = $product->barcode;
+                if (!empty($product->unique_id)) {
+                    $uniqueIds[] = $product->unique_id;
                 }
 
                 // بررسی زمان
@@ -138,18 +141,18 @@ class FetchAndDivideProducts implements ShouldQueue
                 if ($elapsedTime > $maxExecutionTime) {
                     Log::warning('زمان به پایان رسید در حین دریافت محصولات', [
                         'license_id' => $this->licenseId,
-                        'barcodes_collected' => count($barcodes)
+                        'unique_ids_collected' => count($uniqueIds)
                     ]);
                     break;
                 }
             }
 
-            Log::info('barcodes دریافت شد از WooCommerce', [
+            Log::info('unique_id دریافت شد از WooCommerce', [
                 'license_id' => $this->licenseId,
-                'count' => count($barcodes)
+                'count' => count($uniqueIds)
             ]);
 
-            return $barcodes;
+            return $uniqueIds;
 
         } catch (\Exception $e) {
             Log::error('خطا در دریافت محصولات از WooCommerce: ' . $e->getMessage(), [
