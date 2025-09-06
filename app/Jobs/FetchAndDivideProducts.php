@@ -82,8 +82,7 @@ class FetchAndDivideProducts implements ShouldQueue
                 $delaySeconds = 3 + ($index * 5); // کاهش delay
 
                 ProcessSingleProductBatch::dispatch($this->licenseId, $chunk)
-                    ->onQueue('product-processing')
-                    ->delay(now()->addSeconds($delaySeconds));
+                    ->onQueue('product-processing');
 
                 // هر 200 chunk یک log
                 if (($index + 1) % 200 === 0) {
