@@ -87,14 +87,6 @@ class FetchAndDivideProducts implements ShouldQueue
                 ]);
                 ProcessSingleProductBatch::dispatch($this->licenseId, $chunk)->onQueue('default');
 
-                // هر 200 chunk یک log
-                if (($index + 1) % 200 === 0) {
-                    Log::info('پیشرفت ارسال chunks', [
-                        'license_id' => $this->licenseId,
-                        'processed_chunks' => $index + 1,
-                        'total_chunks' => count($chunks)
-                    ]);
-                }
             }
 
         } catch (\Exception $e) {
