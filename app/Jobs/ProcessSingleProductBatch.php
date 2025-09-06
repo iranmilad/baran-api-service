@@ -124,6 +124,12 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
             ])->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
 
+            Log::info('درخواست API باران ارسال شد', [
+                'license_id' => $this->licenseId,
+                'request_body' => $uniqueIds,
+                'response' => $response
+            ]);
+
             if (!$response->successful()) {
                 Log::warning('فرآیند متوقف شد - درخواست API باران ناموفق', [
                     'license_id' => $this->licenseId,
