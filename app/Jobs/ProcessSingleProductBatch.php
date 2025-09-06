@@ -53,12 +53,15 @@ class ProcessSingleProductBatch implements ShouldQueue
      */
     public function handle(): void
     {
-        $startTime = microtime(true);
-        $maxExecutionTime = 60; // 60 ثانیه برای اطمینان
 
         try {
             $license = License::with(['userSetting', 'woocommerceApiKey', 'user'])->find($this->licenseId);
             if (!$license || !$license->isActive()) {
+                Log::warning('فرآیند متوقف شد - لایسنس نامعتبر یا غیرفعال', [
+                    'license_id' => $this->licenseId,
+                    'license_found' => !is_null($license),
+                    'license_active' => $license ? $license->isActive() : false
+                ]);
                 return;
             }
 
@@ -67,6 +70,12 @@ class ProcessSingleProductBatch implements ShouldQueue
             $user = $license->user;
 
             if (!$userSettings || !$wooApiKey || !$user) {
+                Log::warning('فرآیند متوقف شد - تنظیمات کاربر، کلید API یا کاربر یافت نشد', [
+                    'license_id' => $this->licenseId,
+                    'user_settings_found' => !is_null($userSettings),
+                    'woo_api_key_found' => !is_null($wooApiKey),
+                    'user_found' => !is_null($user)
+                ]);
                 return;
             }
 
@@ -74,12 +83,11 @@ class ProcessSingleProductBatch implements ShouldQueue
             $baranProducts = $this->getRainProducts($this->uniqueIds, $user);
 
             if (empty($baranProducts)) {
-                return;
-            }
-
-            // بررسی زمان
-            $elapsedTime = microtime(true) - $startTime;
-            if ($elapsedTime > $maxExecutionTime - 10) {
+                Log::error('هیچ محصولی از API باران دریافت نشد', [
+                    'license_id' => $this->licenseId,
+                    'unique_ids_count' => count($this->uniqueIds),
+                    'unique_ids' => $this->uniqueIds
+                ]);
                 return;
             }
 
@@ -101,6 +109,12 @@ class ProcessSingleProductBatch implements ShouldQueue
     {
         try {
             if (!$user->warehouse_api_url || !$user->warehouse_api_username || !$user->warehouse_api_password) {
+                Log::warning('فرآیند متوقف شد - اطلاعات API انبار کامل نیست', [
+                    'license_id' => $this->licenseId,
+                    'warehouse_api_url_exists' => !empty($user->warehouse_api_url),
+                    'warehouse_api_username_exists' => !empty($user->warehouse_api_username),
+                    'warehouse_api_password_exists' => !empty($user->warehouse_api_password)
+                ]);
                 return [];
             }
 
@@ -110,7 +124,7 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 15, // timeout کوتاه
+                'timeout' => 15,
                 'connect_timeout' => 5
             ])->withHeaders([
                 'Content-Type' => 'application/json',
@@ -118,9 +132,16 @@ class ProcessSingleProductBatch implements ShouldQueue
             ])->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
 
             if (!$response->successful()) {
+                Log::warning('فرآیند متوقف شد - درخواست API باران ناموفق', [
+                    'license_id' => $this->licenseId,
+                    'status_code' => $response->status(),
+                    'response_body' => $response->body(),
+                    'unique_ids_count' => count($uniqueIds)
+                ]);
+
                 // اگر خطای 500 بود، لاگ کن و ادامه نده
                 if ($response->status() == 500) {
-                    Log::error('خطای 500 در درخواست Baran API - متوقف شدن فرآیند', [
+                    Log::error('خطای 500 در درخواست Baran API', [
                         'license_id' => $this->licenseId,
                         'status' => $response->status()
                     ]);
@@ -130,7 +151,14 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             $allItems = $response->json() ?? [];
 
-            // فیلتر کردن بر اساس default_warehouse_code
+            if (empty($allItems)) {
+                Log::warning('فرآیند متوقف شد - هیچ محصولی از API باران بازگردانده نشد', [
+                    'license_id' => $this->licenseId,
+                    'unique_ids_count' => count($uniqueIds),
+                    'response_structure' => is_array($allItems) ? 'array' : gettype($allItems)
+                ]);
+                return [];
+            }
             $filteredProducts = [];
 
             foreach ($allItems as $item) {
@@ -141,8 +169,8 @@ class ProcessSingleProductBatch implements ShouldQueue
                             'ItemID' => $item['itemID'],
                             'Barcode' => $item['barcode'],
                             'Name' => $item['itemName'],
-                            'Price' => $item['salePrice'], // قیمت فروش
-                            'CurrentDiscount' => $item['currentDiscount'], // تخفیف جاری
+                            'Price' => $item['salePrice'],
+                            'CurrentDiscount' => $item['currentDiscount'],
                             'StockQuantity' => $item['stockQuantity'],
                             'StockID' => $item['stockID']
                         ];
@@ -153,8 +181,8 @@ class ProcessSingleProductBatch implements ShouldQueue
                         'ItemID' => $item['itemID'],
                         'Barcode' => $item['barcode'],
                         'Name' => $item['itemName'],
-                        'Price' => $item['salePrice'], // قیمت فروش
-                        'CurrentDiscount' => $item['currentDiscount'], // تخفیف جاری
+                        'Price' => $item['salePrice'],
+                        'CurrentDiscount' => $item['currentDiscount'],
                         'StockQuantity' => $item['stockQuantity'],
                         'StockID' => $item['stockID']
                     ];
@@ -177,6 +205,13 @@ class ProcessSingleProductBatch implements ShouldQueue
     private function updateWooCommerceProducts($baranProducts, $license, $userSettings, $wooApiKey)
     {
         try {
+            if (empty($baranProducts)) {
+                Log::warning('فرآیند متوقف شد - هیچ محصولی از باران برای به‌روزرسانی دریافت نشد', [
+                    'license_id' => $this->licenseId
+                ]);
+                return;
+            }
+
             // آماده‌سازی محصولات برای batch update
             $productsToUpdate = [];
             foreach ($baranProducts as $baranProduct) {
@@ -198,6 +233,14 @@ class ProcessSingleProductBatch implements ShouldQueue
                 if (!empty($productData)) {
                     $productsToUpdate[] = $productData;
                 }
+            }
+
+            if (empty($productsToUpdate)) {
+                Log::warning('فرآیند متوقف شد - هیچ محصولی برای به‌روزرسانی در ووکامرس آماده نشد', [
+                    'license_id' => $this->licenseId,
+                    'baran_products_count' => count($baranProducts)
+                ]);
+                return;
             }
 
             if (!empty($productsToUpdate)) {
@@ -257,12 +300,6 @@ class ProcessSingleProductBatch implements ShouldQueue
         // بررسی تنظیمات کاربر برای قیمت
         if ($userSettings->enable_price_update && !empty($product['regular_price'])) {
             $data['regular_price'] = (string) $product['regular_price'];
-
-            Log::info('قیمت محصول برای batch update آماده شد', [
-                'license_id' => $this->licenseId,
-                'unique_id' => $product['unique_id'],
-                'regular_price' => $product['regular_price']
-            ]);
         }
 
         // بررسی تنظیمات کاربر برای موجودی
@@ -271,23 +308,11 @@ class ProcessSingleProductBatch implements ShouldQueue
             $data['stock_quantity'] = $stockQuantity;
             $data['manage_stock'] = true;
             $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
-
-            Log::info('موجودی محصول برای batch update آماده شد', [
-                'license_id' => $this->licenseId,
-                'unique_id' => $product['unique_id'],
-                'stock_quantity' => $stockQuantity
-            ]);
         }
 
         // بررسی تنظیمات کاربر برای نام محصول
         if ($userSettings->enable_name_update && !empty($product['name'])) {
             $data['name'] = $product['name'];
-
-            Log::info('نام محصول برای batch update آماده شد', [
-                'license_id' => $this->licenseId,
-                'unique_id' => $product['unique_id'],
-                'name' => $product['name']
-            ]);
         }
 
         return $data;
@@ -361,11 +386,12 @@ class ProcessSingleProductBatch implements ShouldQueue
     private function performBatchUpdate($productsToUpdate, $license, $wooApiKey)
     {
         try {
-            Log::info('شروع batch update در WooCommerce', [
-                'license_id' => $this->licenseId,
-                'products_count' => count($productsToUpdate),
-                'url' => $license->website_url . '/wp-json/wc/v3/products/unique/batch/update'
-            ]);
+            if (empty($productsToUpdate)) {
+                Log::warning('فرآیند متوقف شد - هیچ محصولی برای batch update وجود ندارد', [
+                    'license_id' => $this->licenseId
+                ]);
+                return;
+            }
 
             $response = Http::withOptions([
                 'verify' => false,
@@ -381,26 +407,27 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'products' => $productsToUpdate
             ]);
 
-            if ($response->successful()) {
-                Log::info('Batch update با موفقیت انجام شد', [
+            if (!$response->successful()) {
+                Log::warning('فرآیند متوقف شد - batch update ناموفق', [
                     'license_id' => $this->licenseId,
-                    'products_updated' => count($productsToUpdate),
-                    'response_status' => $response->status()
+                    'status_code' => $response->status(),
+                    'products_count' => count($productsToUpdate),
+                    'response_body' => $response->body()
                 ]);
-            } else {
-                Log::error('خطا در batch update', [
-                    'license_id' => $this->licenseId,
-                    'status' => $response->status(),
-                    'response' => $response->body(),
-                    'products_count' => count($productsToUpdate)
-                ]);
+                return;
             }
 
+            Log::info('batch update موفقیت‌آمیز', [
+                'license_id' => $this->licenseId,
+                'products_count' => count($productsToUpdate)
+            ]);
+
         } catch (\Exception $e) {
-            Log::error('خطا در انجام batch update: ' . $e->getMessage(), [
+            Log::error('فرآیند متوقف شد - خطا در انجام batch update: ' . $e->getMessage(), [
                 'license_id' => $this->licenseId,
                 'products_count' => count($productsToUpdate),
-                'trace' => $e->getTraceAsString()
+                'exception_line' => $e->getLine(),
+                'exception_file' => $e->getFile()
             ]);
         }
     }
