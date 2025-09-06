@@ -25,16 +25,6 @@ class ProcessSingleProductBatch implements ShouldQueue
     public $tries = 2;
 
     /**
-     * The maximum number of unhandled exceptions to allow before failing.
-     */
-    public $maxExceptions = 1;
-
-    /**
-     * The number of seconds the job can run before timing out.
-     */
-    public $timeout = 60; // 35 ثانیه - کوتاه و ایمن
-
-    /**
      * Calculate the number of seconds to wait before retrying the job.
      */
     public $backoff = [10, 30];
