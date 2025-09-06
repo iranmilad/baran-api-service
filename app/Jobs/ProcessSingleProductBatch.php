@@ -43,7 +43,10 @@ class ProcessSingleProductBatch implements ShouldQueue
      */
     public function handle(): void
     {
-
+        log::info('شروع پردازش batch محصولات', [
+            'license_id' => $this->licenseId,
+            'unique_ids_count' => count($this->uniqueIds)
+        ]);
         try {
             $license = License::with(['userSetting', 'woocommerceApiKey', 'user'])->find($this->licenseId);
             if (!$license || !$license->isActive()) {
@@ -114,7 +117,7 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 15,
+                'timeout' => 100,
                 'connect_timeout' => 5
             ])->withHeaders([
                 'Content-Type' => 'application/json',

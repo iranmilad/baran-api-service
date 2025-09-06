@@ -79,9 +79,9 @@ class FetchAndDivideProducts implements ShouldQueue
             $chunks = array_chunk($allUniqueIds, $chunkSize);
 
             foreach ($chunks as $index => $chunk) {
-                $delaySeconds = 3 + ($index * 5); // کاهش delay
 
-                ProcessSingleProductBatch::dispatch($this->licenseId, $chunk);
+
+                ProcessSingleProductBatch::dispatch($this->licenseId, $chunk)->onQueue('default');
 
                 // هر 200 chunk یک log
                 if (($index + 1) % 200 === 0) {
