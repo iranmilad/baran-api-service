@@ -156,33 +156,51 @@ class ProcessSingleProductBatch implements ShouldQueue
             }
             $filteredProducts = [];
 
+            Log::info('شروع فیلتر کردن محصولات', [
+                'license_id' => $this->licenseId,
+                'all_items_count' => count($allItems),
+                'default_warehouse_code' => $defaultWarehouseCode,
+                'warehouse_filter_enabled' => !empty($defaultWarehouseCode)
+            ]);
+
+            // گروه‌بندی محصولات بر اساس itemID
+            $groupedItems = [];
             foreach ($allItems as $item) {
-                // اگر default_warehouse_code تنظیم شده، فقط آیتم‌های مربوط به آن انبار را نگه دار
-                if (!empty($defaultWarehouseCode)) {
-                    if (isset($item['stockID']) && $item['stockID'] === $defaultWarehouseCode) {
-                        $filteredProducts[] = [
-                            'ItemID' => $item['itemID'],
-                            'Barcode' => $item['barcode'],
-                            'Name' => $item['itemName'],
-                            'Price' => $item['salePrice'],
-                            'CurrentDiscount' => $item['currentDiscount'],
-                            'StockQuantity' => $item['stockQuantity'],
-                            'StockID' => $item['stockID']
-                        ];
-                    }
-                } else {
-                    // اگر default_warehouse_code تنظیم نشده، همه آیتم‌ها را نگه دار
-                    $filteredProducts[] = [
+                $itemId = $item['itemID'];
+
+                // // اگر default_warehouse_code تنظیم شده، فقط آیتم‌های مربوط به آن انبار را در نظر بگیر
+                // if (!empty($defaultWarehouseCode)) {
+                //     if (!isset($item['stockID']) || $item['stockID'] !== $defaultWarehouseCode) {
+                //         continue; // این آیتم را نادیده بگیر
+                //     }
+                // }
+
+                // اگر آیتم جدید است، آن را اضافه کن
+                if (!isset($groupedItems[$itemId])) {
+                    $groupedItems[$itemId] = [
                         'ItemID' => $item['itemID'],
                         'Barcode' => $item['barcode'],
                         'Name' => $item['itemName'],
                         'Price' => $item['salePrice'],
                         'CurrentDiscount' => $item['currentDiscount'],
-                        'StockQuantity' => $item['stockQuantity'],
-                        'StockID' => $item['stockID']
+                        'StockQuantity' => 0, // شروع با صفر
+                        'StockID' => $item['stockID'] // اولین stockID
                     ];
                 }
+
+                // موجودی را جمع کن
+                $groupedItems[$itemId]['StockQuantity'] += (float)$item['stockQuantity'];
             }
+
+            // تبدیل گروه‌بندی شده به آرایه
+            $filteredProducts = array_values($groupedItems);
+
+            Log::info('نتیجه گروه‌بندی محصولات', [
+                'license_id' => $this->licenseId,
+                'original_count' => count($allItems),
+                'grouped_count' => count($filteredProducts),
+                'default_warehouse_code' => $defaultWarehouseCode
+            ]);
 
             return $filteredProducts;
 
