@@ -23,11 +23,14 @@ class License extends Authenticatable implements JWTSubject
         'status',
         'expires_at',
         'user_id',
-        'account_type'
+        'account_type',
+        'token',
+        'token_expires_at'
     ];
 
     protected $casts = [
         'expires_at' => 'datetime',
+        'token_expires_at' => 'datetime',
         'status' => 'string',
         'account_type' => 'string'
     ];
@@ -90,5 +93,51 @@ class License extends Authenticatable implements JWTSubject
             'user_id' => $this->user_id,
             'account_type' => $this->account_type
         ];
+    }
+
+    /**
+     * بررسی اعتبار توکن
+     *
+     * @return bool
+     */
+    public function isTokenValid(): bool
+    {
+        if (empty($this->token)) {
+            return false;
+        }
+
+        if ($this->token_expires_at && $this->token_expires_at <= now()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * بروزرسانی توکن
+     *
+     * @param string $token
+     * @param \DateTime|null $expiresAt
+     * @return bool
+     */
+    public function updateToken(string $token, $expiresAt = null): bool
+    {
+        $this->token = $token;
+        $this->token_expires_at = $expiresAt;
+        
+        return $this->save();
+    }
+
+    /**
+     * حذف توکن
+     *
+     * @return bool
+     */
+    public function clearToken(): bool
+    {
+        $this->token = null;
+        $this->token_expires_at = null;
+        
+        return $this->save();
     }
 }

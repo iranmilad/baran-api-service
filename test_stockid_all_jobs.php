@@ -4,10 +4,10 @@ echo "=== تست اعمال stockId در همه فایل‌ها ===\n";
 
 // فایل‌هایی که باید بررسی شوند
 $files = [
-    'app/Jobs/UpdateWooCommerceProducts.php',
-    'app/Jobs/ProcessSingleProductBatch.php',
-    'app/Jobs/ProcessSkuBatch.php',
-    'app/Jobs/ProcessProductBatch.php',
+    'app/Jobs/WooCommerce/UpdateWooCommerceProducts.php',
+    'app/Jobs/WooCommerce/ProcessSingleProductBatch.php',
+    'app/Jobs/WooCommerce/ProcessSkuBatch.php',
+    'app/Jobs/WooCommerce/ProcessProductBatch.php',
     'app/Http/Controllers/ProductController.php'
 ];
 
