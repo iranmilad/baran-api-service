@@ -88,7 +88,7 @@ class SyncAllProductsJob implements ShouldQueue
             // گام 2: بررسی کدهای موجود در جدول محصولات
             $existingProducts = Product::where('license_id', $this->licenseId)
                 ->whereNotNull('item_id')
-                ->get(['item_id', 'barcode', 'name']);
+                ->get(['item_id', 'barcode', 'item_name']);
 
             Log::info('کدهای یکتای موجود در جدول', [
                 'license_id' => $this->licenseId,
@@ -250,7 +250,7 @@ class SyncAllProductsJob implements ShouldQueue
 
                 foreach ($batch as $product) {
                     $productData = [
-                        'name' => $product['name'] ?? 'محصول بدون نام',
+                        'name' => $product['item_name'] ?? 'محصول بدون نام',
                         'type' => 'simple',
                         'regular_price' => '0',
                         'sku' => $product['barcode'] ?? '',
