@@ -6,6 +6,7 @@ use App\Jobs\CoordinateProductUpdate;
 use App\Jobs\UpdateWooCommerceProducts;
 use App\Jobs\SyncUniqueIds;
 use App\Jobs\ProcessEmptyUniqueIds;
+use App\Jobs\SyncAllProductsJob;
 use App\Models\UserSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -785,6 +786,105 @@ class ProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'خطا در ثبت درخواست پردازش محصولات بدون کد یکتا: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * دریافت تمام محصولات از ووکامرس و همگام‌سازی کدهای یکتای جدید
+     */
+    public function getAllProductsAndSync(Request $request)
+    {
+        try {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in getAllProductsAndSync request');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No token provided'
+                ], 401);
+            }
+
+            try {
+                // Attempt to authenticate license with token
+                $license = JWTAuth::parseToken()->authenticate();
+                if (!$license) {
+                    Log::error('Invalid token - license not found');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid token - license not found'
+                    ], 401);
+                }
+
+                // Check if license is active
+                if (!$license->isActive()) {
+                    Log::error('License is not active', [
+                        'license_id' => $license->id,
+                        'status' => $license->status
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'License is not active'
+                    ], 403);
+                }
+
+            } catch (TokenExpiredException $e) {
+                Log::error('Token expired in getAllProductsAndSync');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token expired'
+                ], 401);
+            } catch (TokenInvalidException $e) {
+                Log::error('Token invalid in getAllProductsAndSync');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token invalid'
+                ], 401);
+            }
+
+            // Check if user exists
+            $user = $license->user;
+            if (!$user) {
+                Log::error('User not found for license', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Log the sync all products request
+            Log::info('Get all products and sync request received', [
+                'license_id' => $license->id,
+                'user_id' => $user->id,
+                'timestamp' => now()->toDateTimeString()
+            ]);
+
+            // Queue the sync job
+            SyncAllProductsJob::dispatch($license->id)
+                ->onQueue('products')
+                ->delay(now()->addSeconds(2));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'درخواست همگام‌سازی تمام محصولات با موفقیت ثبت شد',
+                'data' => [
+                    'queue_status' => 'processing',
+                    'job_type' => 'sync_all_products',
+                    'queue_name' => 'products'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Get all products and sync error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'خطا در ثبت درخواست همگام‌سازی تمام محصولات: ' . $e->getMessage()
             ], 500);
         }
     }

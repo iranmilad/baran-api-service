@@ -91,7 +91,7 @@ Route::prefix('v1')->group(function () {
 
         // Product routes
         Route::prefix('products')->group(function () {
-            
+
             // بروزرسانی موجودی ووکامرس بر اساس همه دسته‌بندی‌ها (Job)
             Route::post('/update-woocommerce-stock-all-categories', [ProductStockController::class, 'updateWooCommerceStockAllCategories']);
 
@@ -100,6 +100,9 @@ Route::prefix('v1')->group(function () {
 
             // Bulk update products in WooCommerce
             Route::post('/bulk-sync', [ProductController::class, 'bulkSync']);
+
+            // Get all products and sync missing unique IDs
+            Route::post('/get_all_products', [ProductController::class, 'getAllProductsAndSync']);
 
             // Get update status
             Route::get('/sync-status/{syncId}', [ProductController::class, 'getSyncStatus']);
