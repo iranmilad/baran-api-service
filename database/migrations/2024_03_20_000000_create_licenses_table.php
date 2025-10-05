@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('key')->unique();
             $table->string('website_url')->unique();
             $table->enum('status', ['active', 'expired', 'suspended'])->default('active');
-            $table->string('account_type')->default('basic')->after('status');
+            $table->string('account_type')->default('basic');
             $table->timestamp('expires_at');
             $table->rememberToken();
             $table->timestamps();

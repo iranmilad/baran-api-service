@@ -24,7 +24,7 @@ class License extends Authenticatable implements JWTSubject
         'expires_at',
         'user_id',
         'account_type',
-        'token',
+        'api_token',
         'token_expires_at'
     ];
 
@@ -102,7 +102,7 @@ class License extends Authenticatable implements JWTSubject
      */
     public function isTokenValid(): bool
     {
-        if (empty($this->token)) {
+        if (empty($this->api_token)) {
             return false;
         }
 
@@ -122,7 +122,7 @@ class License extends Authenticatable implements JWTSubject
      */
     public function updateToken(string $token, $expiresAt = null): bool
     {
-        $this->token = $token;
+        $this->api_token = $token;
         $this->token_expires_at = $expiresAt;
         
         return $this->save();
@@ -135,7 +135,7 @@ class License extends Authenticatable implements JWTSubject
      */
     public function clearToken(): bool
     {
-        $this->token = null;
+        $this->api_token = null;
         $this->token_expires_at = null;
         
         return $this->save();

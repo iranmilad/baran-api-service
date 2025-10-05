@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('licenses', function (Blueprint $table) {
-            $table->text('token')->nullable()->after('website_url')->comment('API Token');
-            $table->timestamp('token_expires_at')->nullable()->after('token')->comment('Token Expiration Date');
+            $table->text('api_token')->nullable()->after('account_type');
+            $table->timestamp('token_expires_at')->nullable()->after('api_token');
         });
     }
 
@@ -23,7 +23,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('licenses', function (Blueprint $table) {
-            $table->dropColumn(['token', 'token_expires_at']);
+            $table->dropColumn(['api_token', 'token_expires_at']);
         });
     }
 };
