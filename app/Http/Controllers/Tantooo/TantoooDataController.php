@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Traits\Tantooo\TantoooApiTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TantoooDataController extends Controller
 {
@@ -17,24 +18,44 @@ class TantoooDataController extends Controller
     public function getMainData(Request $request)
     {
         try {
-            // Get license ID from JWT token (already validated by middleware)
-            $user = $request->attributes->get('user');
-            $licenseId = $user['license_id'] ?? null;
-
-            if (!$licenseId) {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
                 return response()->json([
                     'success' => false,
-                    'message' => 'License ID not found in token'
+                    'message' => 'No token provided'
                 ], 401);
             }
 
-            $license = \App\Models\License::find($licenseId);
-            if (!$license || !$license->isActive()) {
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid or inactive license'
+                    'message' => 'Invalid token - license not found'
                 ], 401);
             }
+
+            // ذخیره وبهوک دریافتی در جدول webhook_logs
+            \App\Models\WebhookLog::create([
+                'license_id' => $license->id,
+                'logged_at' => now(),
+                'payload' => $request->all()
+            ]);
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
 
             Log::info('درخواست دریافت اطلاعات اصلی Tantooo', [
                 'license_id' => $license->id,
@@ -76,24 +97,44 @@ class TantoooDataController extends Controller
     public function getCategories(Request $request)
     {
         try {
-            // Get license ID from JWT token (already validated by middleware)
-            $user = $request->attributes->get('user');
-            $licenseId = $user['license_id'] ?? null;
-
-            if (!$licenseId) {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
                 return response()->json([
                     'success' => false,
-                    'message' => 'License ID not found in token'
+                    'message' => 'No token provided'
                 ], 401);
             }
 
-            $license = \App\Models\License::find($licenseId);
-            if (!$license || !$license->isActive()) {
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid or inactive license'
+                    'message' => 'Invalid token - license not found'
                 ], 401);
             }
+
+            // ذخیره وبهوک دریافتی در جدول webhook_logs
+            \App\Models\WebhookLog::create([
+                'license_id' => $license->id,
+                'logged_at' => now(),
+                'payload' => $request->all()
+            ]);
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
 
             // دریافت اطلاعات اصلی
             $result = $this->getTantoooMainDataWithToken($license);
@@ -131,24 +172,44 @@ class TantoooDataController extends Controller
     public function getColors(Request $request)
     {
         try {
-            // Get license ID from JWT token (already validated by middleware)
-            $user = $request->attributes->get('user');
-            $licenseId = $user['license_id'] ?? null;
-
-            if (!$licenseId) {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
                 return response()->json([
                     'success' => false,
-                    'message' => 'License ID not found in token'
+                    'message' => 'No token provided'
                 ], 401);
             }
 
-            $license = \App\Models\License::find($licenseId);
-            if (!$license || !$license->isActive()) {
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid or inactive license'
+                    'message' => 'Invalid token - license not found'
                 ], 401);
             }
+
+            // ذخیره وبهوک دریافتی در جدول webhook_logs
+            \App\Models\WebhookLog::create([
+                'license_id' => $license->id,
+                'logged_at' => now(),
+                'payload' => $request->all()
+            ]);
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
 
             // دریافت اطلاعات اصلی
             $result = $this->getTantoooMainDataWithToken($license);
@@ -186,24 +247,44 @@ class TantoooDataController extends Controller
     public function getSizes(Request $request)
     {
         try {
-            // Get license ID from JWT token (already validated by middleware)
-            $user = $request->attributes->get('user');
-            $licenseId = $user['license_id'] ?? null;
-
-            if (!$licenseId) {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
                 return response()->json([
                     'success' => false,
-                    'message' => 'License ID not found in token'
+                    'message' => 'No token provided'
                 ], 401);
             }
 
-            $license = \App\Models\License::find($licenseId);
-            if (!$license || !$license->isActive()) {
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid or inactive license'
+                    'message' => 'Invalid token - license not found'
                 ], 401);
             }
+
+            // ذخیره وبهوک دریافتی در جدول webhook_logs
+            \App\Models\WebhookLog::create([
+                'license_id' => $license->id,
+                'logged_at' => now(),
+                'payload' => $request->all()
+            ]);
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
 
             // دریافت اطلاعات اصلی
             $result = $this->getTantoooMainDataWithToken($license);
@@ -241,24 +322,44 @@ class TantoooDataController extends Controller
     public function refreshToken(Request $request)
     {
         try {
-            // Get license ID from JWT token (already validated by middleware)
-            $user = $request->attributes->get('user');
-            $licenseId = $user['license_id'] ?? null;
-
-            if (!$licenseId) {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
                 return response()->json([
                     'success' => false,
-                    'message' => 'License ID not found in token'
+                    'message' => 'No token provided'
                 ], 401);
             }
 
-            $license = \App\Models\License::find($licenseId);
-            if (!$license || !$license->isActive()) {
+            // Attempt to authenticate license with token
+            $license = JWTAuth::parseToken()->authenticate();
+            if (!$license) {
+                Log::error('Invalid token - license not found');
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid or inactive license'
+                    'message' => 'Invalid token - license not found'
                 ], 401);
             }
+
+            // ذخیره وبهوک دریافتی در جدول webhook_logs
+            \App\Models\WebhookLog::create([
+                'license_id' => $license->id,
+                'logged_at' => now(),
+                'payload' => $request->all()
+            ]);
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
 
             // پاک کردن توکن قبلی و دریافت توکن جدید
             $license->clearToken();
