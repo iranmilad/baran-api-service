@@ -94,7 +94,29 @@ class TantoooProductController extends Controller
                 $tantoooSettings['bearer_token']
             );
 
-            return response()->json($result);
+            // Format response to match standard structure
+            if ($result['success']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $result['message'],
+                    'data' => array_merge($result['data'] ?? [], [
+                        'token' => $token,
+                        'expires_at' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60 + time(),
+                        'account_type' => $license->account_type
+                    ])
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'],
+                    'data' => [
+                        'token' => $token,
+                        'expires_at' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60 + time(),
+                        'account_type' => $license->account_type,
+                        'error_details' => $result['error_details'] ?? null
+                    ]
+                ], 400);
+            }
 
         } catch (\Exception $e) {
             Log::error('خطا در به‌روزرسانی محصول Tantooo', [
@@ -235,8 +257,11 @@ class TantoooProductController extends Controller
                     'insert_count' => count($insertProducts),
                     'update_count' => count($updateProducts),
                     'estimated_processing_time' => $this->calculateEstimatedTime(count($insertProducts) + count($updateProducts)),
-                    'check_status_url' => '/api/tantooo/sync-status/' . $syncId,
-                    'queued_at' => now()
+                    'check_status_url' => '/api/v1/tantooo/sync-status/' . $syncId,
+                    'queued_at' => now()->timestamp,
+                    'token' => $token,
+                    'expires_at' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60 + time(),
+                    'account_type' => $license->account_type
                 ]
             ]);
 
@@ -323,7 +348,10 @@ class TantoooProductController extends Controller
                     'message' => 'نتیجه همگام‌سازی یافت نشد',
                     'data' => [
                         'sync_id' => $syncId,
-                        'status' => 'not_found'
+                        'status' => 'not_found',
+                        'token' => $token,
+                        'expires_at' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60 + time(),
+                        'account_type' => $license->account_type
                     ]
                 ], 404);
             }
@@ -335,7 +363,10 @@ class TantoooProductController extends Controller
                     'message' => 'همگام‌سازی در حال پردازش است',
                     'data' => [
                         'sync_id' => $syncId,
-                        'status' => 'processing'
+                        'status' => 'processing',
+                        'token' => $token,
+                        'expires_at' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60 + time(),
+                        'account_type' => $license->account_type
                     ]
                 ]);
             }
@@ -344,7 +375,12 @@ class TantoooProductController extends Controller
             return response()->json([
                 'success' => $result['success'],
                 'message' => $result['success'] ? 'همگام‌سازی تکمیل شد' : 'همگام‌سازی با خطا مواجه شد',
-                'data' => array_merge($result, ['status' => $result['success'] ? 'completed' : 'failed'])
+                'data' => array_merge($result, [
+                    'status' => $result['success'] ? 'completed' : 'failed',
+                    'token' => $token,
+                    'expires_at' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60 + time(),
+                    'account_type' => $license->account_type
+                ])
             ]);
 
         } catch (\Exception $e) {
