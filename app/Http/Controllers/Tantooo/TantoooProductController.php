@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TantoooProductController extends Controller
 {
@@ -22,7 +21,18 @@ class TantoooProductController extends Controller
     public function updateProduct(Request $request)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,
@@ -87,7 +97,18 @@ class TantoooProductController extends Controller
     public function sync(Request $request)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,
@@ -112,7 +133,7 @@ class TantoooProductController extends Controller
             }
 
             $user = $license->user;
-            
+
             // Check settings using license_id
             $settings = UserSetting::where('license_id', $license->id)->first();
             if (!$settings) {
@@ -136,7 +157,7 @@ class TantoooProductController extends Controller
 
             $insertProducts = $request->input('insert', []);
             $updateProducts = $request->input('update', []);
-            
+
             // بررسی وجود محصولات
             if (empty($insertProducts) && empty($updateProducts)) {
                 return response()->json([
@@ -203,7 +224,7 @@ class TantoooProductController extends Controller
         // فرض: هر محصول حدود 2-3 ثانیه زمان می‌برد
         $secondsPerProduct = 2.5;
         $totalSeconds = $productCount * $secondsPerProduct;
-        
+
         if ($totalSeconds < 60) {
             return round($totalSeconds) . ' ثانیه';
         } elseif ($totalSeconds < 3600) {
@@ -216,10 +237,21 @@ class TantoooProductController extends Controller
     /**
      * بررسی وضعیت همگام‌سازی
      */
-    public function getSyncStatus($syncId)
+    public function getSyncStatus(Request $request, $syncId)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,

@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Traits\Tantooo\TantoooApiTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TantoooDataController extends Controller
 {
@@ -18,7 +17,18 @@ class TantoooDataController extends Controller
     public function getMainData(Request $request)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,
@@ -66,7 +76,18 @@ class TantoooDataController extends Controller
     public function getCategories(Request $request)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,
@@ -110,7 +131,18 @@ class TantoooDataController extends Controller
     public function getColors(Request $request)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,
@@ -154,7 +186,18 @@ class TantoooDataController extends Controller
     public function getSizes(Request $request)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,
@@ -198,7 +241,18 @@ class TantoooDataController extends Controller
     public function refreshToken(Request $request)
     {
         try {
-            $license = JWTAuth::parseToken()->authenticate();
+            // Get license ID from JWT token (already validated by middleware)
+            $user = $request->attributes->get('user');
+            $licenseId = $user['license_id'] ?? null;
+
+            if (!$licenseId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License ID not found in token'
+                ], 401);
+            }
+
+            $license = \App\Models\License::find($licenseId);
             if (!$license || !$license->isActive()) {
                 return response()->json([
                     'success' => false,
@@ -208,8 +262,8 @@ class TantoooDataController extends Controller
 
             // پاک کردن توکن قبلی و دریافت توکن جدید
             $license->clearToken();
-            
-            $result = $this->getOrRefreshTantoooToken($license);
+
+            $result = $this->getTantoooToken($license);
 
             if ($result['success']) {
                 return response()->json([
