@@ -249,19 +249,12 @@ class TantoooProductController extends Controller
             // پاسخ فوری به کلاینت
             return response()->json([
                 'success' => true,
-                'message' => 'درخواست همگام‌سازی با موفقیت دریافت شد و در صف پردازش قرار گرفت',
+                'message' => 'Sync request queued successfully',
                 'data' => [
-                    'sync_id' => $syncId,
-                    'status' => 'queued',
-                    'total_products' => count($insertProducts) + count($updateProducts),
-                    'insert_count' => count($insertProducts),
-                    'update_count' => count($updateProducts),
-                    'estimated_processing_time' => $this->calculateEstimatedTime(count($insertProducts) + count($updateProducts)),
-                    'check_status_url' => '/api/v1/tantooo/sync-status/' . $syncId,
-                    'queued_at' => now()->timestamp,
-                    'token' => $token,
-                    'expires_at' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60 + time(),
-                    'account_type' => $license->account_type
+                    'processed_count' => count($insertProducts) + count($updateProducts),
+                    'error_count' => 0,
+                    'errors' => [],
+                    'queue_status' => 'processing'
                 ]
             ]);
 
