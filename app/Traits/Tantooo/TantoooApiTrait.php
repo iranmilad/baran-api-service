@@ -175,7 +175,7 @@ trait TantoooApiTrait
         try {
             // استفاده از آدرس وب‌سایت از جدول License
             $websiteUrl = $license->website_url ?? null;
-            
+
             if (empty($websiteUrl)) {
                 Log::error('آدرس وب‌سایت در لایسنس یافت نشد', [
                     'license_id' => $license->id
@@ -185,10 +185,10 @@ trait TantoooApiTrait
 
             // تبدیل آدرس وب‌سایت به آدرس API
             $apiUrl = rtrim($websiteUrl, '/') . '/accounting_api';
-            
+
             // دریافت API key از لایسنس (از فیلد api_token)
             $apiKey = $license->api_token ?? null;
-            
+
             if (empty($apiKey)) {
                 Log::error('API key در لایسنس یافت نشد', [
                     'license_id' => $license->id
@@ -381,10 +381,10 @@ trait TantoooApiTrait
 
             // درخواست توکن جدید از API
             $tokenResult = $this->requestNewTantoooToken($settings['api_url'], $settings['api_key']);
-            
+
             if ($tokenResult['success']) {
                 $tokenData = $tokenResult['data'];
-                
+
                 // محاسبه زمان انقضا (معمولاً API ها زمان انقضا ارسال می‌کنند)
                 $expiresAt = null;
                 if (isset($tokenData['expires_at'])) {
@@ -398,7 +398,7 @@ trait TantoooApiTrait
 
                 // استخراج توکن از response
                 $token = $tokenData['token'] ?? $tokenData['access_token'] ?? $tokenData['bearer_token'] ?? null;
-                
+
                 if (!$token) {
                     Log::error('توکن در پاسخ API یافت نشد', [
                         'license_id' => $license->id,
@@ -1013,11 +1013,11 @@ trait TantoooApiTrait
                 // بررسی اگر توکن منقضی شده باشد
                 if ($response->status() === 401) {
                     Log::info('توکن Tantooo منقضی شده، تلاش برای تمدید');
-                    
+
                     // پاک کردن توکن قدیمی و دریافت توکن جدید
                     $license->clearToken();
                     $newToken = $this->getTantoooToken($license);
-                    
+
                     if ($newToken && $newToken !== $token) {
                         return $this->getProductsFromTantoooApiWithToken($license, $newToken, $page, $countPerPage);
                     }
@@ -1058,7 +1058,7 @@ trait TantoooApiTrait
     protected function extractProductCodes($productsData)
     {
         $productCodes = [];
-        
+
         foreach ($productsData as $product) {
             $code = $this->extractSingleProductCode($product);
             if ($code) {
@@ -1201,7 +1201,7 @@ trait TantoooApiTrait
                             'stocks' => []
                         ];
                     }
-                    
+
                     // اضافه کردن اطلاعات موجودی انبار
                     $groupedProducts[$itemId]['stocks'][] = [
                         'stockID' => $item['stockID'] ?? '',
@@ -1285,31 +1285,6 @@ trait TantoooApiTrait
         }
     }
 
-            return [
-                'success' => true,
-                'data' => [
-                    'products' => $products,
-                    'total_requested' => count($productCodes),
-                    'total_received' => count($products),
-                    'warehouse_code' => $warehouseCode
-                ]
-            ];
-
-        } catch (\Exception $e) {
-            Log::error('خطا در دریافت اطلاعات از RainSale API', [
-                'license_id' => $license->id,
-                'product_codes_count' => count($productCodes),
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'خطا در دریافت از RainSale: ' . $e->getMessage()
-            ];
-        }
-    }
-
     /**
      * پردازش و به‌روزرسانی محصولات بر اساس اطلاعات دریافتی از باران
      *
@@ -1349,7 +1324,7 @@ trait TantoooApiTrait
 
                     // پیدا کردن محصول متناظر از باران
                     $baranProduct = $this->findProductInBaranData($productCode, $baranProducts, $warehouseCode);
-                    
+
                     if (!$baranProduct) {
                         $errors[] = [
                             'product_code' => $productCode,
@@ -1361,11 +1336,11 @@ trait TantoooApiTrait
 
                     // تهیه داده‌های به‌روزرسانی شده
                     $updatedProduct = $this->prepareUpdatedProduct($originalProduct, $baranProduct, $userSetting);
-                    
+
                     if ($updatedProduct) {
                         $updatedProducts[] = $updatedProduct;
                         $successCount++;
-                        
+
                         Log::info('محصول آماده به‌روزرسانی شد', [
                             'product_code' => $productCode,
                             'stock' => $baranProduct['stockQuantity'] ?? 0,
@@ -1445,7 +1420,7 @@ trait TantoooApiTrait
             // اگر کد انبار مشخص شده، ابتدا محصول با همان انبار را جستجو کن
             if (!empty($warehouseCode)) {
                 $matchesWarehouse = (
-                    isset($product['stockID']) && 
+                    isset($product['stockID']) &&
                     strtolower(trim($product['stockID'])) === strtolower(trim($warehouseCode))
                 );
 
