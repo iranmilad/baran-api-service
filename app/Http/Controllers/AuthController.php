@@ -33,7 +33,7 @@ class AuthController extends Controller
 
         $license = License::where('key', $request->license_key)
             ->where('website_url', $request->website_url)
-            ->where('expires_at', '>', now())
+            ->where('expires_at', '<', now())
             ->first();
 
         if (!$license) {
