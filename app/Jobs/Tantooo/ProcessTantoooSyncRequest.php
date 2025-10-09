@@ -243,6 +243,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
         $errors = [];
         $tantoooUpdateResult = [];
 
+        log::info(json_encode($allProducts));
         foreach ($allProducts as $product) {
             $code = $product['code'] ?? null;
             if (!$code || !isset($baranProducts[$code])) {
