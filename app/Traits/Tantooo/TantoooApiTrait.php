@@ -1079,6 +1079,8 @@ trait TantoooApiTrait
     {
         // جستجو در فیلدهای مختلف برای کد محصول
         $possibleFields = [
+            'ItemID',
+            'item_id',
             'Barcode',        // اولویت با Barcode
             'barcode',
             'Code',
@@ -1090,8 +1092,6 @@ trait TantoooApiTrait
             'sku',
             'SKU',
             'unique_id',
-            'ItemID',
-            'item_id'
         ];
 
         foreach ($possibleFields as $field) {
