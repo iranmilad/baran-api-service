@@ -1081,7 +1081,7 @@ trait TantoooApiTrait
         $possibleFields = [
             'ItemID',
             'item_id',
-            'Barcode',        // اولویت با Barcode
+            'Barcode',
             'barcode',
             'Code',
             'code',
