@@ -242,9 +242,17 @@ class ProcessTantoooSyncRequest implements ShouldQueue
         $errorCount = 0;
         $errors = [];
         $tantoooUpdateResult = [];
-        //$allProducts=[{"ItemId":"27b2e85e-7fdf-4863-8c20-010b2871dbea","ItemName":"\u0645 \u0634\u0644\u0648\u0627\u0631\u0644\u06cc \u06a9\u0644\u0627\u0633\u06cc\u06a9 \u0631\u0627\u0646\u06af\u06311105\/ 42 \u0627\u0628\u06cc","Barcode":"TRS1845NANA","PriceAmount":8950000,"PriceAfterDiscount":null,"TotalCount":0,"StockID":null,"DepartmentName":null,"BrandID":"ce6e068c-bac0-48eb-9aea-d235c6e4771c","Brand":239}]
 
-        foreach ($allProducts as $product) {
+        // لاگ ساختار داده‌ها برای تشخیص مشکل
+        Log::info('شروع پردازش محصولات Tantooo', [
+            'license_id' => $license->id,
+            'total_products' => count($allProducts),
+            'baran_products_count' => count($baranProducts),
+            'sample_product' => !empty($allProducts) ? $allProducts[0] : null,
+            'baran_keys_sample' => !empty($baranProducts) ? array_slice(array_keys($baranProducts), 0, 3) : []
+        ]);
+
+        foreach ($allProducts as $index => $product) {
             $itemId = $product['ItemId'] ?? null;
             $barcode = $product['Barcode'] ?? null;
 
@@ -268,6 +276,11 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // استفاده از ItemId برای جستجو در داده‌های باران
             if (!isset($baranProducts[$itemId])) {
+                Log::warning('محصول در داده‌های باران یافت نشد', [
+                    'item_id' => $itemId,
+                    'barcode' => $barcode,
+                    'available_baran_keys' => array_keys($baranProducts)
+                ]);
                 $errorCount++;
                 $errors[] = [
                     'code' => $itemId,
@@ -278,16 +291,32 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // به‌روزرسانی محصول در Tantooo با استفاده از اطلاعات باران
             try {
+                Log::info('شروع به‌روزرسانی محصول', [
+                    'item_id' => $itemId,
+                    'barcode' => $barcode,
+                    'product_name' => $product['ItemName'] ?? 'نامشخص'
+                ]);
+
                 $updateRes = $this->updateProductInTantooo($license, $product, $baranProducts[$itemId]);
                 $tantoooUpdateResult[$itemId] = $updateRes;
+
                 if ($updateRes['success']) {
                     $successCount++;
+                    Log::info('محصول با موفقیت به‌روزرسانی شد', [
+                        'item_id' => $itemId,
+                        'barcode' => $barcode
+                    ]);
                 } else {
                     $errorCount++;
                     $errors[] = [
                         'code' => $itemId,
                         'message' => $updateRes['message'] ?? 'خطا در به‌روزرسانی محصول'
                     ];
+                    Log::error('خطا در به‌روزرسانی محصول', [
+                        'item_id' => $itemId,
+                        'barcode' => $barcode,
+                        'error_message' => $updateRes['message'] ?? 'نامشخص'
+                    ]);
                 }
             } catch (\Exception $ex) {
                 $errorCount++;
@@ -295,8 +324,23 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     'code' => $itemId,
                     'message' => $ex->getMessage()
                 ];
+                Log::error('استثنا در به‌روزرسانی محصول', [
+                    'item_id' => $itemId,
+                    'barcode' => $barcode,
+                    'exception' => $ex->getMessage(),
+                    'trace' => $ex->getTraceAsString()
+                ]);
             }
         }
+
+        // لاگ نتیجه نهایی پردازش
+        Log::info('نتیجه نهایی پردازش محصولات Tantooo', [
+            'license_id' => $license->id,
+            'total_processed' => count($allProducts),
+            'success_count' => $successCount,
+            'error_count' => $errorCount,
+            'errors_detail' => $errors
+        ]);
 
         return [
             'success' => $errorCount === 0,
@@ -330,6 +374,17 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             // قیمت از باران یا از product اصلی
             $price = $baranProduct['salePrice'] ?? $product['PriceAmount'] ?? 0;
             $discount = $product['PriceAfterDiscount'] ?? 0;
+
+            // لاگ جزئیات محصول برای تشخیص مشکل
+            Log::info('جزئیات محصول قبل از به‌روزرسانی', [
+                'item_id' => $itemId,
+                'barcode' => $barcode,
+                'title' => $title,
+                'price' => $price,
+                'discount' => $discount,
+                'product_structure' => array_keys($product),
+                'baran_product_structure' => array_keys($baranProduct)
+            ]);
 
             if (empty($itemId)) {
                 return [
