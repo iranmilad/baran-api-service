@@ -149,12 +149,32 @@ class TantoooProductController extends Controller
             }
 
             // Attempt to authenticate license with token
-            $license = JWTAuth::parseToken()->authenticate();
-            if (!$license) {
-                Log::error('Invalid token - license not found');
+            try {
+                $license = JWTAuth::parseToken()->authenticate();
+                if (!$license) {
+                    Log::error('Invalid token - license not found');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid token - license not found'
+                    ], 401);
+                }
+            } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+                Log::error('Token has expired');
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid token - license not found'
+                    'message' => 'Token has expired'
+                ], 401);
+            } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
+                Log::error('Token is invalid');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token is invalid'
+                ], 401);
+            } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
+                Log::error('Token parsing error: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Could not parse token'
                 ], 401);
             }
 
