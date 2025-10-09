@@ -1136,7 +1136,7 @@ trait TantoooApiTrait
                 'default_warehouse_code' => $defaultWarehouseCode,
                 'api_url' => $user->warehouse_api_url
             ]);
-            Log::info(json_encode($productCodes));
+            //Log::info(json_encode($productCodes));
             // ارسال درخواست به Warehouse API (مشابه RainSale format)
             $response = \Illuminate\Support\Facades\Http::withOptions([
                 'verify' => false,

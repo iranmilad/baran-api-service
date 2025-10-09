@@ -81,7 +81,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // ترکیب محصولات insert و update
             $allProducts = array_merge($this->insertProducts, $this->updateProducts);
-            
+
             if (empty($allProducts)) {
                 $this->logError('هیچ محصولی برای پردازش یافت نشد');
                 return;
@@ -89,7 +89,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // استخراج کدهای محصولات
             $productCodes = $this->extractProductCodes($allProducts);
-            
+
             if (empty($productCodes)) {
                 $this->logError('کدهای محصولات قابل استخراج نیست');
                 return;
@@ -105,7 +105,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // دریافت اطلاعات به‌روز از باران
             $baranResult = $this->getUpdatedProductInfoFromBaran($license, $productCodes);
-            
+
             if (!$baranResult['success']) {
                 $this->logError('خطا در دریافت اطلاعات از باران: ' . $baranResult['message']);
                 return;
@@ -120,8 +120,8 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // پردازش و به‌روزرسانی محصولات
             $updateResult = $this->processAndUpdateProductsFromBaran(
-                $license, 
-                $allProducts, 
+                $license,
+                $allProducts,
                 $baranResult['data']['products']
             );
 
@@ -198,10 +198,10 @@ class ProcessTantoooSyncRequest implements ShouldQueue
     protected function saveSyncResult($result)
     {
         $cacheKey = "tantooo_sync_result_{$this->syncId}";
-        
+
         // ذخیره برای 24 ساعت
         \Illuminate\Support\Facades\Cache::put($cacheKey, $result, now()->addHours(24));
-        
+
         Log::info('نتیجه همگام‌سازی در Cache ذخیره شد', [
             'sync_id' => $this->syncId,
             'cache_key' => $cacheKey
@@ -254,7 +254,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 continue;
             }
 
-            // فرض بر این است که متدی برای به‌روزرسانی محصول در Tantooo وجود دارد
+            // به‌روزرسانی محصول در Tantooo با استفاده از اطلاعات باران
             try {
                 $updateRes = $this->updateProductInTantooo($license, $product, $baranProducts[$code]);
                 $tantoooUpdateResult[$code] = $updateRes;
@@ -287,5 +287,61 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             ],
             'message' => $errorCount === 0 ? 'همه محصولات با موفقیت به‌روزرسانی شدند' : 'برخی محصولات با خطا مواجه شدند'
         ];
+    }
+
+    /**
+     * به‌روزرسانی محصول در Tantooo با استفاده از اطلاعات باران
+     *
+     * @param \App\Models\License $license
+     * @param array $product محصول اصلی از درخواست
+     * @param array $baranProduct اطلاعات به‌روز از باران
+     * @return array نتیجه به‌روزرسانی
+     */
+    protected function updateProductInTantooo($license, $product, $baranProduct)
+    {
+        try {
+            // استخراج اطلاعات محصول
+            $code = $product['Barcode'] ?? $product['code'] ?? null;
+            $title = $baranProduct['itemName'] ?? $product['title'] ?? $product['Title'] ?? '';
+            $price = $baranProduct['salePrice'] ?? $product['price'] ?? $product['Price'] ?? 0;
+            $discount = $product['discount'] ?? $product['Discount'] ?? 0;
+
+            if (empty($code)) {
+                return [
+                    'success' => false,
+                    'message' => 'کد محصول یافت نشد'
+                ];
+            }
+
+            if (empty($title)) {
+                return [
+                    'success' => false,
+                    'message' => 'نام محصول یافت نشد'
+                ];
+            }
+
+            if (!is_numeric($price) || $price < 0) {
+                return [
+                    'success' => false,
+                    'message' => 'قیمت محصول نامعتبر است'
+                ];
+            }
+
+            // استفاده از متد موجود در trait برای به‌روزرسانی
+            return $this->updateProductInfoWithToken($license, $code, $title, (float)$price, (float)$discount);
+
+        } catch (\Exception $e) {
+            Log::error('خطا در به‌روزرسانی محصول Tantooo', [
+                'license_id' => $license->id,
+                'product_code' => $code ?? 'نامشخص',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در به‌روزرسانی محصول: ' . $e->getMessage()
+            ];
+        }
     }
 }
