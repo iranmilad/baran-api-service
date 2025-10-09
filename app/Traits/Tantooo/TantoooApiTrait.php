@@ -1081,17 +1081,7 @@ trait TantoooApiTrait
         $possibleFields = [
             'ItemID',
             'item_id',
-            'Barcode',
-            'barcode',
-            'Code',
-            'code',
-            'product_code',
-            'ProductCode',
-            'item_code',
-            'ItemCode',
-            'sku',
-            'SKU',
-            'unique_id',
+            'ItemId'
         ];
 
         foreach ($possibleFields as $field) {
