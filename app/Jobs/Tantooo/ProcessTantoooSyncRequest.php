@@ -274,12 +274,28 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 continue;
             }
 
-            // استفاده از ItemId برای جستجو در داده‌های باران
-            if (!isset($baranProducts[$itemId])) {
+            // جستجوی محصول در داده‌های باران بر اساس ItemId یا Barcode
+            $baranProduct = null;
+
+            // جستجو در آرایه باران بر اساس itemID
+            foreach ($baranProducts as $baranItem) {
+                if (isset($baranItem['itemID']) && $baranItem['itemID'] === $itemId) {
+                    $baranProduct = $baranItem;
+                    break;
+                }
+                // جستجوی جایگزین بر اساس barcode اگر itemID پیدا نشد
+                if (isset($baranItem['barcode']) && $baranItem['barcode'] === $barcode) {
+                    $baranProduct = $baranItem;
+                    break;
+                }
+            }
+
+            if (!$baranProduct) {
                 Log::warning('محصول در داده‌های باران یافت نشد', [
                     'item_id' => $itemId,
                     'barcode' => $barcode,
-                    'available_baran_keys' => array_keys($baranProducts)
+                    'search_criteria' => 'itemID و barcode',
+                    'sample_baran_item' => !empty($baranProducts) ? $baranProducts[0] : null
                 ]);
                 $errorCount++;
                 $errors[] = [
@@ -294,10 +310,11 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 Log::info('شروع به‌روزرسانی محصول', [
                     'item_id' => $itemId,
                     'barcode' => $barcode,
-                    'product_name' => $product['ItemName'] ?? 'نامشخص'
+                    'product_name' => $product['ItemName'] ?? 'نامشخص',
+                    'baran_item_found' => true
                 ]);
 
-                $updateRes = $this->updateProductInTantooo($license, $product, $baranProducts[$itemId]);
+                $updateRes = $this->updateProductInTantooo($license, $product, $baranProduct);
                 $tantoooUpdateResult[$itemId] = $updateRes;
 
                 if ($updateRes['success']) {
@@ -365,20 +382,35 @@ class ProcessTantoooSyncRequest implements ShouldQueue
      */
     protected function updateProductInTantooo($license, $product, $baranProduct)
     {
-        log::info('product structure', [
-            'product_keys' => json_encode($product),
-            'baran_product_keys' => json_encode($baranProduct)
-        ]);
+        // log::info('product structure', [
+        //     'product_keys' => json_encode($product),
+        //     'baran_product_keys' => json_encode($baranProduct)
+        // ]);
 
         try {
             // استخراج اطلاعات محصول بر اساس ساختار جدید
             $itemId = $product['ItemId'] ?? null; // شناسه یکتای محصول
             $barcode = $product['Barcode'] ?? null; // کد بارکد که معادل code در Tantooo است
-            $title = $product['ItemName'] ?? $baranProduct['itemName'] ?? '';
+            $title = $baranProduct['itemName'] ?? $product['ItemName'] ?? '';
 
-            // قیمت از باران یا از product اصلی
+            // قیمت از باران (با ساختار جدید)
             $price = $baranProduct['salePrice'] ?? $product['PriceAmount'] ?? 0;
-            $discount = $product['PriceAfterDiscount'] ?? 0;
+
+            // تخفیف از باران یا product اصلی
+            $currentDiscount = $baranProduct['currentDiscount'] ?? 0;
+            $priceAfterDiscount = $product['PriceAfterDiscount'] ?? null;
+
+            // محاسبه تخفیف به درصد
+            $discountPercent = 0;
+
+            // اگر تخفیف فعلی از باران موجود است
+            if ($currentDiscount > 0) {
+                $discountPercent = $currentDiscount;
+            }
+            // یا اگر قیمت پس از تخفیف موجود است
+            elseif ($priceAfterDiscount && $priceAfterDiscount > 0 && $price > 0) {
+                $discountPercent = (($price - $priceAfterDiscount) / $price) * 100;
+            }
 
             // لاگ جزئیات محصول برای تشخیص مشکل
             Log::info('جزئیات محصول قبل از به‌روزرسانی', [
@@ -386,7 +418,9 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 'barcode' => $barcode,
                 'title' => $title,
                 'price' => $price,
-                'discount' => $discount,
+                'current_discount' => $currentDiscount,
+                'price_after_discount' => $priceAfterDiscount,
+                'calculated_discount_percent' => $discountPercent,
                 'product_structure' => array_keys($product),
                 'baran_product_structure' => array_keys($baranProduct)
             ]);
@@ -417,12 +451,6 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     'success' => false,
                     'message' => 'قیمت محصول نامعتبر است'
                 ];
-            }
-
-            // محاسبه تخفیف به درصد اگر PriceAfterDiscount موجود باشد
-            $discountPercent = 0;
-            if ($discount > 0 && $price > 0) {
-                $discountPercent = (($price - $discount) / $price) * 100;
             }
 
             // استفاده از Barcode به عنوان code برای Tantooo (item_id معادل code)
