@@ -365,6 +365,11 @@ class ProcessTantoooSyncRequest implements ShouldQueue
      */
     protected function updateProductInTantooo($license, $product, $baranProduct)
     {
+        log::info('product structure', [
+            'product_keys' => json_encode($product),
+            'baran_product_keys' => json_encode($baranProduct)
+        ]);
+
         try {
             // استخراج اطلاعات محصول بر اساس ساختار جدید
             $itemId = $product['ItemId'] ?? null; // شناسه یکتای محصول
