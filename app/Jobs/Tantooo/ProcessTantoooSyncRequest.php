@@ -253,7 +253,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
         ]);
 
         foreach ($allProducts as $index => $product) {
-            $itemId = $product['ItemID'] ?? null;
+            $itemId = $product['ItemId'] ?? null;
             $barcode = $product['Barcode'] ?? null;
 
             if (!$itemId) {
