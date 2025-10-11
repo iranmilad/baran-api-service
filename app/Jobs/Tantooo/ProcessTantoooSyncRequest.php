@@ -396,50 +396,19 @@ class ProcessTantoooSyncRequest implements ShouldQueue
      */
     protected function updateProductInTantooo($license, $product, $baranProduct)
     {
-        // log::info('product structure', [
-        //     'product_keys' => json_encode($product),
-        //     'baran_product_keys' => json_encode($baranProduct)
-        // ]);
-
         try {
+            // دریافت تنظیمات کاربر
+            $userSettings = UserSetting::where('license_id', $license->id)->first();
+            if (!$userSettings) {
+                return [
+                    'success' => false,
+                    'message' => 'تنظیمات کاربر یافت نشد'
+                ];
+            }
+
             // استخراج اطلاعات محصول بر اساس ساختار جدید
             $itemId = $product['ItemId'] ?? null; // شناسه یکتای محصول
-            $barcode = $product['Barcode'] ?? null; // کد بارکد که معادل code در Tantooo است
-
-            // نام محصول با چک کردن فیلدهای مختلف
-            $title = $baranProduct['itemName'] ?? $baranProduct['Name'] ?? $product['ItemName'] ?? '';
-
-            // قیمت از باران (با ساختار جدید - چک کردن فیلدهای مختلف)
-            $price = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $product['PriceAmount'] ?? 0;
-
-            // تخفیف از باران یا product اصلی
-            $currentDiscount = $baranProduct['currentDiscount'] ?? $baranProduct['DiscountPercentage'] ?? 0;
-            $priceAfterDiscount = $product['PriceAfterDiscount'] ?? null;
-
-            // محاسبه تخفیف به درصد
-            $discountPercent = 0;
-
-            // اگر تخفیف فعلی از باران موجود است
-            if ($currentDiscount > 0) {
-                $discountPercent = $currentDiscount;
-            }
-            // یا اگر قیمت پس از تخفیف موجود است
-            elseif ($priceAfterDiscount && $priceAfterDiscount > 0 && $price > 0) {
-                $discountPercent = (($price - $priceAfterDiscount) / $price) * 100;
-            }
-
-            // لاگ جزئیات محصول برای تشخیص مشکل
-            Log::info('جزئیات محصول قبل از به‌روزرسانی', [
-                'item_id' => $itemId,
-                'barcode' => $barcode,
-                'title' => $title,
-                'price' => $price,
-                'current_discount' => $currentDiscount,
-                'price_after_discount' => $priceAfterDiscount,
-                'calculated_discount_percent' => $discountPercent,
-                'product_structure' => array_keys($product),
-                'baran_product_structure' => array_keys($baranProduct)
-            ]);
+            $barcode = $product['Barcode'] ?? null; // کد بارکد
 
             if (empty($itemId)) {
                 return [
@@ -448,29 +417,166 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 ];
             }
 
-            if (empty($barcode)) {
+            // بررسی کدام تنظیمات فعال هستند
+            $enableStockUpdate = $userSettings->enable_stock_update ?? false;
+            $enablePriceUpdate = $userSettings->enable_price_update ?? false;
+            $enableNameUpdate = $userSettings->enable_name_update ?? false;
+
+            // اگر هیچ تنظیمی فعال نباشد، هیچ کاری انجام نده
+            if (!$enableStockUpdate && !$enablePriceUpdate && !$enableNameUpdate) {
+                Log::info('هیچ تنظیم به‌روزرسانی فعال نیست', [
+                    'license_id' => $license->id,
+                    'item_id' => $itemId,
+                    'enable_stock_update' => $enableStockUpdate,
+                    'enable_price_update' => $enablePriceUpdate,
+                    'enable_name_update' => $enableNameUpdate
+                ]);
+
                 return [
-                    'success' => false,
-                    'message' => 'Barcode محصول یافت نشد'
+                    'success' => true,
+                    'message' => 'هیچ تنظیم به‌روزرسانی فعال نیست - عملیات رد شد',
+                    'skipped' => true
                 ];
             }
 
-            if (empty($title)) {
-                return [
-                    'success' => false,
-                    'message' => 'نام محصول یافت نشد'
-                ];
+            $results = [];
+            $hasAnyUpdate = false;
+
+            // به‌روزرسانی موجودی (اگر فعال باشد)
+            if ($enableStockUpdate) {
+                $stockQuantity = $baranProduct['stockQuantity'] ?? $baranProduct['TotalCount'] ?? $product['TotalCount'] ?? 0;
+
+                if (is_numeric($stockQuantity) && $stockQuantity >= 0) {
+                    $stockResult = $this->updateProductStockWithToken($license, $itemId, (int)$stockQuantity);
+                    $results['stock_update'] = $stockResult;
+                    $hasAnyUpdate = true;
+
+                    Log::info('به‌روزرسانی موجودی محصول', [
+                        'item_id' => $itemId,
+                        'stock_quantity' => $stockQuantity,
+                        'success' => $stockResult['success'] ?? false
+                    ]);
+                } else {
+                    $results['stock_update'] = [
+                        'success' => false,
+                        'message' => 'مقدار موجودی نامعتبر است'
+                    ];
+                }
             }
 
-            if (!is_numeric($price) || $price < 0) {
-                return [
-                    'success' => false,
-                    'message' => 'قیمت محصول نامعتبر است'
-                ];
+            // به‌روزرسانی قیمت و نام (اگر فعال باشند)
+            if ($enablePriceUpdate || $enableNameUpdate) {
+                // استخراج اطلاعات قیمت
+                $price = 0;
+                $discountPercent = 0;
+
+                if ($enablePriceUpdate) {
+                    $price = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $product['PriceAmount'] ?? 0;
+
+                    // محاسبه تخفیف
+                    $currentDiscount = $baranProduct['currentDiscount'] ?? $baranProduct['DiscountPercentage'] ?? 0;
+                    $priceAfterDiscount = $product['PriceAfterDiscount'] ?? null;
+
+                    if ($currentDiscount > 0) {
+                        $discountPercent = $currentDiscount;
+                    } elseif ($priceAfterDiscount && $priceAfterDiscount > 0 && $price > 0) {
+                        $discountPercent = (($price - $priceAfterDiscount) / $price) * 100;
+                    }
+
+                    if (!is_numeric($price) || $price < 0) {
+                        $results['price_update'] = [
+                            'success' => false,
+                            'message' => 'قیمت محصول نامعتبر است'
+                        ];
+                        $enablePriceUpdate = false; // غیرفعال کردن به‌روزرسانی قیمت
+                    }
+                }
+
+                // استخراج نام محصول
+                $title = '';
+                if ($enableNameUpdate) {
+                    $title = $baranProduct['itemName'] ?? $baranProduct['Name'] ?? $product['ItemName'] ?? '';
+
+                    if (empty($title)) {
+                        $results['name_update'] = [
+                            'success' => false,
+                            'message' => 'نام محصول یافت نشد'
+                        ];
+                        $enableNameUpdate = false; // غیرفعال کردن به‌روزرسانی نام
+                    }
+                }
+
+                // ارسال درخواست به‌روزرسانی اطلاعات محصول (اگر هنوز فعال باشند)
+                if ($enablePriceUpdate || $enableNameUpdate) {
+                    // اگر فقط قیمت فعال است، نام خالی ارسال نکن
+                    $finalTitle = $enableNameUpdate ? $title : null;
+                    $finalPrice = $enablePriceUpdate ? (float)$price : null;
+                    $finalDiscount = $enablePriceUpdate ? (float)$discountPercent : null;
+
+                    // فراخوانی API برای به‌روزرسانی اطلاعات
+                    if ($finalTitle !== null || $finalPrice !== null) {
+                        $infoResult = $this->updateProductInfoWithToken(
+                            $license,
+                            $itemId,
+                            $finalTitle ?? '',
+                            $finalPrice ?? 0,
+                            $finalDiscount ?? 0
+                        );
+
+                        $results['info_update'] = $infoResult;
+                        $hasAnyUpdate = true;
+
+                        Log::info('به‌روزرسانی اطلاعات محصول', [
+                            'item_id' => $itemId,
+                            'title_updated' => $enableNameUpdate,
+                            'price_updated' => $enablePriceUpdate,
+                            'title' => $finalTitle,
+                            'price' => $finalPrice,
+                            'discount' => $finalDiscount,
+                            'success' => $infoResult['success'] ?? false
+                        ]);
+                    }
+                }
             }
 
-            // استفاده از ItemId به عنوان code برای Tantooo (طبق ساختار API)
-            return $this->updateProductInfoWithToken($license, $itemId, $title, (float)$price, (float)$discountPercent);
+            // تجمیع نتایج
+            $allSuccessful = true;
+            $messages = [];
+
+            foreach ($results as $type => $result) {
+                if (!($result['success'] ?? false)) {
+                    $allSuccessful = false;
+                    $messages[] = $result['message'] ?? "خطا در $type";
+                }
+            }
+
+            // لاگ نهایی تنظیمات و نتایج
+            Log::info('نتیجه نهایی به‌روزرسانی محصول بر اساس تنظیمات', [
+                'license_id' => $license->id,
+                'item_id' => $itemId,
+                'user_settings' => [
+                    'enable_stock_update' => $enableStockUpdate,
+                    'enable_price_update' => $enablePriceUpdate,
+                    'enable_name_update' => $enableNameUpdate
+                ],
+                'updates_performed' => array_keys($results),
+                'all_successful' => $allSuccessful,
+                'has_any_update' => $hasAnyUpdate,
+                'results' => $results
+            ]);
+
+            return [
+                'success' => $allSuccessful && $hasAnyUpdate,
+                'message' => $allSuccessful
+                    ? 'محصول با موفقیت به‌روزرسانی شد بر اساس تنظیمات کاربر'
+                    : 'برخی به‌روزرسانی‌ها با خطا مواجه شدند: ' . implode(', ', $messages),
+                'results' => $results,
+                'settings_applied' => [
+                    'stock_update' => $enableStockUpdate,
+                    'price_update' => $enablePriceUpdate,
+                    'name_update' => $enableNameUpdate
+                ]
+            ];
 
         } catch (\Exception $e) {
             Log::error('خطا در به‌روزرسانی محصول Tantooo', [
