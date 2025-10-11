@@ -277,25 +277,39 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             // جستجوی محصول در داده‌های باران بر اساس ItemId یا Barcode
             $baranProduct = null;
 
-            // جستجو در آرایه باران بر اساس itemID
+            // جستجو در آرایه باران بر اساس itemID (حروف کوچک و بزرگ)
             foreach ($baranProducts as $baranItem) {
-                if (isset($baranItem['itemID']) && $baranItem['itemID'] === $itemId) {
+                // جستجو با فیلدهای مختلف برای itemID
+                $baranItemId = $baranItem['itemID'] ?? $baranItem['ItemID'] ?? null;
+                $baranBarcode = $baranItem['barcode'] ?? $baranItem['Barcode'] ?? null;
+
+                if ($baranItemId && $baranItemId === $itemId) {
                     $baranProduct = $baranItem;
                     break;
                 }
                 // جستجوی جایگزین بر اساس barcode اگر itemID پیدا نشد
-                if (isset($baranItem['barcode']) && $baranItem['barcode'] === $barcode) {
+                if ($baranBarcode && $baranBarcode === $barcode) {
                     $baranProduct = $baranItem;
                     break;
                 }
             }
 
             if (!$baranProduct) {
+                // برای تشخیص بهتر مشکل، تمام فیلدهای موجود در باران را لاگ می‌کنیم
+                $baranItemIds = [];
+                $baranBarcodes = [];
+                foreach ($baranProducts as $baranItem) {
+                    $baranItemIds[] = $baranItem['itemID'] ?? $baranItem['ItemID'] ?? 'null';
+                    $baranBarcodes[] = $baranItem['barcode'] ?? $baranItem['Barcode'] ?? 'null';
+                }
+
                 Log::warning('محصول در داده‌های باران یافت نشد', [
-                    'item_id' => $itemId,
-                    'barcode' => $barcode,
-                    'search_criteria' => 'itemID و barcode',
-                    'sample_baran_item' => !empty($baranProducts) ? $baranProducts[0] : null
+                    'requested_item_id' => $itemId,
+                    'requested_barcode' => $barcode,
+                    'available_item_ids' => $baranItemIds,
+                    'available_barcodes' => $baranBarcodes,
+                    'sample_baran_item' => !empty($baranProducts) ? $baranProducts[0] : null,
+                    'baran_structure' => !empty($baranProducts) ? array_keys($baranProducts[0]) : []
                 ]);
                 $errorCount++;
                 $errors[] = [
@@ -391,13 +405,15 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             // استخراج اطلاعات محصول بر اساس ساختار جدید
             $itemId = $product['ItemId'] ?? null; // شناسه یکتای محصول
             $barcode = $product['Barcode'] ?? null; // کد بارکد که معادل code در Tantooo است
-            $title = $baranProduct['itemName'] ?? $product['ItemName'] ?? '';
 
-            // قیمت از باران (با ساختار جدید)
-            $price = $baranProduct['salePrice'] ?? $product['PriceAmount'] ?? 0;
+            // نام محصول با چک کردن فیلدهای مختلف
+            $title = $baranProduct['itemName'] ?? $baranProduct['Name'] ?? $product['ItemName'] ?? '';
+
+            // قیمت از باران (با ساختار جدید - چک کردن فیلدهای مختلف)
+            $price = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $product['PriceAmount'] ?? 0;
 
             // تخفیف از باران یا product اصلی
-            $currentDiscount = $baranProduct['currentDiscount'] ?? 0;
+            $currentDiscount = $baranProduct['currentDiscount'] ?? $baranProduct['DiscountPercentage'] ?? 0;
             $priceAfterDiscount = $product['PriceAfterDiscount'] ?? null;
 
             // محاسبه تخفیف به درصد
