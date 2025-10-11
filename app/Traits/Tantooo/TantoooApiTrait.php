@@ -362,12 +362,20 @@ trait TantoooApiTrait
     {
         try {
             // بررسی اعتبار توکن موجود
+            Log::info('بررسی وضعیت توکن موجود', [
+                'license_id' => $license->id,
+                'has_token' => !empty($license->api_token),
+                'expires_at' => $license->token_expires_at?->format('Y-m-d H:i:s'),
+                'is_expired' => $license->token_expires_at ? $license->token_expires_at <= now() : null,
+                'is_valid' => $license->isTokenValid()
+            ]);
+
             if ($license->isTokenValid()) {
                 Log::info('توکن معتبر موجود برای لایسنس', [
                     'license_id' => $license->id,
                     'expires_at' => $license->token_expires_at
                 ]);
-                return $license->token;
+                return $license->api_token;
             }
 
             // دریافت تنظیمات API
@@ -385,19 +393,8 @@ trait TantoooApiTrait
             if ($tokenResult['success']) {
                 $tokenData = $tokenResult['data'];
 
-                // محاسبه زمان انقضا (معمولاً API ها زمان انقضا ارسال می‌کنند)
-                $expiresAt = null;
-                if (isset($tokenData['expires_at'])) {
-                    $expiresAt = now()->parse($tokenData['expires_at']);
-                } elseif (isset($tokenData['expires_in'])) {
-                    $expiresAt = now()->addSeconds($tokenData['expires_in']);
-                } else {
-                    // اگر زمان انقضا مشخص نباشد، یک ساعت در نظر می‌گیریم
-                    $expiresAt = now()->addHour();
-                }
-
-                // استخراج توکن از response
-                $token = $tokenData['token'] ?? $tokenData['access_token'] ?? $tokenData['bearer_token'] ?? null;
+                // استخراج توکن از response (ساختار Tantooo API)
+                $token = $tokenData['token'] ?? null;
 
                 if (!$token) {
                     Log::error('توکن در پاسخ API یافت نشد', [
@@ -407,13 +404,32 @@ trait TantoooApiTrait
                     return null;
                 }
 
-                // ذخیره توکن در لایسنس
-                $license->updateToken($token, $expiresAt);
+                // بررسی وضعیت پاسخ API
+                $msgCode = $tokenData['msg'] ?? null;
+                $errors = $tokenData['error'] ?? [];
 
-                Log::info('توکن جدید برای لایسنس دریافت و ذخیره شد', [
+                if ($msgCode !== 0 || !empty($errors)) {
+                    Log::error('خطا در دریافت توکن از Tantooo API', [
+                        'license_id' => $license->id,
+                        'msg_code' => $msgCode,
+                        'errors' => $errors
+                    ]);
+                    return null;
+                }
+
+                // تنظیم زمان انقضای توکن - یک سال (بر اساس درخواست شما)
+                $expiresAt = now()->addYear();
+
+                // ذخیره توکن در لایسنس
+                $license->api_token = $token;
+                $license->token_expires_at = $expiresAt;
+                $license->save();
+
+                Log::info('توکن جدید Tantooo برای لایسنس دریافت و ذخیره شد', [
                     'license_id' => $license->id,
-                    'expires_at' => $expiresAt,
-                    'token_length' => strlen($token)
+                    'expires_at' => $expiresAt->format('Y-m-d H:i:s'),
+                    'token_length' => strlen($token),
+                    'msg_code' => $msgCode
                 ]);
 
                 return $token;
@@ -479,7 +495,11 @@ trait TantoooApiTrait
                 $responseData = $response->json();
 
                 Log::info('توکن جدید با موفقیت از API Tantooo دریافت شد', [
-                    'response_keys' => array_keys($responseData)
+                    'response_keys' => array_keys($responseData),
+                    'response_data' => $responseData, // لاگ کامل پاسخ برای تشخیص
+                    'has_token' => isset($responseData['token']),
+                    'msg_code' => $responseData['msg'] ?? 'undefined',
+                    'has_errors' => !empty($responseData['error'] ?? [])
                 ]);
 
                 return [
