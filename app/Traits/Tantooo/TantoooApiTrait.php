@@ -186,12 +186,13 @@ trait TantoooApiTrait
             // تبدیل آدرس وب‌سایت به آدرس API
             $apiUrl = rtrim($websiteUrl, '/') . '/accounting_api';
 
-            // دریافت API key از لایسنس (از فیلد api_token)
-            $apiKey = $license->api_token ?? null;
+            // دریافت API key از متغیر محیطی
+            $apiKey = config('services.tantooo.api_key') ?? env('TANTOOO_API_KEY');
 
             if (empty($apiKey)) {
-                Log::error('API key در لایسنس یافت نشد', [
-                    'license_id' => $license->id
+                Log::error('API key Tantooo در متغیرهای محیطی یافت نشد', [
+                    'license_id' => $license->id,
+                    'config_key' => 'TANTOOO_API_KEY'
                 ]);
                 return null;
             }
@@ -199,8 +200,17 @@ trait TantoooApiTrait
             // دریافت توکن از لایسنس (از سیستم مدیریت توکن جدید)
             $token = null;
             if ($license->isTokenValid()) {
-                $token = $license->token;
+                $token = $license->api_token;
             }
+
+            Log::info('تنظیمات API Tantooo تهیه شد', [
+                'license_id' => $license->id,
+                'api_url' => $apiUrl,
+                'api_key_length' => strlen($apiKey),
+                'api_key_preview' => substr($apiKey, 0, 8) . '...',
+                'has_token' => !empty($token),
+                'token_valid' => $license->isTokenValid()
+            ]);
 
             return [
                 'api_url' => $apiUrl,
