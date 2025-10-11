@@ -469,14 +469,15 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 ];
             }
 
-            // استفاده از Barcode به عنوان code برای Tantooo (item_id معادل code)
-            return $this->updateProductInfoWithToken($license, $barcode, $title, (float)$price, (float)$discountPercent);
+            // استفاده از ItemId به عنوان code برای Tantooo (طبق ساختار API)
+            return $this->updateProductInfoWithToken($license, $itemId, $title, (float)$price, (float)$discountPercent);
 
         } catch (\Exception $e) {
             Log::error('خطا در به‌روزرسانی محصول Tantooo', [
                 'license_id' => $license->id,
                 'item_id' => $itemId ?? 'نامشخص',
-                'product_code' => $barcode ?? 'نامشخص',
+                'barcode' => $barcode ?? 'نامشخص',
+                'used_code' => $itemId, // کدی که به Tantooo ارسال شده
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
