@@ -38,7 +38,7 @@ class WebhookController extends Controller
 
         try {
             // ارسال تغییرات به صف
-            ProcessProductChanges::dispatch($request->changes);
+            ProcessProductChanges::dispatch($request->changes)->onQueue('product-changes');
 
             return Response::json([
                 'success' => true,
