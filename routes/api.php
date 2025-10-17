@@ -72,8 +72,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('settings')->group(function () {
             Route::get('/', [UserSettingController::class, 'get']);
             Route::post('/', [UserSettingController::class, 'update']);
-            Route::get('/payment-gateways', [UserSettingController::class, 'getPaymentGateways']);
-            Route::post('/payment-gateways', [UserSettingController::class, 'updatePaymentGateways']);
+
         });
 
         // Sync settings
