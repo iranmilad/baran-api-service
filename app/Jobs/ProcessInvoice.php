@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\License;
 use App\Models\UserSetting;
 use App\Traits\DynamicWarehouseHandler;
+use App\Traits\PaymentGatewayAccountHandler;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessInvoice implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, DynamicWarehouseHandler;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, DynamicWarehouseHandler, PaymentGatewayAccountHandler;
 
     public $tries = 3;
     public $timeout = 300;
@@ -375,13 +376,16 @@ class ProcessInvoice implements ShouldQueue
             $shippingProductUniqueId = $userSettings ? $userSettings->shipping_product_unique_id : '';
             $enableDynamicWarehouse = $userSettings ? $userSettings->enable_dynamic_warehouse_invoice : false;
             $defaultWarehouseCode = $userSettings ? $userSettings->default_warehouse_code : null;
+            $paymentGatewayAccounts = $userSettings ? $userSettings->payment_gateway_accounts : [];
 
             Log::info('تنظیمات حمل و نقل و انبار', [
                 'invoice_id' => $this->invoice->id,
                 'shipping_cost_method' => $shippingCostMethod,
                 'shipping_product_unique_id' => $shippingProductUniqueId,
                 'enable_dynamic_warehouse' => $enableDynamicWarehouse,
-                'default_warehouse_code' => $defaultWarehouseCode
+                'default_warehouse_code' => $defaultWarehouseCode,
+                'has_payment_gateway_accounts' => !empty($paymentGatewayAccounts),
+                'payment_gateway_accounts_count' => is_array($paymentGatewayAccounts) ? count($paymentGatewayAccounts) : 0
             ]);
 
             // استاندارد کردن شماره موبایل مشتری
@@ -794,22 +798,30 @@ class ProcessInvoice implements ShouldQueue
                 }
 
                 // آماده‌سازی مقادیر ItemId - بررسی ساختار unique_id
+                $itemIdStructure = null;
                 if (is_array($item['unique_id']) && isset($item['unique_id']['unique_id'])) {
-                    // اگر unique_id یک object است که خود unique_id و barcode دارد
-                    $itemId = $item['unique_id']['unique_id'];
-                    Log::info('استخراج unique_id از object', [
+                    // اگر unique_id یک object است که خود unique_id دارد
+                    $itemIdStructure = [
+                        'unique_id' => $item['unique_id']['unique_id']
+                    ];
+                    $itemId = $item['unique_id']['unique_id']; // برای لاگ و StockId
+                    Log::info('استفاده از ساختار object برای ItemId', [
                         'invoice_id' => $this->invoice->id,
                         'item_index' => $index,
-                        'extracted_unique_id' => $itemId,
-                        'original_structure' => $item['unique_id']
+                        'item_id_structure' => $itemIdStructure,
+                        'extracted_unique_id' => $itemId
                     ]);
                 } else {
-                    // اگر unique_id یک string است
+                    // اگر unique_id یک string است، آن را به ساختار object تبدیل می‌کنیم
                     $itemId = $item['unique_id'];
-                    Log::info('استفاده از unique_id به صورت string', [
+                    $itemIdStructure = [
+                        'unique_id' => $itemId
+                    ];
+                    Log::info('تبدیل unique_id string به object structure', [
                         'invoice_id' => $this->invoice->id,
                         'item_index' => $index,
-                        'unique_id' => $itemId
+                        'original_unique_id' => $itemId,
+                        'created_structure' => $itemIdStructure
                     ]);
                 }
 
@@ -832,7 +844,7 @@ class ProcessInvoice implements ShouldQueue
                 // آماده‌سازی آیتم برای ارسال
                 $itemData = [
                     'IsPriceWithTax' => true,
-                    'ItemId' => $itemId,
+                    'ItemId' => $itemIdStructure, // استفاده از ساختار object
                     'LineItemID' => count($items) + 1,
                     'NetAmount' => $total,
                     'OperationType' => 1,
@@ -852,7 +864,8 @@ class ProcessInvoice implements ShouldQueue
                 Log::info('آیتم فاکتور آماده شد', [
                     'invoice_id' => $this->invoice->id,
                     'item_index' => $index,
-                    'item_id' => $itemId,
+                    'item_id_structure' => $itemIdStructure,
+                    'extracted_item_id' => $itemId,
                     'stock_id' => $stockId,
                     'quantity' => $itemQuantity,
                     'has_stock_id' => !empty($stockId)
@@ -876,10 +889,15 @@ class ProcessInvoice implements ShouldQueue
                     );
                 }
 
+                // آماده‌سازی ساختار ItemId برای محصول حمل و نقل
+                $shippingItemIdStructure = [
+                    'unique_id' => $shippingProductUniqueId
+                ];
+
                 // آماده‌سازی آیتم حمل و نقل
                 $shippingItemData = [
                     'IsPriceWithTax' => true,
-                    'ItemId' => $shippingProductUniqueId,
+                    'ItemId' => $shippingItemIdStructure,
                     'LineItemID' => count($items) + 1,
                     'NetAmount' => $shippingTotal,
                     'OperationType' => 1,
@@ -898,6 +916,7 @@ class ProcessInvoice implements ShouldQueue
 
                 Log::info('هزینه حمل و نقل به عنوان آیتم اضافه شد', [
                     'invoice_id' => $this->invoice->id,
+                    'shipping_item_id_structure' => $shippingItemIdStructure,
                     'shipping_unique_id' => $shippingProductUniqueId,
                     'shipping_amount' => $shippingTotal,
                     'shipping_stock_id' => $shippingStockId,
@@ -951,12 +970,31 @@ class ProcessInvoice implements ShouldQueue
                 'code_version' => 'FIXED_VERSION_28200000' // نشانگر نسخه اصلاح شده
             ]);
 
-            $payments[] = [
+            $paymentData = [
                 'Amount' => $totalAmount,
                 'DueDate' => now()->format('Y-m-d H:i:s'),
                 'LineItemID' => 1,
                 'TypeID' => 2,
             ];
+
+            // اضافه کردن شماره حساب درگاه پرداخت در صورت وجود
+            $paymentMethod = $this->invoice->order_data['payment_method'] ?? '';
+            $paymentWithAccount = $this->addAccountNumberToPayment(
+                $paymentData,
+                $paymentMethod,
+                $paymentGatewayAccounts,
+                'invoice_' . $this->invoice->id
+            );
+
+            $payments[] = $paymentWithAccount;
+
+            Log::info('پرداخت با تنظیمات درگاه آماده شد', [
+                'invoice_id' => $this->invoice->id,
+                'payment_method' => $paymentMethod,
+                'total_amount' => $totalAmount,
+                'has_account_number' => isset($paymentWithAccount['AccountNumber']),
+                'account_number' => $paymentWithAccount['AccountNumber'] ?? 'not_set'
+            ]);
 
 
             // آماده‌سازی داده‌های فاکتور
