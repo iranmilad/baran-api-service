@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Invoice;
 use App\Models\License;
 use App\Models\UserSetting;
+use App\Traits\DynamicWarehouseHandler;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessInvoice implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, DynamicWarehouseHandler;
 
     public $tries = 3;
     public $timeout = 300;
@@ -372,11 +373,15 @@ class ProcessInvoice implements ShouldQueue
             $userSettings = UserSetting::where('license_id', $this->license->id)->first();
             $shippingCostMethod = $userSettings ? $userSettings->shipping_cost_method : 'expense';
             $shippingProductUniqueId = $userSettings ? $userSettings->shipping_product_unique_id : '';
+            $enableDynamicWarehouse = $userSettings ? $userSettings->enable_dynamic_warehouse_invoice : false;
+            $defaultWarehouseCode = $userSettings ? $userSettings->default_warehouse_code : null;
 
-            Log::info('تنظیمات حمل و نقل', [
+            Log::info('تنظیمات حمل و نقل و انبار', [
                 'invoice_id' => $this->invoice->id,
                 'shipping_cost_method' => $shippingCostMethod,
-                'shipping_product_unique_id' => $shippingProductUniqueId
+                'shipping_product_unique_id' => $shippingProductUniqueId,
+                'enable_dynamic_warehouse' => $enableDynamicWarehouse,
+                'default_warehouse_code' => $defaultWarehouseCode
             ]);
 
             // استاندارد کردن شماره موبایل مشتری
@@ -814,27 +819,65 @@ class ProcessInvoice implements ShouldQueue
                 $itemQuantity = (int)$item['quantity'];
                 $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
 
-                $items[] = [
+                // تعیین StockID بر اساس تنظیمات انبار دینامیک
+                $stockId = $this->determineStockIdForItem(
+                    $itemId,
+                    $itemQuantity,
+                    $this->user,
+                    $enableDynamicWarehouse,
+                    $defaultWarehouseCode,
+                    'invoice_item_' . $index
+                );
+
+                // آماده‌سازی آیتم برای ارسال
+                $itemData = [
                     'IsPriceWithTax' => true,
                     'ItemId' => $itemId,
-                    //'Barcode' => $barcode,
                     'LineItemID' => count($items) + 1,
                     'NetAmount' => $total,
                     'OperationType' => 1,
                     'Price' => $itemPrice,
                     'Quantity' => $itemQuantity,
                     'Tax' => isset($item['tax']) ? (float)$item['tax'] : 0,
-                    //'StockId' => $product->stock_id,
                     'Type' => 302
                 ];
+
+                // اضافه کردن StockId فقط در صورت وجود
+                if (!empty($stockId)) {
+                    $itemData['StockId'] = $stockId;
+                }
+
+                $items[] = $itemData;
+
+                Log::info('آیتم فاکتور آماده شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'item_index' => $index,
+                    'item_id' => $itemId,
+                    'stock_id' => $stockId,
+                    'quantity' => $itemQuantity,
+                    'has_stock_id' => !empty($stockId)
+                ]);
             }
 
             // بررسی نیاز به اضافه کردن هزینه حمل و نقل به عنوان آیتم
             $shippingTotal = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
 
             if ($shippingCostMethod === 'product' && $shippingTotal > 0) {
-                // اضافه کردن هزینه حمل و نقل به عنوان یک آیتم
-                $items[] = [
+                // تعیین StockID برای محصول حمل و نقل
+                $shippingStockId = null;
+                if (!empty($shippingProductUniqueId)) {
+                    $shippingStockId = $this->determineStockIdForItem(
+                        $shippingProductUniqueId,
+                        1, // تعداد 1 برای محصول حمل و نقل
+                        $this->user,
+                        $enableDynamicWarehouse,
+                        $defaultWarehouseCode,
+                        'shipping_product'
+                    );
+                }
+
+                // آماده‌سازی آیتم حمل و نقل
+                $shippingItemData = [
                     'IsPriceWithTax' => true,
                     'ItemId' => $shippingProductUniqueId,
                     'LineItemID' => count($items) + 1,
@@ -846,10 +889,19 @@ class ProcessInvoice implements ShouldQueue
                     'Type' => 302
                 ];
 
+                // اضافه کردن StockId فقط در صورت وجود
+                if (!empty($shippingStockId)) {
+                    $shippingItemData['StockId'] = $shippingStockId;
+                }
+
+                $items[] = $shippingItemData;
+
                 Log::info('هزینه حمل و نقل به عنوان آیتم اضافه شد', [
                     'invoice_id' => $this->invoice->id,
                     'shipping_unique_id' => $shippingProductUniqueId,
-                    'shipping_amount' => $shippingTotal
+                    'shipping_amount' => $shippingTotal,
+                    'shipping_stock_id' => $shippingStockId,
+                    'has_shipping_stock_id' => !empty($shippingStockId)
                 ]);
             }
 

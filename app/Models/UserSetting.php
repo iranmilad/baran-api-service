@@ -62,6 +62,7 @@ class UserSetting extends Model
         'enable_new_product',
         'enable_invoice',
         'enable_cart_sync',
+        'enable_dynamic_warehouse_invoice',
         'payment_gateways',
         'invoice_settings',
         'rain_sale_price_unit',
@@ -78,6 +79,7 @@ class UserSetting extends Model
         'enable_new_product' => 'boolean',
         'enable_invoice' => 'boolean',
         'enable_cart_sync' => 'boolean',
+        'enable_dynamic_warehouse_invoice'=> 'boolean',
         'payment_gateways' => 'array',
         'invoice_settings' => 'array'
     ];
