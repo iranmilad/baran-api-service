@@ -4,6 +4,7 @@ namespace App\Jobs\Tantooo;
 
 use App\Models\License;
 use App\Models\UserSetting;
+use App\Models\Product;
 use App\Traits\Tantooo\TantoooApiTrait;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -117,6 +118,27 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 'total_requested' => $baranResult['data']['total_requested'],
                 'total_received' => $baranResult['data']['total_received']
             ]);
+
+            // ذخیره اطلاعات محصولات در دیتابیس قبل از به‌روزرسانی
+            $saveResult = $this->saveBaranProductsToDatabase(
+                $license,
+                $baranResult['data']['products']
+            );
+
+            if (!$saveResult['success']) {
+                Log::warning('خطا در ذخیره اطلاعات محصولات باران', [
+                    'license_id' => $this->licenseId,
+                    'sync_id' => $this->syncId,
+                    'message' => $saveResult['message']
+                ]);
+            } else {
+                Log::info('اطلاعات محصولات با موفقیت در دیتابیس ذخیره شد', [
+                    'license_id' => $this->licenseId,
+                    'sync_id' => $this->syncId,
+                    'saved_count' => $saveResult['data']['saved_count'],
+                    'updated_count' => $saveResult['data']['updated_count']
+                ]);
+            }
 
             // پردازش و به‌روزرسانی محصولات
             $updateResult = $this->processAndUpdateProductsFromBaran(
@@ -384,6 +406,156 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             ],
             'message' => $errorCount === 0 ? 'همه محصولات با موفقیت به‌روزرسانی شدند' : 'برخی محصولات با خطا مواجه شدند'
         ];
+    }
+
+    /**
+     * ذخیره اطلاعات محصولات دریافت شده از باران در دیتابیس
+     *
+     * @param \App\Models\License $license
+     * @param array $baranProducts اطلاعات محصولات از باران
+     * @return array نتیجه ذخیره‌سازی
+     */
+    protected function saveBaranProductsToDatabase($license, $baranProducts)
+    {
+        try {
+            $savedCount = 0;
+            $updatedCount = 0;
+            $errors = [];
+
+            Log::info('شروع ذخیره‌سازی اطلاعات محصولات باران', [
+                'license_id' => $license->id,
+                'total_products' => count($baranProducts)
+            ]);
+
+            foreach ($baranProducts as $baranProduct) {
+                try {
+                    // استخراج فیلدهای مورد نیاز
+                    $itemId = $baranProduct['itemID'] ?? $baranProduct['ItemID'] ?? null;
+                    $barcode = $baranProduct['barcode'] ?? $baranProduct['Barcode'] ?? null;
+
+                    if (!$itemId) {
+                        $errors[] = [
+                            'barcode' => $barcode,
+                            'message' => 'ItemID محصول یافت نشد'
+                        ];
+                        continue;
+                    }
+
+                    // استخراج نام محصول
+                    $itemName = $baranProduct['itemName'] ?? $baranProduct['ItemName'] ?? $baranProduct['Name'] ?? '';
+
+                    // استخراج قیمت
+                    $priceAmount = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $baranProduct['PriceAmount'] ?? 0;
+
+                    // استخراج قیمت پس از تخفیف
+                    $priceAfterDiscount = $baranProduct['priceAfterDiscount'] ?? $baranProduct['PriceAfterDiscount'] ?? 0;
+
+                    // استخراج موجودی
+                    $totalCount = $baranProduct['stockQuantity'] ?? $baranProduct['TotalCount'] ?? 0;
+
+                    // استخراج انبار
+                    $stockId = $baranProduct['stockID'] ?? $baranProduct['StockID'] ?? null;
+
+                    // استخراج دسته‌بندی
+                    $departmentName = $baranProduct['departmentName'] ?? $baranProduct['DepartmentName'] ?? '';
+
+                    // بررسی وجود محصول بر اساس item_id (مستقل از license_id)
+                    // منطق: اگر item_id مشابه باشد، همان رکورد به‌روزرسانی شود
+                    $product = Product::where('item_id', $itemId)->first();
+
+                    if ($product) {
+                        // به‌روزرسانی محصول موجود
+                        $product->update([
+                            'license_id' => $license->id,
+                            'item_name' => $itemName,
+                            'barcode' => $barcode,
+                            'price_amount' => (int)$priceAmount,
+                            'price_after_discount' => (int)$priceAfterDiscount,
+                            'total_count' => (int)$totalCount,
+                            'stock_id' => $stockId,
+                            'department_name' => $departmentName,
+                            'last_sync_at' => now()
+                        ]);
+                        $updatedCount++;
+
+                        Log::debug('محصول به‌روزرسانی شد', [
+                            'license_id' => $license->id,
+                            'item_id' => $itemId,
+                            'barcode' => $barcode,
+                            'action' => 'updated',
+                            'old_license_id' => $product->getOriginal('license_id')
+                        ]);
+                    } else {
+                        // ایجاد محصول جدید
+                        Product::create([
+                            'license_id' => $license->id,
+                            'item_id' => $itemId,
+                            'item_name' => $itemName,
+                            'barcode' => $barcode,
+                            'price_amount' => (int)$priceAmount,
+                            'price_after_discount' => (int)$priceAfterDiscount,
+                            'total_count' => (int)$totalCount,
+                            'stock_id' => $stockId,
+                            'department_name' => $departmentName,
+                            'is_variant' => false,
+                            'last_sync_at' => now()
+                        ]);
+                        $savedCount++;
+
+                        Log::debug('محصول جدید ذخیره شد', [
+                            'license_id' => $license->id,
+                            'item_id' => $itemId,
+                            'barcode' => $barcode,
+                            'action' => 'created'
+                        ]);
+                    }
+                } catch (\Exception $ex) {
+                    $errors[] = [
+                        'item_id' => $itemId ?? 'نامشخص',
+                        'barcode' => $barcode ?? 'نامشخص',
+                        'message' => $ex->getMessage()
+                    ];
+
+                    Log::error('خطا در ذخیره‌سازی محصول', [
+                        'license_id' => $license->id,
+                        'item_id' => $itemId ?? 'نامشخص',
+                        'barcode' => $barcode ?? 'نامشخص',
+                        'error' => $ex->getMessage()
+                    ]);
+                }
+            }
+
+            Log::info('تکمیل ذخیره‌سازی محصولات باران', [
+                'license_id' => $license->id,
+                'total_products' => count($baranProducts),
+                'saved_count' => $savedCount,
+                'updated_count' => $updatedCount,
+                'error_count' => count($errors)
+            ]);
+
+            return [
+                'success' => true,
+                'data' => [
+                    'saved_count' => $savedCount,
+                    'updated_count' => $updatedCount,
+                    'total_processed' => count($baranProducts),
+                    'errors' => $errors
+                ],
+                'message' => "محصولات با موفقیت ذخیره شدند ($savedCount جدید، $updatedCount به‌روزرسانی شده)"
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در فرآیند ذخیره‌سازی محصولات', [
+                'license_id' => $license->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ذخیره‌سازی محصولات: ' . $e->getMessage()
+            ];
+        }
     }
 
     /**

@@ -157,6 +157,8 @@ class TantoooProductController extends Controller
      */
     public function sync(Request $request)
     {
+
+        //{"update":[{"ItemName":"\u06af\u0627\u0628\u0627\u0631\u062f\u064a\u0646 \u0631\u0627\u0633\u062a\u0647 263","Barcode":"TRS18263NANA","PriceAmount":1290000,"PriceAfterDiscount":1290000,"TotalCount":0,"StockID":null}],"insert":[{"ItemName":"\u06af\u0627\u0628\u0627\u0631\u062f\u064a\u0646","Barcode":"TRS1845NANA","PriceAmount":1290000,"PriceAfterDiscount":1290000,"TotalCount":0,"StockID":null}]}
         try {
             // Get and validate JWT token
             $token = $request->bearerToken();
@@ -448,4 +450,6 @@ class TantoooProductController extends Controller
             ], 500);
         }
     }
+
+
 }

@@ -158,6 +158,7 @@ Route::prefix('v1')->group(function () {
             // Get products list from Tantooo
             Route::get('/list', [TantoooProductController::class, 'getProducts']);
 
+
             // Job-based bulk update routes
             Route::post('/update-all', [TantoooProductController::class, 'updateAllProducts']);
             Route::post('/update-specific', [TantoooProductController::class, 'updateSpecificProducts']);
