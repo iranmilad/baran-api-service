@@ -21,7 +21,7 @@ curl --location 'https://03535.ir/accounting_api' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer TOKEN' \
 --data '{
-    "fn": "update_product_info",
+    "fn": "update_product_sku_code",
     "code": "کد یکتا",
     "title": "دامن طرح دار نخی 188600",
     "price": 1791000,

@@ -276,7 +276,7 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "fn": "update_product_info",
+  "fn": "update_product_sku_code",
   "code": "PRODUCT_CODE",
   "title": "Product Title",
   "price": 100000,

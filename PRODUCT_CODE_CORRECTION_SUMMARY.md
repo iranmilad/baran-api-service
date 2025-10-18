@@ -46,7 +46,7 @@ $result = $this->updateProductInfoWithToken($license, $itemId, $itemName, $price
 **Correct API Request for Product Info Update:**
 ```json
 {
-    "fn": "update_product_info",
+    "fn": "update_product_sku_code",
     "code": "2e0f60f7-e40e-4e7c-8e82-00624bc154e1",  // ItemId, not Barcode
     "title": "محصول تست",
     "price": 150000,
@@ -78,7 +78,7 @@ $result = $this->updateProductInfoWithToken($license, $itemId, $itemName, $price
 
 1. **Successful Product Lookups:** Tantooo API will correctly identify products using ItemId
 2. **Stock Updates Work:** `change_count_sub_product` API calls will succeed
-3. **Product Info Updates Work:** `update_product_info` API calls will succeed
+3. **Product Info Updates Work:** `update_product_sku_code` API calls will succeed
 4. **Proper Error Logging:** Logs will show the correct `used_code` values (ItemId)
 5. **No More "Product Not Found" Errors:** When ItemId exists in Tantooo system
 

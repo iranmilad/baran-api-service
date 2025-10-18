@@ -50,8 +50,8 @@ trait TantoooApiTrait
 
             // آماده‌سازی داده‌های درخواست
             $requestData = [
-                'fn' => 'update_product_info',
-                'code' => $code,
+                'fn' => 'update_product_sku_code',
+                'sku' => $code,
                 'title' => $title,
                 'price' => (float) $price,
                 'discount' => (float) $discount
@@ -740,8 +740,8 @@ trait TantoooApiTrait
 
             // آماده‌سازی داده‌های درخواست
             $requestData = [
-                'fn' => 'update_product_info',
-                'code' => $code,
+                'fn' => 'update_product_sku_code',
+                'sku' => $code,
                 'title' => $title,
                 'price' => (float) $price,
                 'discount' => (float) $discount

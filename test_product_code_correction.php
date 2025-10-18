@@ -63,7 +63,7 @@ $incorrectStockRequest = [
 echo "INCORRECT Request (was using Barcode as code):\n";
 echo json_encode($incorrectStockRequest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n\n";
 
-// Test: Correct API request format for update_product_info
+// Test: Correct API request format for update_product_sku_code
 echo "4. Correct API Request Format (Product Info Update):\n";
 $correctInfoRequest = [
     'method' => 'POST',
@@ -74,7 +74,7 @@ $correctInfoRequest = [
         'Authorization' => 'Bearer JWT_TOKEN'
     ],
     'body' => [
-        'fn' => 'update_product_info',
+        'fn' => 'update_product_sku_code',
         'code' => $baranProductData['ItemId'], // ✅ Using ItemId as code
         'title' => $baranProductData['ItemName'],
         'price' => (float) $baranProductData['PriceAmount'],

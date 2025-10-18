@@ -161,7 +161,7 @@ $infoRequest = [
         'Authorization' => 'Bearer JWT_TOKEN'
     ],
     'body' => [
-        'fn' => 'update_product_info',
+        'fn' => 'update_product_sku_code',
         'code' => $sampleProduct['ItemId'],
         'title' => $sampleBaranProduct['itemName'],
         'price' => (float) $sampleBaranProduct['salePrice'],

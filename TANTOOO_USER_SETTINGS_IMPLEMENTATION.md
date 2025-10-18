@@ -108,7 +108,7 @@ $this->updateProductInfoWithToken($license, $itemId, $title, $price, $discount);
 **درخواست API:**
 ```json
 {
-    "fn": "update_product_info", 
+    "fn": "update_product_sku_code", 
     "code": "ItemId",
     "title": "title (اگر enable_name_update = true)",
     "price": price (اگر enable_price_update = true),

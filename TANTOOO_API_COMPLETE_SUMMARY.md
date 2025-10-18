@@ -224,7 +224,7 @@ $license->clearToken()
 | syncProductsToTantoooApi | add_product | Add/sync single product |
 | bulkSyncProductsToTantoooApi | add_product | Bulk add/sync products |
 | updateProductStockInTantoooApi | change_count_sub_product | Update product stock |
-| updateProductInfoInTantoooApi | update_product_info | Update product information |
+| updateProductInfoInTantoooApi | update_product_sku_code | Update product information |
 | getProductsFromTantoooApi | get_sub_main | Get products list with pagination |
 
 ## Usage Examples

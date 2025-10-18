@@ -44,7 +44,7 @@ $infoUpdateRequest = [
         'Authorization' => 'Bearer TOKEN'
     ],
     'body' => [
-        'fn' => 'update_product_info',
+        'fn' => 'update_product_sku_code',
         'code' => 'ddd',
         'title' => 'دامن طرح دار نخی 188600',
         'price' => 1791000,
