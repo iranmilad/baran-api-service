@@ -121,7 +121,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             Log::info('کدهای محصولات استخراج شد', [
                 'license_id' => $this->licenseId,
                 'sync_id' => $this->syncId,
-                'total_products' => count($productsWithStock),
+                'total_products' => count($productsToProcess),
                 'extracted_codes' => count($productCodes),
                 'sample_codes' => array_slice($productCodes, 0, 5)
             ]);
