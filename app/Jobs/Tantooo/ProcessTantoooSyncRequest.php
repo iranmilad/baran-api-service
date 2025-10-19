@@ -734,112 +734,82 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 ];
             }
 
-            $results = [];
-            $hasAnyUpdate = false;
+            // استخراج اطلاعات برای به‌روزرسانی مکمل (موجودی + قیمت + نام + تخفیف) در یک درخواست
+            $stockQuantity = 0;
+            $price = 0;
+            $discountPercent = 0;
+            $title = '';
 
-            // به‌روزرسانی موجودی (اگر فعال باشد)
+            // استخراج موجودی
             if ($enableStockUpdate) {
                 $stockQuantity = $baranProduct['CurrentUnitCount'] ?? $baranProduct['stockQuantity'] ?? $baranProduct['TotalCount'] ?? $product['TotalCount'] ?? 0;
-
-                if (is_numeric($stockQuantity) && $stockQuantity >= 0) {
-                    $stockResult = $this->updateProductStockWithToken($license, $barcode, (int)$stockQuantity);
-                    $results['stock_update'] = $stockResult;
-                    $hasAnyUpdate = true;
-
-                    Log::info('به‌روزرسانی موجودی محصول', [
-                        'item_id' => $itemId,
-                        'stock_quantity' => $stockQuantity,
-                        'success' => $stockResult['success'] ?? false
-                    ]);
-                } else {
-                    $results['stock_update'] = [
-                        'success' => false,
-                        'message' => 'مقدار موجودی نامعتبر است'
-                    ];
+                if (!is_numeric($stockQuantity) || $stockQuantity < 0) {
+                    $stockQuantity = 0;
                 }
             }
 
-            // به‌روزرسانی قیمت و نام (اگر فعال باشند)
-            if ($enablePriceUpdate || $enableNameUpdate) {
-                // استخراج اطلاعات قیمت
-                $price = 0;
-                $discountPercent = 0;
+            // استخراج قیمت و تخفیف
+            if ($enablePriceUpdate) {
+                $price = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $product['PriceAmount'] ?? 0;
 
-                if ($enablePriceUpdate) {
-                    $price = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $product['PriceAmount'] ?? 0;
+                // محاسبه تخفیف
+                $currentDiscount = $baranProduct['currentDiscount'] ?? $baranProduct['DiscountPercentage'] ?? 0;
+                $priceAfterDiscount = $product['PriceAfterDiscount'] ?? null;
 
-                    // محاسبه تخفیف
-                    $currentDiscount = $baranProduct['currentDiscount'] ?? $baranProduct['DiscountPercentage'] ?? 0;
-                    $priceAfterDiscount = $product['PriceAfterDiscount'] ?? null;
-
-                    if ($currentDiscount > 0) {
-                        $discountPercent = $currentDiscount;
-                    } elseif ($priceAfterDiscount && $priceAfterDiscount > 0 && $price > 0) {
-                        $discountPercent = (($price - $priceAfterDiscount) / $price) * 100;
-                    }
-
-                    if (!is_numeric($price) || $price < 0) {
-                        $results['price_update'] = [
-                            'success' => false,
-                            'message' => 'قیمت محصول نامعتبر است'
-                        ];
-                        $enablePriceUpdate = false; // غیرفعال کردن به‌روزرسانی قیمت
-                    }
+                if ($currentDiscount > 0) {
+                    $discountPercent = $currentDiscount;
+                } elseif ($priceAfterDiscount && $priceAfterDiscount > 0 && $price > 0) {
+                    $discountPercent = (($price - $priceAfterDiscount) / $price) * 100;
                 }
 
-                // استخراج نام محصول
-                $title = '';
-                if ($enableNameUpdate) {
-                    $title = $baranProduct['itemName'] ?? $baranProduct['Name'] ?? $product['ItemName'] ?? '';
-
-                    if (empty($title)) {
-                        $results['name_update'] = [
-                            'success' => false,
-                            'message' => 'نام محصول یافت نشد'
-                        ];
-                        $enableNameUpdate = false; // غیرفعال کردن به‌روزرسانی نام
-                    }
-                }
-
-                // ارسال درخواست به‌روزرسانی اطلاعات محصول (اگر هنوز فعال باشند)
-                if ($enablePriceUpdate || $enableNameUpdate) {
-                    // اگر فقط قیمت فعال است، نام خالی ارسال نکن
-                    $finalTitle = $enableNameUpdate ? $title : null;
-                    $finalPrice = $enablePriceUpdate ? (float)$price : null;
-                    $finalDiscount = $enablePriceUpdate ? (float)$discountPercent : null;
-
-                    // فراخوانی API برای به‌روزرسانی اطلاعات
-                    if ($finalTitle !== null || $finalPrice !== null) {
-                        $infoResult = $this->updateProductInfoWithToken(
-                            $license,
-                            $barcode,
-                            $finalTitle ?? '',
-                            $finalPrice ?? 0,
-                            $finalDiscount ?? 0
-                        );
-
-                        $results['info_update'] = $infoResult;
-                        $hasAnyUpdate = true;
-
-                        Log::info('به‌روزرسانی اطلاعات محصول', [
-                            'item_id' => $itemId,
-                            'title_updated' => $enableNameUpdate,
-                            'price_updated' => $enablePriceUpdate,
-                            'title' => $finalTitle,
-                            'price' => $finalPrice,
-                            'discount' => $finalDiscount,
-                            'success' => $infoResult['success'] ?? false
-                        ]);
-                    }
+                if (!is_numeric($price) || $price < 0) {
+                    $price = 0;
+                    $enablePriceUpdate = false;
                 }
             }
+
+            // استخراج نام
+            if ($enableNameUpdate) {
+                $title = $baranProduct['itemName'] ?? $baranProduct['Name'] ?? $product['ItemName'] ?? '';
+
+                if (empty($title)) {
+                    $enableNameUpdate = false;
+                }
+            }
+
+            // ارسال درخواست موحد برای به‌روزرسانی مکمل (موجودی + قیمت + تخفیف + نام)
+            // فقط فیلدهای فعال‌شده را ارسال می‌کند
+            $completeResult = $this->updateProductCompleteWithTokenAndName(
+                $license,
+                $barcode,
+                (int)$stockQuantity,
+                (float)$price,
+                (float)$discountPercent,
+                $title,
+                $userSettings
+            );
+
+            $results = ['complete_update' => $completeResult];
+            $hasAnyUpdate = true;
+
+            Log::info('به‌روزرسانی مکمل محصول (موجودی + قیمت + تخفیف + نام) در یک درخواست', [
+                'item_id' => $itemId,
+                'stock_quantity' => $stockQuantity,
+                'price' => $price,
+                'discount' => $discountPercent,
+                'title' => $title,
+                'enable_stock' => $enableStockUpdate,
+                'enable_price' => $enablePriceUpdate,
+                'enable_name' => $enableNameUpdate,
+                'success' => $completeResult['success'] ?? false
+            ]);
 
             // تجمیع نتایج
             $allSuccessful = true;
             $messages = [];
 
             foreach ($results as $type => $result) {
-                if (!($result['success'] ?? false)) {
+                if (!($result['success'] ?? false) && !($result['skipped'] ?? false)) {
                     $allSuccessful = false;
                     $messages[] = $result['message'] ?? "خطا در $type";
                 }
