@@ -371,7 +371,7 @@ class TantoooDataController extends Controller
                     'success' => true,
                     'message' => 'توکن با موفقیت تجدید شد',
                     'data' => [
-                        'token_expires_at' => $license->token_expires_at
+                        'expires_at' => $license->expires_at
                     ]
                 ]);
             } else {

@@ -21,11 +21,11 @@ class License extends Authenticatable implements JWTSubject
         'key',
         'website_url',
         'status',
-        'expires_at',
+        'expires_at', //for license
         'user_id',
         'account_type',
         'api_token',
-        'token_expires_at'
+        'token_expires_at' //for api token
     ];
 
     protected $casts = [
@@ -106,7 +106,7 @@ class License extends Authenticatable implements JWTSubject
             return false;
         }
 
-        if ($this->token_expires_at && $this->token_expires_at <= now()) {
+        if ($this->expires_at && $this->expires_at <= now()) {
             return false;
         }
 
@@ -124,7 +124,7 @@ class License extends Authenticatable implements JWTSubject
     {
         $this->api_token = $token;
         $this->token_expires_at = $expiresAt;
-        
+
         return $this->save();
     }
 
@@ -137,7 +137,7 @@ class License extends Authenticatable implements JWTSubject
     {
         $this->api_token = null;
         $this->token_expires_at = null;
-        
+
         return $this->save();
     }
 }
