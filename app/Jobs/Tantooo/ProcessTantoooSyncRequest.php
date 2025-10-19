@@ -360,7 +360,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     'item_id' => $itemId,
                     'barcode' => $barcode,
                     'product_name' => $product['ItemName'] ?? 'نامشخص',
-                    'baran_stock_quantity' => $baranProduct['stockQuantity'] ?? 0,
+                    'baran_stock_quantity' => $baranProduct['CurrentUnitCount'] ?? $baranProduct['stockQuantity'] ?? 0,
                     'baran_item_found' => true
                 ]);
 
@@ -372,7 +372,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     Log::info('محصول با موفقیت به‌روزرسانی شد', [
                         'item_id' => $itemId,
                         'barcode' => $barcode,
-                        'stock_updated' => $baranProduct['stockQuantity'] ?? 0
+                        'stock_updated' => $baranProduct['CurrentUnitCount'] ?? $baranProduct['stockQuantity'] ?? 0
                     ]);
                 } else {
                     $errorCount++;
@@ -474,7 +474,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 }
 
                 // اضافه کردن موجودی
-                $stockQuantity = (float)($baranProduct['TotalCount'] ?? $baranProduct['totalCount'] ?? $baranProduct['stockQuantity'] ?? 0);
+                $stockQuantity = (float)($baranProduct['TotalCount'] ?? $baranProduct['totalCount'] ?? $baranProduct['CurrentUnitCount'] ?? $baranProduct['stockQuantity'] ?? 0);
                 $groupedProducts[$itemId]['totalQuantity'] += $stockQuantity;
 
                 // ثبت انبار و موجودی آن
@@ -678,7 +678,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // به‌روزرسانی موجودی (اگر فعال باشد)
             if ($enableStockUpdate) {
-                $stockQuantity = $baranProduct['stockQuantity'] ?? $baranProduct['TotalCount'] ?? $product['TotalCount'] ?? 0;
+                $stockQuantity = $baranProduct['CurrentUnitCount'] ?? $baranProduct['stockQuantity'] ?? $baranProduct['TotalCount'] ?? $product['TotalCount'] ?? 0;
 
                 if (is_numeric($stockQuantity) && $stockQuantity >= 0) {
                     $stockResult = $this->updateProductStockWithToken($license, $itemId, (int)$stockQuantity);
