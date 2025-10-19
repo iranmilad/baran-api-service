@@ -742,7 +742,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 $stockQuantity = $baranProduct['CurrentUnitCount'] ?? $baranProduct['stockQuantity'] ?? $baranProduct['TotalCount'] ?? $product['TotalCount'] ?? 0;
 
                 if (is_numeric($stockQuantity) && $stockQuantity >= 0) {
-                    $stockResult = $this->updateProductStockWithToken($license, $itemId, (int)$stockQuantity);
+                    $stockResult = $this->updateProductStockWithToken($license, $barcode, (int)$stockQuantity);
                     $results['stock_update'] = $stockResult;
                     $hasAnyUpdate = true;
 
