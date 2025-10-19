@@ -119,6 +119,18 @@ class UpdateAllProductsJob implements ShouldQueue
                     $price = (float)($product->price_amount ?? 0);
                     $discountPercent = 0;
 
+                    // تبدیل واحد قیمت در صورت نیاز
+                    if ($userSetting && isset($userSetting->rain_sale_price_unit) && isset($userSetting->tantooo_price_unit)) {
+                        $rainSaleUnit = $userSetting->rain_sale_price_unit;
+                        $tantoooUnit = $userSetting->tantooo_price_unit;
+
+                        if ($rainSaleUnit === 'rial' && $tantoooUnit === 'toman') {
+                            $price = $price / 10; // ریال به تومان
+                        } elseif ($rainSaleUnit === 'toman' && $tantoooUnit === 'rial') {
+                            $price = $price * 10; // تومان به ریال
+                        }
+                    }
+
                     // محاسبه تخفیف
                     if ($product->price_after_discount && $product->price_after_discount > 0 && $price > 0) {
                         $discountPercent = (($price - $product->price_after_discount) / $price) * 100;
@@ -143,7 +155,11 @@ class UpdateAllProductsJob implements ShouldQueue
                             'item_id' => $itemId,
                             'product_id' => $product->id,
                             'stock_quantity' => $stockQuantity,
-                            'price' => $price,
+                            'price_original' => (float)($product->price_amount ?? 0),
+                            'price_after_conversion' => $price,
+                            'price_unit_conversion' => $userSetting && isset($userSetting->rain_sale_price_unit) && isset($userSetting->tantooo_price_unit)
+                                ? ($userSetting->rain_sale_price_unit . ' → ' . $userSetting->tantooo_price_unit)
+                                : 'no conversion',
                             'discount' => $discountPercent
                         ]);
                     } else {

@@ -66,6 +66,7 @@ class UserSetting extends Model
         'invoice_settings',
         'rain_sale_price_unit',
         'woocommerce_price_unit',
+        'tantooo_price_unit',
         'shipping_cost_method',
         'shipping_product_unique_id',
         'default_warehouse_code'

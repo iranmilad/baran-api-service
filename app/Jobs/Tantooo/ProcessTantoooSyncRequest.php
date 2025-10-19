@@ -752,6 +752,18 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             if ($enablePriceUpdate) {
                 $price = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $product['PriceAmount'] ?? 0;
 
+                // تبدیل واحد قیمت در صورت نیاز
+                if ($userSettings && isset($userSettings->rain_sale_price_unit) && isset($userSettings->tantooo_price_unit)) {
+                    $rainSaleUnit = $userSettings->rain_sale_price_unit;
+                    $tantoooUnit = $userSettings->tantooo_price_unit;
+
+                    if ($rainSaleUnit === 'rial' && $tantoooUnit === 'toman') {
+                        $price = $price / 10; // ریال به تومان
+                    } elseif ($rainSaleUnit === 'toman' && $tantoooUnit === 'rial') {
+                        $price = $price * 10; // تومان به ریال
+                    }
+                }
+
                 // محاسبه تخفیف
                 $currentDiscount = $baranProduct['currentDiscount'] ?? $baranProduct['DiscountPercentage'] ?? 0;
                 $priceAfterDiscount = $product['PriceAfterDiscount'] ?? null;
@@ -795,7 +807,11 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             Log::info('به‌روزرسانی مکمل محصول (موجودی + قیمت + تخفیف + نام) در یک درخواست', [
                 'item_id' => $itemId,
                 'stock_quantity' => $stockQuantity,
-                'price' => $price,
+                'price_original' => $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? 0,
+                'price_after_conversion' => $price,
+                'price_unit_conversion' => $userSettings && isset($userSettings->rain_sale_price_unit) && isset($userSettings->tantooo_price_unit)
+                    ? ($userSettings->rain_sale_price_unit . ' → ' . $userSettings->tantooo_price_unit)
+                    : 'no conversion',
                 'discount' => $discountPercent,
                 'title' => $title,
                 'enable_stock' => $enableStockUpdate,
