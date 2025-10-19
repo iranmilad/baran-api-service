@@ -451,10 +451,11 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     $priceAfterDiscount = $baranProduct['priceAfterDiscount'] ?? $baranProduct['PriceAfterDiscount'] ?? 0;
 
                     // استخراج موجودی
-                    $totalCount = $baranProduct['stockQuantity'] ?? $baranProduct['TotalCount'] ?? 0;
+                    // TotalCount از webhook
+                    $totalCount = $baranProduct['TotalCount'] ?? $baranProduct['totalCount'] ?? $baranProduct['stockQuantity'] ?? 0;
 
                     // استخراج انبار
-                    $stockId = $baranProduct['stockID'] ?? $baranProduct['StockID'] ?? null;
+                    $stockId = $baranProduct['StockID'] ?? $baranProduct['stockID'] ?? $baranProduct['stock_id'] ?? null;
 
                     // استخراج دسته‌بندی
                     $departmentName = $baranProduct['departmentName'] ?? $baranProduct['DepartmentName'] ?? '';
