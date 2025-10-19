@@ -141,10 +141,11 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             }
 
             // پردازش و به‌روزرسانی محصولات
+            // استفاده از محصولات گروه‌بندی‌شده (یکپارچه‌شده) برای جستجوی صحیح
             $updateResult = $this->processAndUpdateProductsFromBaran(
                 $license,
                 $allProducts,
-                $baranResult['data']['products']
+                $saveResult['data']['grouped_products'] ?? $baranResult['data']['products']
             );
 
             if (!$updateResult['success']) {
@@ -259,19 +260,26 @@ class ProcessTantoooSyncRequest implements ShouldQueue
      */
     protected function processAndUpdateProductsFromBaran($license, $allProducts, $baranProducts)
     {
-        // فرض بر این است که $baranProducts آرایه‌ای از اطلاعات محصولات به‌روز شده است
         $successCount = 0;
         $errorCount = 0;
         $errors = [];
         $tantoooUpdateResult = [];
 
-        // لاگ ساختار داده‌ها برای تشخیص مشکل
+        // ایجاد نقشه سریع برای جستجو: itemID => productData
+        $baranProductMap = [];
+        foreach ($baranProducts as $baranItem) {
+            $baranItemId = $baranItem['itemID'] ?? $baranItem['ItemID'] ?? null;
+            if ($baranItemId) {
+                $baranProductMap[$baranItemId] = $baranItem;
+            }
+        }
+
         Log::info('شروع پردازش محصولات Tantooo', [
             'license_id' => $license->id,
             'total_products' => count($allProducts),
-            'baran_products_count' => count($baranProducts),
+            'unique_baran_items' => count($baranProductMap),
             'sample_product' => !empty($allProducts) ? $allProducts[0] : null,
-            'baran_keys_sample' => !empty($baranProducts) ? array_slice(array_keys($baranProducts), 0, 3) : []
+            'grouped_products_structure' => !empty($baranProducts) ? $baranProducts[0] : null
         ]);
 
         foreach ($allProducts as $index => $product) {
@@ -296,42 +304,14 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 continue;
             }
 
-            // جستجوی محصول در داده‌های باران بر اساس ItemId یا Barcode
-            $baranProduct = null;
-
-            // جستجو در آرایه باران بر اساس itemID (حروف کوچک و بزرگ)
-            foreach ($baranProducts as $baranItem) {
-                // جستجو با فیلدهای مختلف برای itemID
-                $baranItemId = $baranItem['itemID'] ?? $baranItem['ItemID'] ?? null;
-                $baranBarcode = $baranItem['barcode'] ?? $baranItem['Barcode'] ?? null;
-
-                if ($baranItemId && $baranItemId === $itemId) {
-                    $baranProduct = $baranItem;
-                    break;
-                }
-                // جستجوی جایگزین بر اساس barcode اگر itemID پیدا نشد
-                if ($baranBarcode && $baranBarcode === $barcode) {
-                    $baranProduct = $baranItem;
-                    break;
-                }
-            }
+            // جستجوی محصول در نقشه باران
+            $baranProduct = $baranProductMap[$itemId] ?? null;
 
             if (!$baranProduct) {
-                // برای تشخیص بهتر مشکل، تمام فیلدهای موجود در باران را لاگ می‌کنیم
-                $baranItemIds = [];
-                $baranBarcodes = [];
-                foreach ($baranProducts as $baranItem) {
-                    $baranItemIds[] = $baranItem['itemID'] ?? $baranItem['ItemID'] ?? 'null';
-                    $baranBarcodes[] = $baranItem['barcode'] ?? $baranItem['Barcode'] ?? 'null';
-                }
-
                 Log::warning('محصول در داده‌های باران یافت نشد', [
                     'requested_item_id' => $itemId,
                     'requested_barcode' => $barcode,
-                    'available_item_ids' => $baranItemIds,
-                    'available_barcodes' => $baranBarcodes,
-                    'sample_baran_item' => !empty($baranProducts) ? $baranProducts[0] : null,
-                    'baran_structure' => !empty($baranProducts) ? array_keys($baranProducts[0]) : []
+                    'available_items_sample' => array_slice(array_keys($baranProductMap), 0, 5)
                 ]);
                 $errorCount++;
                 $errors[] = [
@@ -347,6 +327,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     'item_id' => $itemId,
                     'barcode' => $barcode,
                     'product_name' => $product['ItemName'] ?? 'نامشخص',
+                    'baran_stock_quantity' => $baranProduct['stockQuantity'] ?? 0,
                     'baran_item_found' => true
                 ]);
 
@@ -357,7 +338,8 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     $successCount++;
                     Log::info('محصول با موفقیت به‌روزرسانی شد', [
                         'item_id' => $itemId,
-                        'barcode' => $barcode
+                        'barcode' => $barcode,
+                        'stock_updated' => $baranProduct['stockQuantity'] ?? 0
                     ]);
                 } else {
                     $errorCount++;
@@ -560,6 +542,21 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 'summary' => "تعداد رکوردهای خام: " . count($baranProducts) . ", محصولات یکتا: " . count($groupedProducts)
             ]);
 
+            // تبدیل محصولات گروه‌بندی‌شده برای استفاده در processAndUpdateProductsFromBaran
+            $processedGroupedProducts = [];
+            foreach ($groupedProducts as $itemId => $productData) {
+                $processedGroupedProducts[] = [
+                    'itemID' => $productData['itemID'],
+                    'itemName' => $productData['itemName'],
+                    'barcode' => $productData['barcode'],
+                    'salePrice' => $productData['salePrice'],
+                    'priceAfterDiscount' => $productData['priceAfterDiscount'],
+                    'stockQuantity' => $productData['totalQuantity'], // موجودی جمع‌شده
+                    'departmentName' => $productData['departmentName'],
+                    'stocks' => $productData['stocks']
+                ];
+            }
+
             return [
                 'success' => true,
                 'data' => [
@@ -567,6 +564,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     'updated_count' => $updatedCount,
                     'total_processed' => count($groupedProducts),
                     'total_raw_records' => count($baranProducts),
+                    'grouped_products' => $processedGroupedProducts, // محصولات یکپارچه‌شده برای استفاده در update
                     'errors' => $errors
                 ],
                 'message' => "محصولات با موفقیت ذخیره شدند ($savedCount جدید، $updatedCount به‌روزرسانی شده)"
