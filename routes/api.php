@@ -155,6 +155,12 @@ Route::prefix('v1')->group(function () {
             // Bulk sync products with Tantooo
             Route::post('/bulk-sync', [TantoooProductController::class, 'bulkSync']);
 
+            // Update all products from database
+            Route::post('/update-all', [TantoooProductController::class, 'updateAllProducts']);
+
+            // Get status of update all
+            Route::get('/update-all-status/{syncId}', [TantoooProductController::class, 'getUpdateAllStatus']);
+
             // Get products list from Tantooo
             Route::get('/list', [TantoooProductController::class, 'getProducts']);
 

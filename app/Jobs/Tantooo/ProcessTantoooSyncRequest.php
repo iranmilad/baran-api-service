@@ -812,7 +812,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     if ($finalTitle !== null || $finalPrice !== null) {
                         $infoResult = $this->updateProductInfoWithToken(
                             $license,
-                            $itemId,
+                            $barcode,
                             $finalTitle ?? '',
                             $finalPrice ?? 0,
                             $finalDiscount ?? 0

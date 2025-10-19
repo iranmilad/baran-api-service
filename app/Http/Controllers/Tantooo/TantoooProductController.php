@@ -451,5 +451,235 @@ class TantoooProductController extends Controller
         }
     }
 
+    /**
+     * به‌روزرسانی تمام محصولات از دیتابیس به Tantooo
+     * هر محصول را به صورت جداگانه بر اساس تنظیمات لایسنس به‌روز می‌کند
+     */
+    public function updateAllProducts(Request $request)
+    {
+        try {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No token provided'
+                ], 401);
+            }
+
+            // Attempt to authenticate license with token
+            try {
+                $license = JWTAuth::parseToken()->authenticate();
+                if (!$license) {
+                    Log::error('Invalid token - license not found');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid token - license not found'
+                    ], 401);
+                }
+            } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+                Log::error('Token has expired');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token has expired'
+                ], 401);
+            } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
+                Log::error('Token is invalid');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token is invalid'
+                ], 401);
+            } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
+                Log::error('Token parsing error: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Could not parse token'
+                ], 401);
+            }
+
+            // ذخیره وبهوک دریافتی در جدول webhook_logs
+            \App\Models\WebhookLog::create([
+                'license_id' => $license->id,
+                'logged_at' => now(),
+                'payload' => $request->all()
+            ]);
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $user = $license->user;
+
+            // Check settings using license_id
+            $settings = UserSetting::where('license_id', $license->id)->first();
+            if (!$settings) {
+                Log::error('Settings not found for license', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Settings not found for license'
+                ], 404);
+            }
+
+            // بررسی تنظیمات API Tantooo قبل از ارسال به queue
+            $tantoooSettings = $this->getTantoooApiSettings($license);
+            if (!$tantoooSettings) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'تنظیمات API Tantooo یافت نشد'
+                ], 400);
+            }
+
+            $syncId = 'tantooo_update_all_' . uniqid();
+
+            // Log initial request
+            Log::info('درخواست به‌روزرسانی تمام محصولات Tantooo دریافت شد - ارسال به queue', [
+                'user_id' => $user->id,
+                'user_email' => $user->email,
+                'license_id' => $license->id,
+                'sync_id' => $syncId
+            ]);
+
+            // ارسال درخواست به queue برای پردازش
+            \App\Jobs\Tantooo\UpdateAllProductsJob::dispatch(
+                $license->id,
+                $syncId
+            )->onQueue('tantooo-sync');
+
+            // پاسخ فوری به کلاینت
+            return response()->json([
+                'success' => true,
+                'message' => 'درخواست به‌روزرسانی تمام محصولات به queue ارسال شد',
+                'data' => [
+                    'sync_id' => $syncId,
+                    'queue_status' => 'processing'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('خطا در درخواست به‌روزرسانی تمام محصولات Tantooo', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'خطا در درخواست به‌روزرسانی تمام محصولات'
+            ], 500);
+        }
+    }
+
+    /**
+     * بررسی وضعیت به‌روزرسانی تمام محصولات
+     */
+    public function getUpdateAllStatus(Request $request, $syncId)
+    {
+        try {
+            // Get and validate JWT token
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('No token provided in request');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No token provided'
+                ], 401);
+            }
+
+            // Attempt to authenticate license with token
+            try {
+                $license = JWTAuth::parseToken()->authenticate();
+                if (!$license) {
+                    Log::error('Invalid token - license not found');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid token - license not found'
+                    ], 401);
+                }
+            } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+                Log::error('Token has expired');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token has expired'
+                ], 401);
+            } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
+                Log::error('Token is invalid');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token is invalid'
+                ], 401);
+            } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
+                Log::error('Token parsing error: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Could not parse token'
+                ], 401);
+            }
+
+            if (!$license->isActive()) {
+                Log::error('License is not active', [
+                    'license_id' => $license->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'License is not active'
+                ], 403);
+            }
+
+            $cacheKey = "tantooo_update_all_result_{$syncId}";
+            $result = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+            if (!$result) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'نتیجه به‌روزرسانی یافت نشد',
+                    'data' => [
+                        'sync_id' => $syncId,
+                        'status' => 'not_found'
+                    ]
+                ], 404);
+            }
+
+            // اگر همچنان در حال پردازش است
+            if (!isset($result['completed_at']) && !isset($result['failed_at'])) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'به‌روزرسانی تمام محصولات در حال پردازش است',
+                    'data' => [
+                        'sync_id' => $syncId,
+                        'status' => 'processing'
+                    ]
+                ]);
+            }
+
+            // نتیجه نهایی
+            return response()->json([
+                'success' => $result['success'],
+                'message' => $result['message'],
+                'data' => array_merge($result, [
+                    'sync_id' => $syncId,
+                    'status' => $result['success'] ? 'completed' : 'failed'
+                ])
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('خطا در بررسی وضعیت به‌روزرسانی تمام محصولات', [
+                'sync_id' => $syncId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'خطا در بررسی وضعیت'
+            ], 500);
+        }
+    }
 
 }
