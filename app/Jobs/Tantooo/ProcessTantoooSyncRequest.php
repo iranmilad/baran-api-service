@@ -346,12 +346,79 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     'available_items_count' => count($baranProductMap),
                     'total_items_to_process' => count($allProducts)
                 ]);
-                $errorCount++;
-                $errors[] = [
-                    'code' => $itemId,
-                    'message' => 'اطلاعات محصول در داده‌های باران یافت نشد'
-                ];
-                continue;
+
+                // بررسی وجود محصول در دیتابیس
+                $existingProduct = Product::where('item_id', $itemId)->first();
+
+                if ($existingProduct) {
+                    // اگر محصول در دیتابیس وجود داشته باشد، از آن استفاده کنید
+                    $baranProduct = [
+                        'itemID' => $itemId,
+                        'itemName' => $existingProduct->item_name ?? $product['ItemName'] ?? 'نامشخص',
+                        'CurrentUnitCount' => $existingProduct->total_count ?? 0,
+                        'salePrice' => $existingProduct->price_amount ?? $product['PriceAmount'] ?? 0,
+                        'priceAfterDiscount' => $existingProduct->price_after_discount ?? $product['PriceAfterDiscount'] ?? 0
+                    ];
+
+                    Log::info('محصول در دیتابیس یافت شد و داده‌های موجود استفاده شد', [
+                        'item_id' => $itemId,
+                        'barcode' => $barcode,
+                        'existing_stock' => $existingProduct->total_count,
+                        'source' => 'database'
+                    ]);
+                } else {
+                    // اگر محصول در دیتابیس وجود نداشته باشد، آن را ایجاد کنید
+                    Log::info('محصول در دیتابیس یافت نشد، درخواست INSERT اجرا می‌شود', [
+                        'item_id' => $itemId,
+                        'barcode' => $barcode,
+                        'requested_item_name' => $product['ItemName'] ?? null
+                    ]);
+
+                    try {
+                        $newProduct = Product::create([
+                            'license_id' => $license->id,
+                            'item_id' => $itemId,
+                            'item_name' => $product['ItemName'] ?? 'نامشخص',
+                            'barcode' => $barcode,
+                            'price_amount' => (int)($product['PriceAmount'] ?? 0),
+                            'price_after_discount' => (int)($product['PriceAfterDiscount'] ?? 0),
+                            'total_count' => (int)($product['TotalCount'] ?? 0),
+                            'stock_id' => $product['StockID'] ?? null,
+                            'department_name' => $product['DepartmentName'] ?? '',
+                            'is_variant' => false,
+                            'last_sync_at' => now()
+                        ]);
+
+                        // استفاده از داده‌های محصول جدید برای ادامه پردازش
+                        $baranProduct = [
+                            'itemID' => $itemId,
+                            'itemName' => $newProduct->item_name,
+                            'CurrentUnitCount' => $newProduct->total_count ?? 0,
+                            'salePrice' => $newProduct->price_amount ?? 0,
+                            'priceAfterDiscount' => $newProduct->price_after_discount ?? 0
+                        ];
+
+                        Log::info('محصول جدید با موفقیت ایجاد شد', [
+                            'item_id' => $itemId,
+                            'barcode' => $barcode,
+                            'product_id' => $newProduct->id,
+                            'initial_stock' => $newProduct->total_count
+                        ]);
+
+                    } catch (\Exception $ex) {
+                        $errorCount++;
+                        $errors[] = [
+                            'code' => $itemId,
+                            'message' => 'خطا در ایجاد محصول: ' . $ex->getMessage()
+                        ];
+                        Log::error('خطا در ایجاد محصول جدید', [
+                            'item_id' => $itemId,
+                            'barcode' => $barcode,
+                            'error' => $ex->getMessage()
+                        ]);
+                        continue;
+                    }
+                }
             }
 
             // به‌روزرسانی محصول در Tantooo با استفاده از اطلاعات باران
