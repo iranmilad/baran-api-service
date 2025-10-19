@@ -427,111 +427,137 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 'total_products' => count($baranProducts)
             ]);
 
+            // گروه‌بندی محصولات بر اساس itemID
+            // منطق: اگر یک itemID برای انبارهای مختلف وجود داشته باشد، موجودی‌ها جمع شود
+            $groupedProducts = [];
+
             foreach ($baranProducts as $baranProduct) {
+                $itemId = $baranProduct['itemID'] ?? $baranProduct['ItemID'] ?? null;
+
+                if (!$itemId) {
+                    $errors[] = [
+                        'barcode' => $baranProduct['barcode'] ?? $baranProduct['Barcode'] ?? 'نامشخص',
+                        'message' => 'ItemID محصول یافت نشد'
+                    ];
+                    continue;
+                }
+
+                if (!isset($groupedProducts[$itemId])) {
+                    // اولین دفعه مشاهده این itemID
+                    $groupedProducts[$itemId] = [
+                        'itemID' => $itemId,
+                        'itemName' => $baranProduct['itemName'] ?? $baranProduct['ItemName'] ?? $baranProduct['Name'] ?? '',
+                        'barcode' => $baranProduct['barcode'] ?? $baranProduct['Barcode'] ?? null,
+                        'salePrice' => $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $baranProduct['PriceAmount'] ?? 0,
+                        'priceAfterDiscount' => $baranProduct['priceAfterDiscount'] ?? $baranProduct['PriceAfterDiscount'] ?? 0,
+                        'totalQuantity' => 0, // موجودی جمع‌شده
+                        'stocks' => [], // لیست انبارها
+                        'departmentName' => $baranProduct['departmentName'] ?? $baranProduct['DepartmentName'] ?? '',
+                        'firstStockId' => $baranProduct['StockID'] ?? $baranProduct['stockID'] ?? $baranProduct['stock_id'] ?? null
+                    ];
+                }
+
+                // اضافه کردن موجودی
+                $stockQuantity = (float)($baranProduct['TotalCount'] ?? $baranProduct['totalCount'] ?? $baranProduct['stockQuantity'] ?? 0);
+                $groupedProducts[$itemId]['totalQuantity'] += $stockQuantity;
+
+                // ثبت انبار و موجودی آن
+                $groupedProducts[$itemId]['stocks'][] = [
+                    'stockID' => $baranProduct['StockID'] ?? $baranProduct['stockID'] ?? null,
+                    'stockName' => $baranProduct['stockName'] ?? 'نامشخص',
+                    'quantity' => $stockQuantity
+                ];
+
+                Log::debug('اضافه‌کردن رکورد موجودی برای گروه‌بندی', [
+                    'item_id' => $itemId,
+                    'stock_name' => $baranProduct['stockName'] ?? 'نامشخص',
+                    'quantity' => $stockQuantity,
+                    'cumulative_quantity' => $groupedProducts[$itemId]['totalQuantity']
+                ]);
+            }
+
+            // اکنون از محصولات گروه‌بندی شده استفاده کنید
+            foreach ($groupedProducts as $itemId => $productData) {
                 try {
-                    // استخراج فیلدهای مورد نیاز
-                    $itemId = $baranProduct['itemID'] ?? $baranProduct['ItemID'] ?? null;
-                    $barcode = $baranProduct['barcode'] ?? $baranProduct['Barcode'] ?? null;
-
-                    if (!$itemId) {
-                        $errors[] = [
-                            'barcode' => $barcode,
-                            'message' => 'ItemID محصول یافت نشد'
-                        ];
-                        continue;
-                    }
-
-                    // استخراج نام محصول
-                    $itemName = $baranProduct['itemName'] ?? $baranProduct['ItemName'] ?? $baranProduct['Name'] ?? '';
-
-                    // استخراج قیمت
-                    $priceAmount = $baranProduct['salePrice'] ?? $baranProduct['Price'] ?? $baranProduct['PriceAmount'] ?? 0;
-
-                    // استخراج قیمت پس از تخفیف
-                    $priceAfterDiscount = $baranProduct['priceAfterDiscount'] ?? $baranProduct['PriceAfterDiscount'] ?? 0;
-
-                    // استخراج موجودی
-                    // TotalCount از webhook
-                    $totalCount = $baranProduct['TotalCount'] ?? $baranProduct['totalCount'] ?? $baranProduct['stockQuantity'] ?? 0;
-
-                    // استخراج انبار
-                    $stockId = $baranProduct['StockID'] ?? $baranProduct['stockID'] ?? $baranProduct['stock_id'] ?? null;
-
-                    // استخراج دسته‌بندی
-                    $departmentName = $baranProduct['departmentName'] ?? $baranProduct['DepartmentName'] ?? '';
-
-                    // بررسی وجود محصول بر اساس item_id (مستقل از license_id)
-                    // منطق: اگر item_id مشابه باشد، همان رکورد به‌روزرسانی شود
+                    // بررسی وجود محصول بر اساس item_id
                     $product = Product::where('item_id', $itemId)->first();
 
                     if ($product) {
                         // به‌روزرسانی محصول موجود
                         $product->update([
                             'license_id' => $license->id,
-                            'item_name' => $itemName,
-                            'barcode' => $barcode,
-                            'price_amount' => (int)$priceAmount,
-                            'price_after_discount' => (int)$priceAfterDiscount,
-                            'total_count' => (int)$totalCount,
-                            'stock_id' => $stockId,
-                            'department_name' => $departmentName,
+                            'item_name' => $productData['itemName'],
+                            'barcode' => $productData['barcode'],
+                            'price_amount' => (int)$productData['salePrice'],
+                            'price_after_discount' => (int)$productData['priceAfterDiscount'],
+                            'total_count' => (int)$productData['totalQuantity'], // موجودی جمع‌شده
+                            'stock_id' => $productData['firstStockId'],
+                            'department_name' => $productData['departmentName'],
                             'last_sync_at' => now()
                         ]);
                         $updatedCount++;
 
-                        Log::debug('محصول به‌روزرسانی شد', [
+                        Log::info('محصول به‌روزرسانی شد', [
                             'license_id' => $license->id,
                             'item_id' => $itemId,
-                            'barcode' => $barcode,
-                            'action' => 'updated',
-                            'old_license_id' => $product->getOriginal('license_id')
+                            'barcode' => $productData['barcode'],
+                            'total_quantity' => $productData['totalQuantity'],
+                            'warehouse_count' => count($productData['stocks']),
+                            'stocks_detail' => $productData['stocks'],
+                            'action' => 'updated'
                         ]);
                     } else {
                         // ایجاد محصول جدید
                         Product::create([
                             'license_id' => $license->id,
                             'item_id' => $itemId,
-                            'item_name' => $itemName,
-                            'barcode' => $barcode,
-                            'price_amount' => (int)$priceAmount,
-                            'price_after_discount' => (int)$priceAfterDiscount,
-                            'total_count' => (int)$totalCount,
-                            'stock_id' => $stockId,
-                            'department_name' => $departmentName,
+                            'item_name' => $productData['itemName'],
+                            'barcode' => $productData['barcode'],
+                            'price_amount' => (int)$productData['salePrice'],
+                            'price_after_discount' => (int)$productData['priceAfterDiscount'],
+                            'total_count' => (int)$productData['totalQuantity'], // موجودی جمع‌شده
+                            'stock_id' => $productData['firstStockId'],
+                            'department_name' => $productData['departmentName'],
                             'is_variant' => false,
                             'last_sync_at' => now()
                         ]);
                         $savedCount++;
 
-                        Log::debug('محصول جدید ذخیره شد', [
+                        Log::info('محصول جدید ذخیره شد', [
                             'license_id' => $license->id,
                             'item_id' => $itemId,
-                            'barcode' => $barcode,
+                            'barcode' => $productData['barcode'],
+                            'total_quantity' => $productData['totalQuantity'],
+                            'warehouse_count' => count($productData['stocks']),
+                            'stocks_detail' => $productData['stocks'],
                             'action' => 'created'
                         ]);
                     }
                 } catch (\Exception $ex) {
                     $errors[] = [
-                        'item_id' => $itemId ?? 'نامشخص',
-                        'barcode' => $barcode ?? 'نامشخص',
+                        'item_id' => $itemId,
+                        'barcode' => $productData['barcode'] ?? 'نامشخص',
                         'message' => $ex->getMessage()
                     ];
 
                     Log::error('خطا در ذخیره‌سازی محصول', [
                         'license_id' => $license->id,
-                        'item_id' => $itemId ?? 'نامشخص',
-                        'barcode' => $barcode ?? 'نامشخص',
+                        'item_id' => $itemId,
+                        'barcode' => $productData['barcode'] ?? 'نامشخص',
                         'error' => $ex->getMessage()
                     ]);
                 }
             }
 
+
             Log::info('تکمیل ذخیره‌سازی محصولات باران', [
                 'license_id' => $license->id,
-                'total_products' => count($baranProducts),
+                'total_raw_records' => count($baranProducts),
+                'unique_items_count' => count($groupedProducts),
                 'saved_count' => $savedCount,
                 'updated_count' => $updatedCount,
-                'error_count' => count($errors)
+                'error_count' => count($errors),
+                'summary' => "تعداد رکوردهای خام: " . count($baranProducts) . ", محصولات یکتا: " . count($groupedProducts)
             ]);
 
             return [
@@ -539,7 +565,8 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 'data' => [
                     'saved_count' => $savedCount,
                     'updated_count' => $updatedCount,
-                    'total_processed' => count($baranProducts),
+                    'total_processed' => count($groupedProducts),
+                    'total_raw_records' => count($baranProducts),
                     'errors' => $errors
                 ],
                 'message' => "محصولات با موفقیت ذخیره شدند ($savedCount جدید، $updatedCount به‌روزرسانی شده)"
