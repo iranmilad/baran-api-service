@@ -82,21 +82,16 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // تفکیک محصولات insert و update
             // محصولات جدید بدون فیلتر موجودی قبول شوند
-            // محصولات برای آپدیت فیلتر شوند
+            // محصولات برای آپدیت بدون فیلتر موجودی قبول شوند (برای پشتیبانی UPDATE → INSERT)
             $insertProducts = $this->insertProducts;
             $updateProducts = $this->updateProducts;
 
-            // فیلتر محصولات UPDATE: تنها آنهایی با موجودی مثبت در Warehouse
-            $updateProductsWithStock = array_filter($updateProducts, function($product) {
-                $totalCount = $product['TotalCount'] ?? 0;
-                return is_numeric($totalCount) && $totalCount > 0;
-            });
-
-            // ترکیب: تمام INSERT + UPDATE های با موجودی
-            $productsToProcess = array_merge($insertProducts, $updateProductsWithStock);
+            // ترکیب: تمام INSERT + تمام UPDATE (بدون فیلتر موجودی)
+            // توضیح: اگر محصول UPDATE در دیتابیس وجود نداشته باشد، به صورت خودکار INSERT می‌شود
+            $productsToProcess = array_merge($insertProducts, $updateProducts);
 
             if (empty($productsToProcess)) {
-                $this->logError('هیچ محصولی برای پردازش یافت نشد (حداقل یک INSERT یا UPDATE با موجودی مثبت)');
+                $this->logError('هیچ محصولی برای پردازش یافت نشد');
                 return;
             }
 
@@ -104,10 +99,9 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 'license_id' => $this->licenseId,
                 'sync_id' => $this->syncId,
                 'insert_products' => count($insertProducts),
-                'update_products_total' => count($updateProducts),
-                'update_products_with_stock' => count($updateProductsWithStock),
-                'update_products_without_stock' => count($updateProducts) - count($updateProductsWithStock),
-                'total_to_process' => count($productsToProcess)
+                'update_products' => count($updateProducts),
+                'total_to_process' => count($productsToProcess),
+                'note' => 'محصولات UPDATE بدون موجودی نیز پردازش می‌شوند - اگر در دیتابیس نباشند INSERT خواهند شد'
             ]);
 
             // استخراج کدهای محصولات
