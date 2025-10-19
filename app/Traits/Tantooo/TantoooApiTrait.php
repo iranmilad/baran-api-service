@@ -430,10 +430,12 @@ trait TantoooApiTrait
                 // تنظیم زمان انقضای توکن - یک سال (بر اساس درخواست شما)
                 $expiresAt = now()->addYear();
 
-                // ذخیره توکن در لایسنس
-                $license->api_token = $token;
-                $license->token_expires_at = $expiresAt;
-                $license->save();
+                // ذخیره توکن در لایسنس - فقط api_token و token_expires_at را تغییر دهید
+                // expires_at (JWT token) را تغییر ندهید
+                $license->update([
+                    'api_token' => $token,
+                    'token_expires_at' => $expiresAt
+                ]);
 
                 Log::info('توکن جدید Tantooo برای لایسنس دریافت و ذخیره شد', [
                     'license_id' => $license->id,
