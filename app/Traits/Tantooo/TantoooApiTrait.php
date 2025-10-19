@@ -647,7 +647,7 @@ trait TantoooApiTrait
 
             Log::info('ارسال درخواست به‌روزرسانی موجودی محصول به API Tantooo', [
                 'api_url' => $apiUrl,
-                'product_code' => $code,
+                'product_sku' => $code,
                 'new_count' => $count
             ]);
 
@@ -696,7 +696,25 @@ trait TantoooApiTrait
                     ];
                 }
 
-                // اگر msg کد خطایی است
+                // بررسی برای کد 4 (محصول وجود ندارد - نوع هشدار)
+                if ($msgCode === 4) {
+                    Log::warning('محصول در سیستم Tantooo وجود ندارد', [
+                        'product_code' => $code,
+                        'new_count' => $count,
+                        'msg_code' => $msgCode,
+                        'msg_text' => $responseData['msg_txt'] ?? 'کد محصول اشتباه است',
+                        'api_response' => $responseData
+                    ]);
+
+                    return [
+                        'success' => false,
+                        'message' => 'محصول در سیستم Tantooo وجود ندارد',
+                        'error_code' => $msgCode,
+                        'error_details' => $responseData
+                    ];
+                }
+
+                // اگر msg کد خطایی دیگری است
                 Log::error('خطا در به‌روزرسانی موجودی محصول در API Tantooo - کد خطا دریافت شد', [
                     'product_code' => $code,
                     'new_count' => $count,
@@ -845,7 +863,27 @@ trait TantoooApiTrait
                     ];
                 }
 
-                // اگر msg کد خطایی است
+                // بررسی برای کد 4 (محصول وجود ندارد - نوع هشدار)
+                if ($msgCode === 4) {
+                    Log::warning('محصول در سیستم Tantooo وجود ندارد', [
+                        'product_code' => $code,
+                        'product_title' => $title,
+                        'price' => $price,
+                        'discount' => $discount,
+                        'msg_code' => $msgCode,
+                        'msg_text' => $responseData['msg_txt'] ?? 'کد محصول اشتباه است',
+                        'api_response' => $responseData
+                    ]);
+
+                    return [
+                        'success' => false,
+                        'message' => 'محصول در سیستم Tantooo وجود ندارد',
+                        'error_code' => $msgCode,
+                        'error_details' => $responseData
+                    ];
+                }
+
+                // اگر msg کد خطایی دیگری است
                 Log::error('خطا در به‌روزرسانی اطلاعات محصول در API Tantooo - کد خطا دریافت شد', [
                     'product_code' => $code,
                     'product_title' => $title,
