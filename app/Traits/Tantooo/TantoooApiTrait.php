@@ -661,8 +661,12 @@ trait TantoooApiTrait
             if ($response->successful()) {
                 $responseData = $response->json();
 
+                // بررسی کد پاسخ
+                $msgCode = $responseData['msg'] ?? null;
+                $errors = $responseData['error'] ?? [];
+
                 // بررسی برای توکن منقضی (msg: 150)
-                if (isset($responseData['msg']) && $responseData['msg'] == 150) {
+                if ($msgCode == 150) {
                     Log::warning('توکن Tantooo منقضی شده است، تلاش برای تجدید', [
                         'product_code' => $code,
                         'license_id' => $this->currentLicenseId ?? 'unknown'
@@ -677,16 +681,37 @@ trait TantoooApiTrait
                     ];
                 }
 
-                Log::info('موجودی محصول با موفقیت در API Tantooo به‌روزرسانی شد', [
+                // بررسی برای موفقیت (msg: 0 و بدون خطا)
+                if ($msgCode === 0 && empty($errors)) {
+                    Log::info('موجودی محصول با موفقیت در API Tantooo به‌روزرسانی شد', [
+                        'product_code' => $code,
+                        'new_count' => $count,
+                        'api_response' => $responseData
+                    ]);
+
+                    return [
+                        'success' => true,
+                        'message' => 'موجودی محصول با موفقیت به‌روزرسانی شد',
+                        'data' => $responseData
+                    ];
+                }
+
+                // اگر msg کد خطایی است
+                Log::error('خطا در به‌روزرسانی موجودی محصول در API Tantooo - کد خطا دریافت شد', [
                     'product_code' => $code,
                     'new_count' => $count,
-                    'api_response' => $responseData
+                    'msg_code' => $msgCode,
+                    'msg_text' => $responseData['msg_txt'] ?? 'نامشخص',
+                    'errors' => $errors,
+                    'api_response' => $responseData,
+                    'api_url' => $apiUrl
                 ]);
 
                 return [
-                    'success' => true,
-                    'message' => 'موجودی محصول با موفقیت به‌روزرسانی شد',
-                    'data' => $responseData
+                    'success' => false,
+                    'message' => 'خطا در به‌روزرسانی موجودی: ' . ($responseData['msg_txt'] ?? 'خطای نامشخص'),
+                    'error_code' => $msgCode,
+                    'error_details' => $responseData
                 ];
             } else {
                 Log::error('خطا در به‌روزرسانی موجودی محصول در API Tantooo', [
@@ -783,8 +808,12 @@ trait TantoooApiTrait
             if ($response->successful()) {
                 $responseData = $response->json();
 
+                // بررسی کد پاسخ
+                $msgCode = $responseData['msg'] ?? null;
+                $errors = $responseData['error'] ?? [];
+
                 // بررسی برای توکن منقضی (msg: 150)
-                if (isset($responseData['msg']) && $responseData['msg'] == 150) {
+                if ($msgCode == 150) {
                     Log::warning('توکن Tantooo منقضی شده است، تلاش برای تجدید', [
                         'product_code' => $code,
                         'license_id' => $this->currentLicenseId ?? 'unknown'
@@ -799,18 +828,41 @@ trait TantoooApiTrait
                     ];
                 }
 
-                Log::info('اطلاعات محصول با موفقیت در API Tantooo به‌روزرسانی شد', [
+                // بررسی برای موفقیت (msg: 0 و بدون خطا)
+                if ($msgCode === 0 && empty($errors)) {
+                    Log::info('اطلاعات محصول با موفقیت در API Tantooo به‌روزرسانی شد', [
+                        'product_code' => $code,
+                        'product_title' => $title,
+                        'price' => $price,
+                        'discount' => $discount,
+                        'api_response' => $responseData
+                    ]);
+
+                    return [
+                        'success' => true,
+                        'message' => 'اطلاعات محصول با موفقیت به‌روزرسانی شد',
+                        'data' => $responseData
+                    ];
+                }
+
+                // اگر msg کد خطایی است
+                Log::error('خطا در به‌روزرسانی اطلاعات محصول در API Tantooo - کد خطا دریافت شد', [
                     'product_code' => $code,
                     'product_title' => $title,
                     'price' => $price,
                     'discount' => $discount,
-                    'api_response' => $responseData
+                    'msg_code' => $msgCode,
+                    'msg_text' => $responseData['msg_txt'] ?? 'نامشخص',
+                    'errors' => $errors,
+                    'api_response' => $responseData,
+                    'api_url' => $apiUrl
                 ]);
 
                 return [
-                    'success' => true,
-                    'message' => 'اطلاعات محصول با موفقیت به‌روزرسانی شد',
-                    'data' => $responseData
+                    'success' => false,
+                    'message' => 'خطا در به‌روزرسانی اطلاعات محصول: ' . ($responseData['msg_txt'] ?? 'خطای نامشخص'),
+                    'error_code' => $msgCode,
+                    'error_details' => $responseData
                 ];
             } else {
                 Log::error('خطا در به‌روزرسانی اطلاعات محصول در API Tantooo', [
