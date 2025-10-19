@@ -641,7 +641,7 @@ trait TantoooApiTrait
             // آماده‌سازی داده‌های درخواست
             $requestData = [
                 'fn' => 'change_count_sub_product',
-                'code' => $code,
+                'sku' => $code,
                 'count' => (int) $count
             ];
 
