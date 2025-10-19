@@ -80,42 +80,38 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 return;
             }
 
-            // ترکیب محصولات insert و update
-            $allProducts = array_merge($this->insertProducts, $this->updateProducts);
+            // تفکیک محصولات insert و update
+            // محصولات جدید بدون فیلتر موجودی قبول شوند
+            // محصولات برای آپدیت فیلتر شوند
+            $insertProducts = $this->insertProducts;
+            $updateProducts = $this->updateProducts;
 
-            if (empty($allProducts)) {
-                $this->logError('هیچ محصولی برای پردازش یافت نشد');
-                return;
-            }
-
-            // **فیلتر کردن محصولات:** تنها محصولات با موجودی مثبت
-            $productsWithStock = array_filter($allProducts, function($product) {
+            // فیلتر محصولات UPDATE: تنها آنهایی با موجودی مثبت در Warehouse
+            $updateProductsWithStock = array_filter($updateProducts, function($product) {
                 $totalCount = $product['TotalCount'] ?? 0;
                 return is_numeric($totalCount) && $totalCount > 0;
             });
 
-            // محصولات بدون موجودی (TotalCount = 0 یا null)
-            $productsWithoutStock = array_filter($allProducts, function($product) {
-                $totalCount = $product['TotalCount'] ?? 0;
-                return !is_numeric($totalCount) || $totalCount <= 0;
-            });
+            // ترکیب: تمام INSERT + UPDATE های با موجودی
+            $productsToProcess = array_merge($insertProducts, $updateProductsWithStock);
 
-            Log::info('تقسیم محصولات بر اساس موجودی', [
-                'license_id' => $this->licenseId,
-                'sync_id' => $this->syncId,
-                'total_products' => count($allProducts),
-                'with_stock' => count($productsWithStock),
-                'without_stock' => count($productsWithoutStock)
-            ]);
-
-            // اگر محصول با موجودی نباشد، دریافت از Warehouse ضروری است
-            if (empty($productsWithStock)) {
-                $this->logError('هیچ محصول با موجودی مثبت یافت نشد');
+            if (empty($productsToProcess)) {
+                $this->logError('هیچ محصولی برای پردازش یافت نشد (حداقل یک INSERT یا UPDATE با موجودی مثبت)');
                 return;
             }
 
+            Log::info('تقسیم محصولات برای پردازش', [
+                'license_id' => $this->licenseId,
+                'sync_id' => $this->syncId,
+                'insert_products' => count($insertProducts),
+                'update_products_total' => count($updateProducts),
+                'update_products_with_stock' => count($updateProductsWithStock),
+                'update_products_without_stock' => count($updateProducts) - count($updateProductsWithStock),
+                'total_to_process' => count($productsToProcess)
+            ]);
+
             // استخراج کدهای محصولات
-            $productCodes = $this->extractProductCodes($productsWithStock);
+            $productCodes = $this->extractProductCodes($productsToProcess);
 
             if (empty($productCodes)) {
                 $this->logError('کدهای محصولات قابل استخراج نیست');
@@ -168,10 +164,9 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             // پردازش و به‌روزرسانی محصولات
             // استفاده از محصولات گروه‌بندی‌شده (یکپارچه‌شده) برای جستجوی صحیح
-            // تنها محصولات با موجودی را پردازش کنیم
             $updateResult = $this->processAndUpdateProductsFromBaran(
                 $license,
-                $productsWithStock,  // فقط محصولات با موجودی
+                $productsToProcess,  // تمام محصولات برای پردازش (INSERT + UPDATE با موجودی)
                 $saveResult['data']['grouped_products'] ?? $baranResult['data']['products']
             );
 
@@ -303,10 +298,18 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
         Log::info('شروع پردازش محصولات Tantooo', [
             'license_id' => $license->id,
-            'total_products' => count($allProducts),
+            'total_products_to_process' => count($allProducts),
             'unique_baran_items' => count($baranProductMap),
-            'sample_product' => count($allProducts) > 0 ? reset($allProducts) : null,
-            'grouped_products_structure' => count($baranProducts) > 0 ? reset($baranProducts) : null
+            'baran_products_count' => count($baranProducts),
+            'sample_input_product' => count($allProducts) > 0 ? [
+                'ItemId' => $allProducts[0]['ItemId'] ?? null,
+                'Barcode' => $allProducts[0]['Barcode'] ?? null,
+                'ItemName' => $allProducts[0]['ItemName'] ?? null
+            ] : null,
+            'sample_baran_product' => count($baranProducts) > 0 ? [
+                'itemID' => $baranProducts[0]['itemID'] ?? null,
+                'itemName' => $baranProducts[0]['itemName'] ?? null
+            ] : null
         ]);
 
         foreach ($allProducts as $index => $product) {
@@ -338,7 +341,10 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 Log::warning('محصول در داده‌های باران یافت نشد', [
                     'requested_item_id' => $itemId,
                     'requested_barcode' => $barcode,
-                    'available_items_sample' => array_slice(array_keys($baranProductMap), 0, 5)
+                    'requested_item_name' => $product['ItemName'] ?? null,
+                    'available_items_in_baran' => array_keys($baranProductMap),
+                    'available_items_count' => count($baranProductMap),
+                    'total_items_to_process' => count($allProducts)
                 ]);
                 $errorCount++;
                 $errors[] = [
@@ -433,7 +439,8 @@ class ProcessTantoooSyncRequest implements ShouldQueue
 
             Log::info('شروع ذخیره‌سازی اطلاعات محصولات باران', [
                 'license_id' => $license->id,
-                'total_products' => count($baranProducts)
+                'total_products' => count($baranProducts),
+                'sample_products' => array_slice($baranProducts, 0, 3)
             ]);
 
             // گروه‌بندی محصولات بر اساس itemID
@@ -566,7 +573,9 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                 'saved_count' => $savedCount,
                 'updated_count' => $updatedCount,
                 'error_count' => count($errors),
-                'summary' => "تعداد رکوردهای خام: " . count($baranProducts) . ", محصولات یکتا: " . count($groupedProducts)
+                'summary' => "تعداد رکوردهای خام: " . count($baranProducts) . ", محصولات یکتا: " . count($groupedProducts),
+                'grouped_items_keys' => array_keys($groupedProducts),
+                'first_grouped_item' => count($groupedProducts) > 0 ? reset($groupedProducts) : null
             ]);
 
             // تبدیل محصولات گروه‌بندی‌شده برای استفاده در processAndUpdateProductsFromBaran
