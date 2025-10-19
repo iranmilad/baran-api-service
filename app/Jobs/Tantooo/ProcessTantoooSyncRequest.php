@@ -305,8 +305,8 @@ class ProcessTantoooSyncRequest implements ShouldQueue
             'license_id' => $license->id,
             'total_products' => count($allProducts),
             'unique_baran_items' => count($baranProductMap),
-            'sample_product' => !empty($allProducts) ? $allProducts[0] : null,
-            'grouped_products_structure' => !empty($baranProducts) ? $baranProducts[0] : null
+            'sample_product' => count($allProducts) > 0 ? reset($allProducts) : null,
+            'grouped_products_structure' => count($baranProducts) > 0 ? reset($baranProducts) : null
         ]);
 
         foreach ($allProducts as $index => $product) {
