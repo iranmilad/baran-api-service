@@ -199,6 +199,7 @@ trait WooCommerceApiTrait
      */
     protected function fetchWooCommerceCategories($license, WooCommerceApiKey $wooApiKey)
     {
+
         try {
             $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/categories';
 
@@ -1837,6 +1838,817 @@ trait WooCommerceApiTrait
                 'success' => false,
                 'message' => 'خطا در دریافت محصولات با unique ID: ' . $e->getMessage(),
                 'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    // ========================================
+    // توابع مدیریت محصولات متغیر (Variable Products)
+    // ========================================
+
+    /**
+     * ایجاد محصول متغیر در WooCommerce
+     *
+     * @param object $license لایسنس
+     * @param array $productData اطلاعات محصول
+     * @return array نتیجه
+     */
+    protected function createWooCommerceVariableProduct($license, $productData)
+    {
+        $productData['type'] = 'variable';
+        return $this->createWooCommerceSimpleProduct($license, $productData);
+    }
+
+    /**
+     * ایجاد محصول ساده در WooCommerce
+     *
+     * @param object $license لایسنس
+     * @param array $productData اطلاعات محصول
+     * @return array نتیجه
+     */
+    protected function createWooCommerceSimpleProduct($license, $productData)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products';
+
+            Log::info('Creating WooCommerce product', [
+                'url' => $url,
+                'product_data' => $productData
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 30
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->post($url, $productData);
+
+            Log::info('WooCommerce product creation response', [
+                'status' => $response->status(),
+                'successful' => $response->successful(),
+                'body' => $response->body()
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'محصول با موفقیت ایجاد شد'
+                ];
+            }
+
+            $errorBody = $response->json();
+            $errorMessage = 'خطا در ایجاد محصول - کد: ' . $response->status();
+
+            if (isset($errorBody['message'])) {
+                $errorMessage .= ' - ' . $errorBody['message'];
+            }
+
+            if (isset($errorBody['data']['params'])) {
+                $errorMessage .= ' - فیلدهای مشکل‌دار: ' . implode(', ', array_keys($errorBody['data']['params']));
+            }
+
+            Log::error('WooCommerce Create Product Error', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'error_decoded' => $errorBody
+            ]);
+
+            return [
+                'success' => false,
+                'message' => $errorMessage,
+                'status_code' => $response->status(),
+                'error_details' => $errorBody
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('WooCommerce Create Product Exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد محصول: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * ایجاد محصولات به صورت دسته‌ای با استفاده از endpoint batch
+     *
+     * @param object $license لایسنس
+     * @param array $productsData آرایه محصولات برای ایجاد
+     * @return array نتیجه
+     */
+    protected function createWooCommerceBatchProducts($license, $productsData)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/unique/batch';
+
+            $requestPayload = ['products' => $productsData];
+
+            Log::info('Sending batch request to WooCommerce', [
+                'url' => $url,
+                'products_count' => count($productsData),
+                'request_payload' => $requestPayload,
+                'auth_user' => $apiKey->api_key
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120
+            ])->withHeaders([
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->post($url, $requestPayload);
+
+            Log::info('WooCommerce batch response', [
+                'status' => $response->status(),
+                'successful' => $response->successful(),
+                'body' => $response->body()
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'محصولات با موفقیت ایجاد شدند'
+                ];
+            }
+
+            Log::error('WooCommerce Batch Products Error', [
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد محصولات دسته‌ای - کد: ' . $response->status(),
+                'status_code' => $response->status(),
+                'error' => $response->body()
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('WooCommerce Batch Products Exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد محصولات دسته‌ای: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * ایجاد variation برای محصول متغیر
+     *
+     * @param object $license لایسنس
+     * @param int $parentProductId شناسه محصول والد
+     * @param array $variationData اطلاعات variation
+     * @return array نتیجه
+     */
+    protected function createWooCommerceVariation($license, $parentProductId, $variationData)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/' . $parentProductId . '/variations';
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 30
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->post($url, $variationData);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'Variation با موفقیت ایجاد شد'
+                ];
+            }
+
+            Log::error('WooCommerce Create Variation Error', [
+                'parent_id' => $parentProductId,
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد variation - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد variation: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    // ========================================
+    // توابع مدیریت Attributes و Terms
+    // ========================================
+
+    /**
+     * دریافت درخت کامل attributes و terms از WooCommerce
+     *
+     * @param object $license لایسنس
+     * @return array نتیجه
+     */
+    protected function getWooCommerceAttributesTree($license)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes/tree';
+
+            Log::info('درخواست دریافت درخت attributes از WooCommerce', [
+                'url' => $url,
+                'license_id' => $license->id
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120,
+                'connect_timeout' => 30
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->get($url);
+
+            Log::info('پاسخ دریافت درخت attributes از WooCommerce', [
+                'status' => $response->status(),
+                'successful' => $response->successful()
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'درخت Attributes با موفقیت دریافت شد'
+                ];
+            }
+
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت درخت attributes - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در دریافت درخت attributes از WooCommerce', [
+                'error' => $e->getMessage(),
+                'license_id' => $license->id
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت درخت attributes: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * دریافت لیست تمام attributes از WooCommerce
+     *
+     * @param object $license لایسنس
+     * @return array نتیجه
+     */
+    protected function getWooCommerceAttributes($license)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes';
+
+            Log::info('درخواست دریافت attributes از WooCommerce', [
+                'url' => $url,
+                'license_id' => $license->id
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120, // افزایش timeout به 120 ثانیه
+                'connect_timeout' => 30
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->get($url, ['per_page' => 100]);
+
+            Log::info('پاسخ دریافت attributes از WooCommerce', [
+                'status' => $response->status(),
+                'successful' => $response->successful()
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'Attributes با موفقیت دریافت شدند'
+                ];
+            }
+
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت attributes - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در دریافت attributes از WooCommerce', [
+                'error' => $e->getMessage(),
+                'license_id' => $license->id
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت attributes: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * ایجاد attribute جدید در WooCommerce
+     *
+     * @param object $license لایسنس
+     * @param array $attributeData اطلاعات attribute
+     * @return array نتیجه
+     */
+    protected function createWooCommerceAttribute($license, $attributeName, $attributeSlug = null)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes';
+
+            // اگر attributeName یک آرایه است (برای سازگاری با کد قدیمی)
+            if (is_array($attributeName)) {
+                $attributeData = $attributeName;
+            } else {
+                // ایجاد attributeData از پارامترها
+                $attributeData = [
+                    'name' => $attributeName
+                ];
+
+                if ($attributeSlug) {
+                    $attributeData['slug'] = $attributeSlug;
+                }
+            }
+
+            Log::info('درخواست ایجاد attribute در WooCommerce', [
+                'url' => $url,
+                'attribute_data' => $attributeData,
+                'license_id' => $license->id
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120, // افزایش timeout به 120 ثانیه
+                'connect_timeout' => 30
+            ])->withHeaders([
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->post($url, $attributeData);
+
+            Log::info('پاسخ ایجاد attribute از WooCommerce', [
+                'status' => $response->status(),
+                'successful' => $response->successful(),
+                'attribute_name' => $attributeData['name'] ?? 'unknown'
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'Attribute با موفقیت ایجاد شد'
+                ];
+            }
+
+            Log::error('WooCommerce Create Attribute Error', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'attribute_name' => $attributeData['name'] ?? 'unknown'
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد attribute - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در ایجاد attribute در WooCommerce', [
+                'error' => $e->getMessage(),
+                'attribute_name' => $attributeData['name'] ?? 'unknown',
+                'license_id' => $license->id
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد attribute: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * دریافت terms یک attribute
+     *
+     * @param object $license لایسنس
+     * @param int $attributeId شناسه attribute
+     * @return array نتیجه
+     */
+    protected function getWooCommerceAttributeTerms($license, $attributeId)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes/' . $attributeId . '/terms';
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120, // افزایش timeout به 120 ثانیه
+                'connect_timeout' => 30
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->get($url, ['per_page' => 100]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'Terms با موفقیت دریافت شدند'
+                ];
+            }
+
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت terms - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت terms: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * ایجاد term جدید برای attribute
+     *
+     * @param object $license لایسنس
+     * @param int $attributeId شناسه attribute
+     * @param array $termData اطلاعات term
+     * @return array نتیجه
+     */
+    protected function createWooCommerceAttributeTerm($license, $attributeId, $termData)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes/' . $attributeId . '/terms';
+
+            Log::info('درخواست ایجاد term در WooCommerce', [
+                'url' => $url,
+                'attribute_id' => $attributeId,
+                'term_name' => $termData['name'] ?? 'unknown',
+                'license_id' => $license->id
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120, // افزایش timeout به 120 ثانیه
+                'connect_timeout' => 30
+            ])->withHeaders([
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->post($url, $termData);
+
+            Log::info('پاسخ ایجاد term از WooCommerce', [
+                'status' => $response->status(),
+                'successful' => $response->successful(),
+                'term_name' => $termData['name'] ?? 'unknown'
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'Term با موفقیت ایجاد شد'
+                ];
+            }
+
+            Log::error('WooCommerce Create Term Error', [
+                'attribute_id' => $attributeId,
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'term_name' => $termData['name'] ?? 'unknown'
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد term - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در ایجاد term در WooCommerce', [
+                'error' => $e->getMessage(),
+                'attribute_id' => $attributeId,
+                'term_name' => $termData['name'] ?? 'unknown',
+                'license_id' => $license->id
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در ایجاد term: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * پیدا کردن یا ایجاد attribute در WooCommerce
+     *
+     * @param object $license لایسنس
+     * @param string $attributeName نام attribute
+     * @return array نتیجه
+     */
+    protected function findOrCreateWooCommerceAttribute($license, $attributeName)
+    {
+        // دریافت attributes موجود
+        $result = $this->getWooCommerceAttributes($license);
+
+        if (!$result['success']) {
+            return $result;
+        }
+
+        $attributes = $result['data'];
+
+        // جستجو در attributes موجود
+        foreach ($attributes as $attr) {
+            if (strtolower($attr['name']) === strtolower($attributeName)) {
+                return [
+                    'success' => true,
+                    'data' => $attr,
+                    'message' => 'Attribute موجود بود'
+                ];
+            }
+        }
+
+        // اگر پیدا نشد، ایجاد کن
+        $slug = \Illuminate\Support\Str::slug($attributeName);
+
+        // حذف pa_ از ابتدای slug اگر وجود دارد
+        $slug = preg_replace('/^pa[_-]/', '', $slug);
+
+        return $this->createWooCommerceAttribute($license, [
+            'name' => $attributeName,
+            'slug' => $slug,
+            'type' => 'select',
+            'order_by' => 'menu_order',
+            'has_archives' => false
+        ]);
+    }
+
+    /**
+     * پیدا کردن یا ایجاد term برای attribute
+     *
+     * @param object $license لایسنس
+     * @param int $attributeId شناسه attribute
+     * @param string $termName نام term
+     * @return array نتیجه
+     */
+    protected function findOrCreateWooCommerceAttributeTerm($license, $attributeId, $termName)
+    {
+        // بررسی اینکه termName خالی نباشد
+        if (empty($termName)) {
+            return [
+                'success' => false,
+                'message' => 'نام term نمی‌تواند خالی باشد',
+                'error' => 'Empty term name'
+            ];
+        }
+
+        // دریافت terms موجود
+        $result = $this->getWooCommerceAttributeTerms($license, $attributeId);
+
+        if (!$result['success']) {
+            return $result;
+        }
+
+        $terms = $result['data'];
+
+        // جستجو در terms موجود
+        foreach ($terms as $term) {
+            if (strtolower($term['name']) === strtolower($termName)) {
+                return [
+                    'success' => true,
+                    'data' => $term,
+                    'message' => 'Term موجود بود'
+                ];
+            }
+        }
+
+        // اگر پیدا نشد، ایجاد کن
+        return $this->createWooCommerceAttributeTerm($license, $attributeId, [
+            'name' => $termName,
+            'slug' => \Illuminate\Support\Str::slug($termName)
+        ]);
+    }
+
+    /**
+     * بررسی وجود محصول با unique_id در WooCommerce
+     *
+     * @param object $license
+     * @param string $uniqueId
+     * @return bool
+     */
+    protected function checkProductExistsByUniqueId($license, $uniqueId)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                Log::warning('WooCommerce API key not found for license', ['license_id' => $license->id]);
+                return false;
+            }
+
+            $websiteUrl = rtrim($license->website_url, '/');
+            $url = $websiteUrl . '/wp-json/wc/v3/products';
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 20,
+                'connect_timeout' => 10
+            ])->withHeaders([
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->get($url, [
+                    'meta_key' => '_unique_id',
+                    'meta_value' => $uniqueId,
+                    'per_page' => 1
+                ]);
+
+            if ($response->successful()) {
+                $products = $response->json();
+                $exists = !empty($products);
+
+                if ($exists) {
+                    Log::info('Product found in WooCommerce by unique_id', [
+                        'unique_id' => $uniqueId,
+                        'product_id' => $products[0]['id'] ?? null
+                    ]);
+                } else {
+                    Log::info('Product not found in WooCommerce by unique_id', ['unique_id' => $uniqueId]);
+                }
+
+                return $exists;
+            }
+
+            Log::warning('Failed to check product existence', [
+                'unique_id' => $uniqueId,
+                'status' => $response->status()
+            ]);
+            return false;
+
+        } catch (\Exception $e) {
+            Log::error('Error checking product existence by unique_id', [
+                'error' => $e->getMessage(),
+                'unique_id' => $uniqueId
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * دریافت تمام محصولات موجود در WooCommerce با unique_id های آنها
+     *
+     * @param object $license لایسنس
+     * @return array لیست محصولات با unique_id, product_id, variation_id
+     */
+    protected function getAllWooCommerceProductsByUniqueIds($license)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                Log::error('WooCommerce API keys not configured');
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.',
+                    'data' => []
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/unique';
+
+            Log::info('Fetching all products from WooCommerce by unique_ids', [
+                'url' => $url
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 60
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->get($url);
+
+            if ($response->successful()) {
+                $data = $response->json();
+
+                Log::info('WooCommerce products fetched successfully', [
+                    'success' => $data['success'] ?? false,
+                    'count' => count($data['data'] ?? [])
+                ]);
+
+                return [
+                    'success' => true,
+                    'data' => $data['data'] ?? []
+                ];
+            }
+
+            Log::error('Failed to fetch WooCommerce products', [
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت محصولات - کد: ' . $response->status(),
+                'data' => []
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching WooCommerce products by unique_ids', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت محصولات: ' . $e->getMessage(),
+                'data' => []
             ];
         }
     }

@@ -41,6 +41,18 @@ app/Traits/WordPress/
 
 #### درج محصولات جدید
 - `insertWooCommerceBatchProducts($license, $products)` - درج دسته‌ای محصولات جدید
+- `createWooCommerceSimpleProduct($license, $productData)` - ایجاد محصول ساده جدید
+- `createWooCommerceVariableProduct($license, $productData)` - ایجاد محصول متغیر (variable product)
+- `createWooCommerceVariation($license, $parentProductId, $variationData)` - ایجاد تنوع (variation) برای محصول متغیر
+
+### 🔸 **مدیریت ویژگی‌ها و اصطلاحات (Attributes & Terms)**
+
+- `getWooCommerceAttributes($license)` - دریافت فهرست تمام ویژگی‌ها (attributes)
+- `createWooCommerceAttribute($license, $attributeName)` - ایجاد ویژگی جدید
+- `getWooCommerceAttributeTerms($license, $attributeId)` - دریافت اصطلاحات یک ویژگی
+- `createWooCommerceAttributeTerm($license, $attributeId, $termName)` - ایجاد اصطلاح جدید برای ویژگی
+- `findOrCreateWooCommerceAttribute($license, $attributeName)` - پیدا کردن یا ایجاد ویژگی
+- `findOrCreateWooCommerceAttributeTerm($license, $attributeId, $termName)` - پیدا کردن یا ایجاد اصطلاح
 
 ### 🔸 **مدیریت تنوعات (Variations)**
 
@@ -192,6 +204,139 @@ $childProducts = $this->getWooCommerceProductsByParentUniqueId(
     'PARENT001'
 );
 ```
+
+### 6. ایجاد محصولات متغیر (Variable Products)
+
+```php
+// ایجاد محصول متغیر والد
+$parentProductData = [
+    'name' => 'تی‌شرت',
+    'sku' => 'TSHIRT001',
+    'type' => 'variable',
+    'categories' => [['id' => 25]],
+    'attributes' => [
+        [
+            'id' => 1, // attribute ID برای رنگ
+            'name' => 'رنگ',
+            'position' => 0,
+            'visible' => true,
+            'variation' => true,
+            'options' => ['قرمز', 'آبی', 'سبز']
+        ],
+        [
+            'id' => 2, // attribute ID برای سایز
+            'name' => 'سایز',
+            'position' => 1,
+            'visible' => true,
+            'variation' => true,
+            'options' => ['S', 'M', 'L', 'XL']
+        ]
+    ]
+];
+
+$parentResult = $this->createWooCommerceVariableProduct($license, $parentProductData);
+
+if ($parentResult['success']) {
+    $parentProduct = $parentResult['data'];
+    
+    // ایجاد تنوعات
+    $variationData = [
+        'sku' => 'TSHIRT001-RED-M',
+        'regular_price' => '25000',
+        'stock_quantity' => 10,
+        'manage_stock' => true,
+        'attributes' => [
+            [
+                'id' => 1,
+                'name' => 'رنگ',
+                'option' => 'قرمز'
+            ],
+            [
+                'id' => 2,
+                'name' => 'سایز',
+                'option' => 'M'
+            ]
+        ]
+    ];
+    
+    $variationResult = $this->createWooCommerceVariation(
+        $license, 
+        $parentProduct['id'], 
+        $variationData
+    );
+}
+```
+
+### 7. مدیریت ویژگی‌ها و اصطلاحات
+
+```php
+// پیدا کردن یا ایجاد ویژگی
+$attrResult = $this->findOrCreateWooCommerceAttribute($license, 'رنگ');
+
+if ($attrResult['success']) {
+    $attribute = $attrResult['data'];
+    
+    // پیدا کردن یا ایجاد اصطلاح
+    $termResult = $this->findOrCreateWooCommerceAttributeTerm(
+        $license, 
+        $attribute['id'], 
+        'قرمز'
+    );
+    
+    if ($termResult['success']) {
+        $term = $termResult['data'];
+        echo "Term ID: {$term['id']}, Name: {$term['name']}";
+    }
+}
+
+// دریافت تمام ویژگی‌ها
+$attributesResult = $this->getWooCommerceAttributes($license);
+
+if ($attributesResult['success']) {
+    foreach ($attributesResult['data'] as $attr) {
+        echo "{$attr['name']} (ID: {$attr['id']})\n";
+        
+        // دریافت اصطلاحات این ویژگی
+        $termsResult = $this->getWooCommerceAttributeTerms($license, $attr['id']);
+        
+        if ($termsResult['success']) {
+            foreach ($termsResult['data'] as $term) {
+                echo "  - {$term['name']}\n";
+            }
+        }
+    }
+}
+```
+
+### 8. ایجاد محصول ساده
+
+```php
+$productData = [
+    'name' => 'کیف دستی',
+    'sku' => 'BAG001',
+    'regular_price' => '150000',
+    'stock_quantity' => 25,
+    'manage_stock' => true,
+    'categories' => [['id' => 30]]
+];
+
+$result = $this->createWooCommerceSimpleProduct($license, $productData);
+
+if ($result['success']) {
+    echo "محصول با موفقیت ایجاد شد. ID: {$result['data']['id']}";
+} else {
+    echo "خطا: {$result['message']}";
+}
+```
+
+## توابع استفاده شده در Livewire Components
+
+### ProductsManager.php
+- `createWooCommerceSimpleProduct()` - ایجاد محصولات ساده
+- `createWooCommerceVariableProduct()` - ایجاد محصولات متغیر
+- `createWooCommerceVariation()` - ایجاد تنوعات محصولات
+- `findOrCreateWooCommerceAttribute()` - مدیریت ویژگی‌های محصولات
+- `findOrCreateWooCommerceAttributeTerm()` - مدیریت اصطلاحات ویژگی‌ها
 
 ## توابع استفاده شده در Job های مختلف
 

@@ -8,8 +8,12 @@ use Illuminate\Support\Facades\Http;
 trait WordPressMasterTrait
 {
     use WooCommerceApiTrait;
-    use WooCommerceProductTrait;
+    use WooCommerceProductTrait {
+        WooCommerceProductTrait::updateWooCommerceProduct insteadof WooCommerceApiTrait;
+        WooCommerceProductTrait::getWooCommerceProduct insteadof WooCommerceApiTrait;
+    }
     use WooCommerceSettingsTrait;
+    use WcTrait;
 
     /**
      * به‌روزرسانی کامل محصولات در WordPress/WooCommerce
@@ -238,7 +242,7 @@ trait WordPressMasterTrait
     {
         try {
             // فقط dispatch یک Job کلی برای همه دسته‌ها
-            dispatch(new \App\Jobs\UpdateWooCommerceStockByCategoryJob($license->id));
+            // dispatch(new \App\Jobs\UpdateWooCommerceStockByCategoryJob($license->id));
 
             $this->logWooCommerceActivity('dispatch job به‌روزرسانی موجودی همه دسته‌بندی‌ها', [
                 'license_id' => $license->id
@@ -260,6 +264,23 @@ trait WordPressMasterTrait
                 'success' => false,
                 'message' => 'خطای سیستمی در بروزرسانی موجودی'
             ];
+        }
+    }
+
+    /**
+     * دریافت دسته‌بندی‌ها برای WordPress/WooCommerce
+     */
+    public function getCategories($license)
+    {
+        try {
+            Log::info('Getting categories for WordPress license: ' . $license->id);
+
+            // استفاده از متد موجود برای دریافت دسته‌بندی‌های WooCommerce
+            return $this->getWooCommerceCategories($license);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting WordPress categories: ' . $e->getMessage());
+            return [];
         }
     }
 }

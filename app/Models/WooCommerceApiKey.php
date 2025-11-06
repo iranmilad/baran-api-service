@@ -26,4 +26,20 @@ class WooCommerceApiKey extends Model
     {
         return $this->belongsTo(License::class);
     }
+
+    /**
+     * Accessor برای consumer_key (alias برای api_key)
+     */
+    public function getConsumerKeyAttribute()
+    {
+        return $this->api_key;
+    }
+
+    /**
+     * Accessor برای consumer_secret (alias برای api_secret)
+     */
+    public function getConsumerSecretAttribute()
+    {
+        return $this->api_secret;
+    }
 }
