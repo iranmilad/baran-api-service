@@ -259,8 +259,14 @@ Route::prefix('v1')->group(function () {
         // Get all permissions
         Route::get('/', [PermissionController::class, 'index']);
 
-        // Seed permissions
+        // Seed permissions (admin only - checked in controller)
         Route::post('/seed', [PermissionController::class, 'seed']);
+
+        // Assign permissions to user (admin only - checked in controller)
+        Route::post('/assign', [PermissionController::class, 'assignToUser']);
+
+        // Get user permissions (admin only - checked in controller)
+        Route::get('/user/{userId}', [PermissionController::class, 'getUserPermissions']);
     });
 
 });

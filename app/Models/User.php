@@ -26,6 +26,7 @@ class User extends Authenticatable
         'mobile',
         'password',
         'is_active',
+        'is_admin',
         'mongo_connection_string',
         'mongo_username',
         'mongo_password',
@@ -61,6 +62,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'is_active' => 'boolean',
+        'is_admin' => 'boolean',
     ];
     public function invoices(): HasMany
     {
