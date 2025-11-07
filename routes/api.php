@@ -5,6 +5,7 @@ use App\Http\Controllers\ErrorLogController;
 use App\Http\Controllers\WooCommerce\InvoiceController;
 use App\Http\Controllers\LicenseController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\PriceUnitSettingController;
 use App\Http\Controllers\WooCommerce\ProductController;
 use App\Http\Controllers\WooCommerce\ProductStockController;
@@ -251,6 +252,12 @@ Route::prefix('v1')->group(function () {
             'message' => 'Connection established',
             'timestamp' => now()
         ]);
+    });
+
+    // Admin routes for permissions
+    Route::prefix('admin/permissions')->middleware('jwt.auth')->group(function () {
+        // Seed permissions
+        Route::post('/seed', [PermissionController::class, 'seed']);
     });
 
 });
