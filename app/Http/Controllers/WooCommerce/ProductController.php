@@ -130,6 +130,18 @@ class ProductController extends Controller
                             continue;
                         }
 
+                        // Remap BrandID to parent_id (even if null)
+                        if (array_key_exists('BrandID', $productData)) {
+                            $productData['parent_id'] = $productData['BrandID'];
+                            unset($productData['BrandID']);
+                        }
+
+                        // Set is_variant based on Brand field
+                        if (array_key_exists('Brand', $productData)) {
+                            $productData['is_variant'] = ($productData['Brand'] == 239);
+                            unset($productData['Brand']);
+                        }
+
                         $changes[] = [
                             'product' => $productData,
                             'change_type' => 'insert',
@@ -159,6 +171,18 @@ class ProductController extends Controller
                                 'error' => 'Empty barcode'
                             ];
                             continue;
+                        }
+
+                        // Remap BrandID to parent_id (even if null)
+                        if (array_key_exists('BrandID', $productData)) {
+                            $productData['parent_id'] = $productData['BrandID'];
+                            unset($productData['BrandID']);
+                        }
+
+                        // Set is_variant based on Brand field
+                        if (array_key_exists('Brand', $productData)) {
+                            $productData['is_variant'] = ($productData['Brand'] == 239);
+                            unset($productData['Brand']);
                         }
 
                         $changes[] = [

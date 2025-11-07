@@ -38,17 +38,17 @@ class Product extends Model
 
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(Product::class, 'parent_id', 'id');
+        return $this->belongsTo(Product::class, 'parent_id', 'item_id');
     }
 
     public function variants(): HasMany
     {
-        return $this->hasMany(Product::class, 'parent_id', 'id');
+        return $this->hasMany(Product::class, 'parent_id', 'item_id');
     }
 
     public function children(): HasMany
     {
-        return $this->hasMany(Product::class, 'parent_id', 'id');
+        return $this->hasMany(Product::class, 'parent_id', 'item_id');
     }
 
     public function license(): BelongsTo
