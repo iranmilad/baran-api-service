@@ -255,7 +255,10 @@ Route::prefix('v1')->group(function () {
     });
 
     // Admin routes for permissions
-    Route::prefix('admin/permissions')->middleware('jwt.auth')->group(function () {
+    Route::prefix('permissions')->middleware('jwt.auth')->group(function () {
+        // Get all permissions
+        Route::get('/', [PermissionController::class, 'index']);
+
         // Seed permissions
         Route::post('/seed', [PermissionController::class, 'seed']);
     });

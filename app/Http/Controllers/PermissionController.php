@@ -103,4 +103,34 @@ class PermissionController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get all permissions
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index()
+    {
+        try {
+            $permissions = Permission::where('is_active', true)
+                ->orderBy('group')
+                ->orderBy('name')
+                ->get()
+                ->groupBy('group');
+
+            return response()->json([
+                'success' => true,
+                'data' => $permissions
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Get permissions failed: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'خطا در دریافت دسترسی‌ها',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
