@@ -6,20 +6,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Tymon\JWTAuth\Contracts\JWTSubject;
 
-
-class License extends Model
+class License extends Authenticatable implements JWTSubject
 {
     const ACCOUNT_TYPE_BASIC = 'basic';
     const ACCOUNT_TYPE_STANDARD = 'standard';
     const ACCOUNT_TYPE_PREMIUM = 'premium';
     const ACCOUNT_TYPE_ENTERPRISE = 'enterprise';
-    const ACCOUNT_TYPE_ULTIMATE = 'ultimate';
-
-    // انواع سرویس‌های وب
+    const ACCOUNT_TYPE_ULTIMATE = 'ultimate';    // انواع سرویس‌های وب
     const WEB_SERVICE_WORDPRESS = 'WordPress';
     const WEB_SERVICE_TANTOOO = 'Tantooo';
-
     protected $fillable = [
         'key',
         'website_url',
@@ -78,7 +76,6 @@ class License extends Model
     {
         return $this->status === 'active' && $this->expires_at > now();
     }
-
     /**
      * لیست انواع سرویس‌های وب موجود
      */
@@ -157,4 +154,74 @@ class License extends Model
             ->orderBy('sort_order');
     }
 
+    /**
+     * Get the identifier that will be stored in the subject claim of the JWT.
+     *
+     * @return mixed
+     */
+    public function getJWTIdentifier()
+    {
+        return $this->getKey();
+    }
+
+    /**
+     * Return a key value array, containing any custom claims to be added to the JWT.
+     *
+     * @return array
+     */
+    public function getJWTCustomClaims()
+    {
+        return [
+            'website_url' => $this->website_url,
+            'license_id' => $this->id,
+            'user_id' => $this->user_id,
+            'account_type' => $this->account_type
+        ];
+    }
+
+    /**
+     * بررسی اعتبار توکن
+     *
+     * @return bool
+     */
+    public function isTokenValid(): bool
+    {
+        if (empty($this->api_token)) {
+            return false;
+        }
+
+        if ($this->expires_at && $this->expires_at <= now()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * بروزرسانی توکن
+     *
+     * @param string $token
+     * @param \DateTime|null $expiresAt
+     * @return bool
+     */
+    public function updateToken(string $token, $expiresAt = null): bool
+    {
+        $this->api_token = $token;
+        $this->token_expires_at = $expiresAt;
+
+        return $this->save();
+    }
+
+    /**
+     * حذف توکن
+     *
+     * @return bool
+     */
+    public function clearToken(): bool
+    {
+        $this->api_token = null;
+        $this->token_expires_at = null;
+
+        return $this->save();
+    }
 }

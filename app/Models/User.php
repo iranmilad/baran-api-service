@@ -12,6 +12,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 
 class User extends Authenticatable
 {
+
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
@@ -61,13 +62,10 @@ class User extends Authenticatable
         'password' => 'hashed',
         'is_active' => 'boolean',
     ];
-
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class);
     }
-
-
     /**
      * رابطه یک به چند با لایسنس‌ها
      */
@@ -164,7 +162,6 @@ class User extends Authenticatable
     {
         return $query->where('is_active', false);
     }
-
 
 
 }
