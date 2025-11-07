@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class PermissionController extends Controller
 {
@@ -20,13 +21,69 @@ class PermissionController extends Controller
     public function seed(Request $request)
     {
         try {
-            // Check if user is admin
-            $user = $request->user();
-            if (!$user || !$user->is_admin) {
+            // دریافت و اعتبارسنجی توکن JWT
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('توکن در درخواست ارسال نشده است');
                 return response()->json([
                     'success' => false,
-                    'message' => 'شما دسترسی لازم برای انجام این عملیات را ندارید'
-                ], 403);
+                    'message' => 'توکن ارسال نشده است'
+                ], 401);
+            }
+
+            try {
+                // تلاش برای احراز هویت لایسنس با توکن
+                $license = JWTAuth::parseToken()->authenticate();
+                if (!$license) {
+                    Log::error('توکن نامعتبر - لایسنس یافت نشد');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'توکن نامعتبر - لایسنس یافت نشد'
+                    ], 401);
+                }
+
+                if (!$license->isActive()) {
+                    Log::error('لایسنس فعال نیست', [
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'لایسنس فعال نیست'
+                    ], 403);
+                }
+
+                // دریافت کاربر مرتبط با لایسنس
+                $user = $license->user;
+                if (!$user) {
+                    Log::error('کاربر مرتبط با لایسنس یافت نشد', [
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'کاربر مرتبط با لایسنس یافت نشد'
+                    ], 404);
+                }
+
+                // بررسی دسترسی ادمین
+                if (!$user->is_admin) {
+                    Log::warning('کاربر دسترسی ادمین ندارد', [
+                        'user_id' => $user->id,
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'شما دسترسی لازم برای انجام این عملیات را ندارید'
+                    ], 403);
+                }
+
+            } catch (\Exception $e) {
+                Log::error('خطا در احراز هویت توکن', [
+                    'error' => $e->getMessage()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'خطا در احراز هویت توکن'
+                ], 401);
             }
 
             // Validate incoming request
@@ -153,13 +210,69 @@ class PermissionController extends Controller
     public function assignToUser(Request $request)
     {
         try {
-            // Check if user is admin
-            $authUser = $request->user();
-            if (!$authUser || !$authUser->is_admin) {
+            // دریافت و اعتبارسنجی توکن JWT
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('توکن در درخواست ارسال نشده است');
                 return response()->json([
                     'success' => false,
-                    'message' => 'شما دسترسی لازم برای انجام این عملیات را ندارید'
-                ], 403);
+                    'message' => 'توکن ارسال نشده است'
+                ], 401);
+            }
+
+            try {
+                // تلاش برای احراز هویت لایسنس با توکن
+                $license = JWTAuth::parseToken()->authenticate();
+                if (!$license) {
+                    Log::error('توکن نامعتبر - لایسنس یافت نشد');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'توکن نامعتبر - لایسنس یافت نشد'
+                    ], 401);
+                }
+
+                if (!$license->isActive()) {
+                    Log::error('لایسنس فعال نیست', [
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'لایسنس فعال نیست'
+                    ], 403);
+                }
+
+                // دریافت کاربر مرتبط با لایسنس
+                $authUser = $license->user;
+                if (!$authUser) {
+                    Log::error('کاربر مرتبط با لایسنس یافت نشد', [
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'کاربر مرتبط با لایسنس یافت نشد'
+                    ], 404);
+                }
+
+                // بررسی دسترسی ادمین
+                if (!$authUser->is_admin) {
+                    Log::warning('کاربر دسترسی ادمین ندارد', [
+                        'user_id' => $authUser->id,
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'شما دسترسی لازم برای انجام این عملیات را ندارید'
+                    ], 403);
+                }
+
+            } catch (\Exception $e) {
+                Log::error('خطا در احراز هویت توکن', [
+                    'error' => $e->getMessage()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'خطا در احراز هویت توکن'
+                ], 401);
             }
 
             $validator = Validator::make($request->all(), [
@@ -222,13 +335,69 @@ class PermissionController extends Controller
     public function getUserPermissions(Request $request, $userId)
     {
         try {
-            // Check if user is admin
-            $authUser = $request->user();
-            if (!$authUser || !$authUser->is_admin) {
+            // دریافت و اعتبارسنجی توکن JWT
+            $token = $request->bearerToken();
+            if (!$token) {
+                Log::error('توکن در درخواست ارسال نشده است');
                 return response()->json([
                     'success' => false,
-                    'message' => 'شما دسترسی لازم برای انجام این عملیات را ندارید'
-                ], 403);
+                    'message' => 'توکن ارسال نشده است'
+                ], 401);
+            }
+
+            try {
+                // تلاش برای احراز هویت لایسنس با توکن
+                $license = JWTAuth::parseToken()->authenticate();
+                if (!$license) {
+                    Log::error('توکن نامعتبر - لایسنس یافت نشد');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'توکن نامعتبر - لایسنس یافت نشد'
+                    ], 401);
+                }
+
+                if (!$license->isActive()) {
+                    Log::error('لایسنس فعال نیست', [
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'لایسنس فعال نیست'
+                    ], 403);
+                }
+
+                // دریافت کاربر مرتبط با لایسنس
+                $authUser = $license->user;
+                if (!$authUser) {
+                    Log::error('کاربر مرتبط با لایسنس یافت نشد', [
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'کاربر مرتبط با لایسنس یافت نشد'
+                    ], 404);
+                }
+
+                // بررسی دسترسی ادمین
+                if (!$authUser->is_admin) {
+                    Log::warning('کاربر دسترسی ادمین ندارد', [
+                        'user_id' => $authUser->id,
+                        'license_id' => $license->id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'شما دسترسی لازم برای انجام این عملیات را ندارید'
+                    ], 403);
+                }
+
+            } catch (\Exception $e) {
+                Log::error('خطا در احراز هویت توکن', [
+                    'error' => $e->getMessage()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'خطا در احراز هویت توکن'
+                ], 401);
             }
 
             $user = User::find($userId);
