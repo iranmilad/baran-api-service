@@ -83,13 +83,15 @@ class ProcessProductChanges implements ShouldQueue
             // حذف واریانت‌های قدیمی در یک عملیات
             $this->deleteOldVariants($variantsToDelete);
 
-            // به‌روزرسانی محصولات موجود در یک عملیات
-            $processedUpdates = $this->updateExistingProducts($productsToUpdate);
-
-            // ایجاد محصولات جدید در یک عملیات
+            // **اولویت 1**: ایجاد محصولات جدید در یک عملیات (قبل از بروزرسانی)
+            // این اطمینان می‌دهد که اگر درخواست update بود ولی محصول وجود نداشت، اول درج می‌شود
             $processedInserts = $this->createNewProducts($parentProducts, $childProducts, $productsToCreate);
 
-            // ایجاد واریانت‌های جدید در یک عملیات
+            // **اولویت 2**: به‌روزرسانی محصولات موجود در یک عملیات (پس از درج)
+            // این تضمین می‌کند که همه محصولات جدید قبل از بروزرسانی وجود دارند
+            $processedUpdates = $this->updateExistingProducts($productsToUpdate);
+
+            // **اولویت 3**: ایجاد واریانت‌های جدید در یک عملیات
             $processedVariants = $this->createNewVariants($variantsToCreate);
 
             DB::commit();
@@ -203,12 +205,13 @@ class ProcessProductChanges implements ShouldQueue
     protected function processParentProduct($productData, $barcode, $changeType, $existingProducts, &$parentProducts, &$productsToUpdate, &$updateIds, &$variantsToDelete)
     {
         if ($changeType === 'insert') {
-            Log::info("محصول مادر برای درج: {$barcode}");
+            Log::info("درج محصول مادر: {$barcode}");
             $parentProducts[] = $productData;
         } else {
-            // پردازش برای به‌روزرسانی
+            // changeType === 'update'
             $existingProduct = $existingProducts->get($barcode);
             if ($existingProduct) {
+                // محصول مادر موجود است - بروزرسانی
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
@@ -216,9 +219,10 @@ class ProcessProductChanges implements ShouldQueue
                 if (!empty($productData['Attributes'])) {
                     $variantsToDelete[] = $existingProduct->item_id;
                 }
+                Log::info("بروزرسانی محصول مادر: {$barcode}");
             } else {
-                // اگر محصول مادر برای به‌روزرسانی یافت نشد، به لیست درج اضافه می‌کنیم
-                Log::info("محصول مادر با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                // محصول مادر وجود ندارد - درج بجای بروزرسانی
+                Log::info("درخواست update برای محصول مادر {$barcode} - محصول وجود ندارد، اول درج سپس بروزرسانی انجام می‌شود");
                 $parentProducts[] = $productData;
             }
         }
@@ -239,18 +243,20 @@ class ProcessProductChanges implements ShouldQueue
     protected function processChildProduct($productData, $barcode, $changeType, $existingProducts, &$childProducts, &$productsToUpdate, &$updateIds)
     {
         if ($changeType === 'insert') {
-            Log::info("محصول متغیر برای درج: {$barcode}, parent_id: {$productData['parent_id']}");
+            Log::info("درج محصول متغیر: {$barcode}, parent_id: {$productData['parent_id']}");
             $childProducts[] = $productData;
         } else {
-            // پردازش برای به‌روزرسانی
+            // changeType === 'update'
             $existingProduct = $existingProducts->get($barcode);
             if ($existingProduct) {
+                // محصول متغیر موجود است - بروزرسانی
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
+                Log::info("بروزرسانی محصول متغیر: {$barcode}");
             } else {
-                // اگر محصول متغیر برای به‌روزرسانی یافت نشد، به لیست درج اضافه می‌کنیم
-                Log::info("محصول متغیر با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                // محصول متغیر وجود ندارد - درج بجای بروزرسانی
+                Log::info("درخواست update برای محصول متغیر {$barcode} - محصول وجود ندارد، اول درج سپس بروزرسانی انجام می‌شود");
                 $childProducts[] = $productData;
             }
         }
@@ -274,6 +280,7 @@ class ProcessProductChanges implements ShouldQueue
         if ($changeType === 'insert') {
             // بررسی وجود محصول قبل از اضافه کردن به لیست insert
             if (!$existingProducts->has($barcode)) {
+                Log::info("درج محصول معمولی: {$barcode}");
                 $productsToCreate[] = $productData;
             } else {
                 // اگر محصول وجود داشت، به update تغییر می‌دهیم
@@ -285,10 +292,13 @@ class ProcessProductChanges implements ShouldQueue
                 if (!empty($productData['Attributes'])) {
                     $variantsToDelete[] = $existingProduct->item_id;
                 }
+                Log::info("درخواست insert اما محصول موجود است، تغییر به update: {$barcode}");
             }
         } else {
+            // changeType === 'update'
             $existingProduct = $existingProducts->get($barcode);
             if ($existingProduct) {
+                // محصول موجود است - بروزرسانی
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
@@ -296,9 +306,11 @@ class ProcessProductChanges implements ShouldQueue
                 if (!empty($productData['Attributes'])) {
                     $variantsToDelete[] = $existingProduct->item_id;
                 }
+                Log::info("بروزرسانی محصول معمولی: {$barcode}");
             } else {
-                // اگر محصول برای به‌روزرسانی یافت نشد، به insert تغییر می‌دهیم
-                Log::info("محصول با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                // محصول موجود نیست - درج بجای بروزرسانی
+                // این درج در ابتدای processNewProducts انجام خواهد شد
+                Log::info("درخواست update برای محصول {$barcode} - محصول وجود ندارد، اول درج سپس بروزرسانی انجام می‌شود");
                 $productsToCreate[] = $productData;
             }
         }
