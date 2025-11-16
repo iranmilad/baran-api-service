@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\License;
+use App\Models\Product;
 use App\Models\UserSetting;
 use App\Models\WooCommerceApiKey;
 use App\Traits\PriceUnitConverter;
@@ -13,6 +14,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 
 class BulkInsertWooCommerceProducts implements ShouldQueue
 {
@@ -83,9 +85,8 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 throw new \Exception('کلیدهای API ووکامرس یافت نشد یا نامعتبر است');
             }
 
-            if (!$userSetting->enable_new_product) {
-                throw new \Exception('دسترسی درج محصول جدید فعال نیست');
-            }
+            // بررسی permission تنها برای ارسال به ووکامرس، نه برای درج در دیتابیس محلی
+            $canInsertToWooCommerce = $userSetting->enable_new_product;
 
             $productsToCreate = [];
             $existingProducts = [];
@@ -176,46 +177,57 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                     'count' => count($productsToCreate)
                 ]);
 
-                // آماده‌سازی و ترتیب‌دهی محصولات (محصول مادر اول، سپس واریانت‌ها)
-                $allPreparedProducts = [];
+                // ابتدا محصولات را در دیتابیس محلی درج کن
+                $this->insertProductsToLocalDatabase($productsToCreate);
 
-                foreach ($productsToCreate as $product) {
-                    // ابتدا محصول را آماده کن
-                    $preparedProduct = $this->prepareProductData($product, $userSetting);
-                    $allPreparedProducts[] = $preparedProduct;
+                // سپس اگر اجازه وجود دارد به ووکامرس ارسال کن
+                if ($canInsertToWooCommerce) {
+                    // آماده‌سازی و ترتیب‌دهی محصولات (محصول مادر اول، سپس واریانت‌ها)
+                    $allPreparedProducts = [];
+
+                    foreach ($productsToCreate as $product) {
+                        // ابتدا محصول را آماده کن
+                        $preparedProduct = $this->prepareProductData($product, $userSetting);
+                        $allPreparedProducts[] = $preparedProduct;
+                    }
+
+                    // ترتیب‌دهی: محصولات مادر (variable) اول، سپس واریانت‌ها
+                    usort($allPreparedProducts, function($a, $b) {
+                        $typeA = $a['type'] ?? 'simple';
+                        $typeB = $b['type'] ?? 'simple';
+
+                        // محصولات variable اول
+                        if ($typeA === 'variable' && $typeB !== 'variable') {
+                            return -1;
+                        }
+                        if ($typeB === 'variable' && $typeA !== 'variable') {
+                            return 1;
+                        }
+
+                        return 0;
+                    });
+
+                    Log::info('محصولات آماده شده برای درج در ووکامرس', [
+                        'total_products' => count($allPreparedProducts),
+                        'license_id' => $this->license_id,
+                        'product_types' => collect($allPreparedProducts)->groupBy('type')->map(function($items) {
+                            return count($items);
+                        })->toArray()
+                    ]);
+
+                    // درج همه محصولات در ووکامرس
+                    $this->insertAllProductsBatch($allPreparedProducts, $license, $wooCommerceApiKey);
+
+                    Log::info('درج دسته‌ای محصولات در ووکامرس تکمیل شد', [
+                        'total_products' => count($allPreparedProducts),
+                        'license_id' => $this->license_id
+                    ]);
+                } else {
+                    Log::warning('درج محصولات در ووکامرس غیرفعال است - فقط در دیتابیس محلی درج شدند', [
+                        'license_id' => $this->license_id,
+                        'products_count' => count($productsToCreate)
+                    ]);
                 }
-
-                // ترتیب‌دهی: محصولات مادر (variable) اول، سپس واریانت‌ها
-                usort($allPreparedProducts, function($a, $b) {
-                    $typeA = $a['type'] ?? 'simple';
-                    $typeB = $b['type'] ?? 'simple';
-
-                    // محصولات variable اول
-                    if ($typeA === 'variable' && $typeB !== 'variable') {
-                        return -1;
-                    }
-                    if ($typeB === 'variable' && $typeA !== 'variable') {
-                        return 1;
-                    }
-
-                    return 0;
-                });
-
-                Log::info('محصولات آماده شده برای درج یکجا', [
-                    'total_products' => count($allPreparedProducts),
-                    'license_id' => $this->license_id,
-                    'product_types' => collect($allPreparedProducts)->groupBy('type')->map(function($items) {
-                        return count($items);
-                    })->toArray()
-                ]);
-
-                // درج همه محصولات در یک batch
-                $this->insertAllProductsBatch($allPreparedProducts, $license, $wooCommerceApiKey);
-
-                Log::info('درج دسته‌ای محصولات تکمیل شد', [
-                    'total_products' => count($allPreparedProducts),
-                    'license_id' => $this->license_id
-                ]);
             } else {
                 Log::info('هیچ محصول جدیدی برای درج وجود ندارد', [
                     'license_id' => $this->license_id,
@@ -1106,6 +1118,150 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // اگر نوع مشخص نشده، از آخرین بخش نام استفاده کن
         $parts = explode('-', $name);
         return trim(end($parts));
+    }
+
+    /**
+     * درج محصولات در دیتابیس محلی
+     */
+    protected function insertProductsToLocalDatabase(array $products)
+    {
+        try {
+            Log::info('درج محصولات در دیتابیس محلی', [
+                'license_id' => $this->license_id,
+                'products_count' => count($products)
+            ]);
+
+            DB::beginTransaction();
+
+            foreach ($products as $product) {
+                try {
+                    $itemId = $product['ItemID'] ?? $product['item_id'] ?? $product['ItemId'] ?? null;
+                    $barcode = $product['Barcode'] ?? $product['barcode'] ?? null;
+
+                    if (empty($itemId) || empty($barcode)) {
+                        Log::warning('محصول بدون ItemID یا Barcode', [
+                            'product' => $product,
+                            'license_id' => $this->license_id
+                        ]);
+                        continue;
+                    }
+
+                    // بررسی وجود محصول
+                    $existingProduct = Product::where('item_id', $itemId)
+                        ->where('license_id', $this->license_id)
+                        ->first();
+
+                    if ($existingProduct) {
+                        // به‌روزرسانی محصول موجود
+                        $existingProduct->update([
+                            'item_name' => $product['ItemName'] ?? $product['item_name'] ?? null,
+                            'barcode' => $barcode,
+                            'price_amount' => (int)($product['Price'] ?? $product['price_amount'] ?? 0),
+                            'price_after_discount' => (int)($product['PriceAfterDiscount'] ?? $product['price_after_discount'] ?? 0),
+                            'total_count' => (int)($product['TotalCount'] ?? $product['total_count'] ?? 0),
+                            'stock_id' => $product['StockID'] ?? $product['stock_id'] ?? null,
+                            'last_sync_at' => now()
+                        ]);
+
+                        Log::info('محصول موجود به‌روزرسانی شد', [
+                            'item_id' => $itemId,
+                            'barcode' => $barcode,
+                            'license_id' => $this->license_id
+                        ]);
+                    } else {
+                        // درج محصول جدید
+                        Product::create([
+                            'license_id' => $this->license_id,
+                            'item_id' => $itemId,
+                            'item_name' => $product['ItemName'] ?? $product['item_name'] ?? null,
+                            'barcode' => $barcode,
+                            'price_amount' => (int)($product['Price'] ?? $product['price_amount'] ?? 0),
+                            'price_after_discount' => (int)($product['PriceAfterDiscount'] ?? $product['price_after_discount'] ?? 0),
+                            'total_count' => (int)($product['TotalCount'] ?? $product['total_count'] ?? 0),
+                            'stock_id' => $product['StockID'] ?? $product['stock_id'] ?? null,
+                            'is_variant' => !empty($product['Attributes']) || !empty($product['attributes']),
+                            'last_sync_at' => now()
+                        ]);
+
+                        Log::info('محصول جدید در دیتابیس درج شد', [
+                            'item_id' => $itemId,
+                            'barcode' => $barcode,
+                            'license_id' => $this->license_id
+                        ]);
+                    }
+
+                    // درج یا به‌روزرسانی واریانت‌ها اگر وجود داشتند
+                    if (!empty($product['Attributes']) || !empty($product['attributes'])) {
+                        $attributes = $product['Attributes'] ?? $product['attributes'] ?? [];
+                        $parentProduct = Product::where('item_id', $itemId)
+                            ->where('license_id', $this->license_id)
+                            ->first();
+
+                        if ($parentProduct) {
+                            foreach ($attributes as $variant) {
+                                $variantItemId = $variant['ItemID'] ?? $variant['item_id'] ?? $variant['ItemId'] ?? null;
+                                $variantBarcode = $variant['Barcode'] ?? $variant['barcode'] ?? null;
+
+                                if (!empty($variantItemId) && !empty($variantBarcode)) {
+                                    $existingVariant = Product::where('item_id', $variantItemId)
+                                        ->where('parent_id', $parentProduct->id)
+                                        ->first();
+
+                                    if ($existingVariant) {
+                                        $existingVariant->update([
+                                            'item_name' => $variant['ItemName'] ?? $variant['item_name'] ?? null,
+                                            'barcode' => $variantBarcode,
+                                            'price_amount' => (int)($variant['Price'] ?? $variant['price_amount'] ?? 0),
+                                            'price_after_discount' => (int)($variant['PriceAfterDiscount'] ?? $variant['price_after_discount'] ?? 0),
+                                            'total_count' => (int)($variant['TotalCount'] ?? $variant['total_count'] ?? 0),
+                                            'stock_id' => $variant['StockID'] ?? $variant['stock_id'] ?? null,
+                                            'last_sync_at' => now()
+                                        ]);
+                                    } else {
+                                        Product::create([
+                                            'license_id' => $this->license_id,
+                                            'item_id' => $variantItemId,
+                                            'item_name' => $variant['ItemName'] ?? $variant['item_name'] ?? null,
+                                            'barcode' => $variantBarcode,
+                                            'price_amount' => (int)($variant['Price'] ?? $variant['price_amount'] ?? 0),
+                                            'price_after_discount' => (int)($variant['PriceAfterDiscount'] ?? $variant['price_after_discount'] ?? 0),
+                                            'total_count' => (int)($variant['TotalCount'] ?? $variant['total_count'] ?? 0),
+                                            'stock_id' => $variant['StockID'] ?? $variant['stock_id'] ?? null,
+                                            'parent_id' => $parentProduct->id,
+                                            'is_variant' => true,
+                                            'last_sync_at' => now()
+                                        ]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                } catch (\Exception $e) {
+                    Log::error('خطا در درج محصول در دیتابیس: ' . $e->getMessage(), [
+                        'product' => $product,
+                        'license_id' => $this->license_id,
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    // ادامه با محصول بعدی بدون توقف کل فرآیند
+                    continue;
+                }
+            }
+
+            DB::commit();
+
+            Log::info('تکمیل درج محصولات در دیتابیس محلی', [
+                'license_id' => $this->license_id,
+                'products_count' => count($products)
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('خطا در درج محصولات در دیتابیس: ' . $e->getMessage(), [
+                'license_id' => $this->license_id,
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
 
     /**
