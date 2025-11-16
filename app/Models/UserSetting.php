@@ -62,7 +62,9 @@ class UserSetting extends Model
         'enable_new_product',
         'enable_invoice',
         'enable_cart_sync',
-        'payment_gateways',
+        'enable_dynamic_warehouse_invoice',
+
+        'payment_gateway_accounts',
         'invoice_settings',
         'rain_sale_price_unit',
         'woocommerce_price_unit',
@@ -78,7 +80,8 @@ class UserSetting extends Model
         'enable_new_product' => 'boolean',
         'enable_invoice' => 'boolean',
         'enable_cart_sync' => 'boolean',
-        'payment_gateways' => 'array',
+        'enable_dynamic_warehouse_invoice'=> 'boolean',
+        'payment_gateway_accounts' => 'array',
         'invoice_settings' => 'array'
     ];
 

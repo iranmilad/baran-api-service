@@ -25,7 +25,7 @@ Schedule::call(function () {
     Log::info('Cron schedule executed at: ' . now());
 })->everyTenMinutes();
 
-Schedule::command('queue:work --queue=invoices,products,bulk-update,empty-unique-ids,unique-ids-sync,category,woocommerce,woocommerce-update,woocommerce-sync,woocommerce-insert,product-processing,product-coordination,default --tries=3 --max-jobs=100 --stop-when-empty')
+Schedule::command('queue:work --queue=invoices,products,bulk-update,product-changes,empty-unique-ids,unique-ids-sync,category,woocommerce,woocommerce-update,woocommerce-sync,woocommerce-insert,product-processing,product-coordination,product-sync-all,default --tries=3 --max-jobs=100 --timeout=900 --stop-when-empty')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer()
@@ -74,4 +74,4 @@ Schedule::call(function () {
 
 
 
-//    /usr/local/lsws/lsphp82/bin/php  /home/samtatech.org/public_html/server/artisan schedule:run >> /home/samtatech.org/public_html/logs/artisan_schedule.log 2>&1
+//    /usr/local/lsws/lsphp82/bin/php  /home/samtatech.org/public_html/server/artisan schedule:run >> /home/samtatech.org/public_html/server/logs/artisan_schedule.log 2>&1

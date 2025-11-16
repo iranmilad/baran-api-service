@@ -72,6 +72,7 @@ class UserSettingController extends Controller
                         'shipping_cost_method' => 'expense',
                         'shipping_product_unique_id' => '',
                         'default_warehouse_code' => '',
+                        'payment_gateway_accounts' => [],
                     ];
                     return response()->json([
                         'success' => true,
@@ -101,7 +102,8 @@ class UserSettingController extends Controller
                     'invoice_cancelled_type',
                     'invoice_refunded_type',
                     'invoice_failed_type',
-                    'payment_gateways',
+
+                    'payment_gateway_accounts',
                     'shipping_cost_method',
                     'shipping_product_unique_id',
                     'default_warehouse_code',
@@ -201,6 +203,7 @@ class UserSettingController extends Controller
                     'settings.shipping_product_unique_id' => 'nullable|string|max:100',
                     'settings.default_warehouse_code' => 'nullable|string|max:100',
                     'settings.enable_dynamic_warehouse_invoice' => 'sometimes|boolean',
+                    'settings.payment_gateway_accounts' => 'sometimes|array',
                     'settings.invoice_settings' => 'required|array',
                     'settings.invoice_settings.cash_on_delivery' => 'required|in:cash,credit',
                     'settings.invoice_settings.invoice_pending_type' => 'required|in:off,invoice,proforma,order',
@@ -269,100 +272,5 @@ class UserSettingController extends Controller
         }
     }
 
-    public function getPaymentGateways(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'serial_key' => 'required|string',
-            'site_url' => 'required|url'
-        ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'اطلاعات وارد شده نامعتبر است',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $license = License::where('serial_key', $request->serial_key)
-            ->where('domain', $request->site_url)
-            ->first();
-
-        if (!$license) {
-            return response()->json([
-                'success' => false,
-                'message' => 'لایسنس نامعتبر است'
-            ], 404);
-        }
-
-        $settings = $license->userSetting;
-
-        if (!$settings) {
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'payment_gateways' => []
-                ]
-            ]);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'payment_gateways' => $settings->settings['payment_gateways'] ?? []
-            ]
-        ]);
-    }
-
-    public function updatePaymentGateways(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'serial_key' => 'required|string',
-            'site_url' => 'required|url',
-            'payment_gateways' => 'required|array'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'اطلاعات وارد شده نامعتبر است',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $license = License::where('serial_key', $request->serial_key)
-            ->where('domain', $request->site_url)
-            ->first();
-
-        if (!$license) {
-            return response()->json([
-                'success' => false,
-                'message' => 'لایسنس نامعتبر است'
-            ], 404);
-        }
-
-        $settings = $license->userSetting;
-
-        if (!$settings) {
-            $settings = $license->userSetting()->create([
-                'settings' => [
-                    'payment_gateways' => $request->payment_gateways
-                ]
-            ]);
-        } else {
-            $currentSettings = $settings->settings;
-            $currentSettings['payment_gateways'] = $request->payment_gateways;
-            $settings->update([
-                'settings' => $currentSettings
-            ]);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'تنظیمات درگاه‌های پرداخت با موفقیت به‌روزرسانی شد',
-            'data' => [
-                'payment_gateways' => $settings->settings['payment_gateways']
-            ]
-        ]);
-    }
 }

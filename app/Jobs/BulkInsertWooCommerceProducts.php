@@ -289,19 +289,19 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
             // بررسی parent_id - اگر خالی باشد (null، empty string، یا فقط whitespace) یعنی محصول مادر است
             if (!empty($parentId) && trim($parentId) !== '') {
-                // این یک واریانت است که والد دارد - منتشر می‌شود
+                // این یک واریانت است که والد دارد - پیش‌نویس درج می‌شود
                 $data['parent_unique_id'] = $parentId; // استفاده از parent_unique_id به جای parent_id
                 $data['type'] = 'variable'; // تغییر از variation به variable
-                $data['status'] = 'publish'; // فقط واریانت‌ها منتشر می‌شوند
+                $data['status'] = 'draft'; // واریانت‌ها هم پیش‌نویس درج می‌شوند
 
                 // حذف parent_id چون از parent_unique_id استفاده می‌کنیم
                 unset($data['parent_id']);
 
-                Log::info('محصول متغیر (واریانت) با شناسه یکتای والد - منتشر شده', [
+                Log::info('محصول متغیر (واریانت) با شناسه یکتای والد - پیش‌نویس', [
                     'barcode' => $barcode,
                     'parent_unique_id' => $parentId,
                     'type' => 'variable',
-                    'status' => 'publish'
+                    'status' => 'draft'
                 ]);
             } else {
                 // محصول متغیر بدون والد، یعنی خود محصول مادر است (variable product) - همیشه پیش‌نویس می‌ماند
@@ -403,8 +403,8 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // حذف description و short_description از درخواست درج
         // تا کاربر خودش آن‌ها را در WooCommerce تنظیم کند
 
-        // تنظیم status به publish به جای draft
-        $data['status'] = 'publish';
+        // تنظیم status به draft - همه محصولات پیش‌نویس درج می‌شوند
+        $data['status'] = 'draft';
 
         // لاگ نهایی برای بررسی داده‌های ارسالی
         Log::info('داده‌های نهایی محصول برای ووکامرس', [

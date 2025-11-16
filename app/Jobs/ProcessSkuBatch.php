@@ -32,12 +32,20 @@ class ProcessSkuBatch implements ShouldQueue
     /**
      * The number of seconds the job can run before timing out.
      */
-    public $timeout = 45; // 45 ثانیه
+    public $timeout = 240; // 4 دقیقه
 
     /**
      * Calculate the number of seconds to wait before retrying the job.
      */
-    public $backoff = [5, 15, 30];
+    public $backoff = [10, 30, 60];
+
+    /**
+     * Determine if the job should be retried.
+     */
+    public function retryUntil()
+    {
+        return now()->addMinutes(10); // حداکثر 10 دقیقه تلاش
+    }
 
     /**
      * Create a new job instance.
@@ -146,8 +154,8 @@ class ProcessSkuBatch implements ShouldQueue
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 180,
-                'connect_timeout' => 60
+                'timeout' => 120, // کاهش از 180 به 120 ثانیه
+                'connect_timeout' => 30 // کاهش از 60 به 30 ثانیه
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
@@ -179,10 +187,19 @@ class ProcessSkuBatch implements ShouldQueue
                 ]);
             }
 
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('Connection timeout in Baran API request', [
+                'error' => $e->getMessage(),
+                'skus' => $skus,
+                'stock_id' => $stockId
+            ]);
+            // در صورت timeout، job را fail کن
+            $this->fail($e);
         } catch (\Exception $e) {
             Log::error('Error fetching unique IDs from Baran API', [
                 'error' => $e->getMessage(),
-                'skus' => $skus
+                'skus' => $skus,
+                'stock_id' => $stockId
             ]);
         }
 
@@ -210,8 +227,8 @@ class ProcessSkuBatch implements ShouldQueue
                 'Authorization' => 'Basic ' . base64_encode($wooApiKey->api_key . ':' . $wooApiKey->api_secret)
             ])->withOptions([
                 'verify' => false,
-                'timeout' => 180,
-                'connect_timeout' => 60,
+                'timeout' => 120, // کاهش از 180 به 120 ثانیه
+                'connect_timeout' => 30, // کاهش از 60 به 30 ثانیه
                 'http_errors' => false
             ])->post($url, [
                 'products' => $uniqueIdMapping
@@ -257,6 +274,13 @@ class ProcessSkuBatch implements ShouldQueue
                 ]);
             }
 
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('Connection timeout in WooCommerce API request', [
+                'error' => $e->getMessage(),
+                'unique_id_mapping' => $uniqueIdMapping
+            ]);
+            // در صورت timeout، job را fail کن
+            $this->fail($e);
         } catch (\Exception $e) {
             Log::error('Error in batch update bim_unique_id', [
                 'error' => $e->getMessage(),
