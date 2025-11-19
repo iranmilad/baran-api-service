@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\WooCommerce;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\WooCommerce\ProcessProductChanges;
+use App\Jobs\WordPress\ProcessProductChanges;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;

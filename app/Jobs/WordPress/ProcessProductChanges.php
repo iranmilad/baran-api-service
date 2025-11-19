@@ -3,6 +3,9 @@
 namespace App\Jobs\WordPress;
 
 use App\Models\Product;
+use App\Jobs\ProcessImplicitProductInserts;
+use App\Jobs\RetryFailedProductInserts;
+use App\Jobs\ProcessOrphanProductVariants;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -14,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * این کلاس مسئول پردازش تغییرات محصولات و ذخیره‌سازی آنها در دیتابیس است
  * پس از پردازش، این کلاس یک کار دیگر (SyncWooCommerceProducts) را برای همگام‌سازی با ووکامرس برنامه‌ریزی می‌کند
+ *
+ * توجه: این جاب مخصوص WordPress است زیرا محصولات را به WooCommerce سینک می‌کند
  */
 class ProcessProductChanges implements ShouldQueue
 {
@@ -78,7 +83,7 @@ class ProcessProductChanges implements ShouldQueue
                 ->keyBy('barcode');
 
             // پردازش هر تغییر و دسته‌بندی محصولات
-            $this->processChanges($now, $existingProducts, $parentProducts, $childProducts, $productsToCreate, $productsToUpdate, $variantsToCreate, $variantsToDelete, $updateIds);
+            $this->processChanges($now, $existingProducts, $parentProducts, $childProducts, $productsToCreate, $productsToUpdate, $variantsToCreate, $variantsToDelete, $updateIds, $implicitInserts);
 
             // حذف واریانت‌های قدیمی در یک عملیات
             $this->deleteOldVariants($variantsToDelete);
@@ -103,6 +108,27 @@ class ProcessProductChanges implements ShouldQueue
             // ارسال محصولات به صف همگام‌سازی ووکامرس
             $this->dispatchToWooCommerceSync($processedUpdates, $processedInserts, $processedVariants);
 
+            // ارسال درج‌های ضمنی به کیو جداگانه
+            if (!empty($implicitInserts)) {
+                ProcessImplicitProductInserts::dispatch($implicitInserts, $this->license_id);
+            }
+
+            // ارسال درج‌های ناموفق به کیو جداگانه (retry)
+            if (!empty($failedInserts)) {
+                RetryFailedProductInserts::dispatch($failedInserts, $this->license_id);
+            }
+
+            // ارسال فرزندان بی‌پدر به کیو جداگانه با تأخیر 30 ثانیه‌ای
+            if (!empty($orphanVariants)) {
+                ProcessOrphanProductVariants::dispatch($orphanVariants, $this->license_id)
+                    ->delay(now()->addSeconds(30));
+
+                Log::info('فرزندان بی‌پدر برای پردازش بعدی ارسال شدند', [
+                    'count' => count($orphanVariants),
+                    'delay_seconds' => 30
+                ]);
+            }
+
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('خطا در پردازش تغییرات محصول: ' . $e->getMessage());
@@ -122,9 +148,10 @@ class ProcessProductChanges implements ShouldQueue
      * @param array &$variantsToCreate
      * @param array &$variantsToDelete
      * @param array &$updateIds
+     * @param array &$implicitInserts
      * @return void
      */
-    protected function processChanges($now, $existingProducts, &$parentProducts, &$childProducts, &$productsToCreate, &$productsToUpdate, &$variantsToCreate, &$variantsToDelete, &$updateIds)
+    protected function processChanges($now, $existingProducts, &$parentProducts, &$childProducts, &$productsToCreate, &$productsToUpdate, &$variantsToCreate, &$variantsToDelete, &$updateIds, &$implicitInserts)
     {
         foreach ($this->changes as $change) {
             $productData = $change['product'];

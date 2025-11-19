@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Tymon\JWTAuth\Exceptions\TokenExpiredException;
 use Tymon\JWTAuth\Exceptions\TokenInvalidException;
-use App\Jobs\WooCommerce\ProcessProductChanges;
+use App\Jobs\WordPress\ProcessProductChanges;
 use App\Models\License;
 use App\Jobs\WooCommerce\SyncCategories;
 use Illuminate\Support\Facades\Http;
