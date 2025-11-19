@@ -94,7 +94,9 @@ class ProcessProductChanges implements ShouldQueue
             $processedUpdates = $this->updateExistingProducts($productsToUpdate);
 
             // **اولویت 3**: ایجاد واریانت‌های جدید در یک عملیات
-            $processedVariants = $this->createNewVariants($variantsToCreate);
+            $variantsResult = $this->createNewVariants($variantsToCreate);
+            $processedVariants = $variantsResult['created'];
+            $orphanVariants = $variantsResult['orphans'];
 
             DB::commit();
 
@@ -102,6 +104,7 @@ class ProcessProductChanges implements ShouldQueue
                 'updated' => count($processedUpdates),
                 'inserted' => count($processedInserts),
                 'variants' => count($processedVariants),
+                'orphan_variants' => count($orphanVariants),
                 'implicit_inserts' => count($implicitInserts),
                 'failed_inserts' => count($failedInserts)
             ]);
@@ -117,6 +120,17 @@ class ProcessProductChanges implements ShouldQueue
             // ارسال درج‌های ناموفق به کیو جداگانه (retry)
             if (!empty($failedInserts)) {
                 RetryFailedProductInserts::dispatch($failedInserts, $this->license_id);
+            }
+
+            // ارسال فرزندان بی‌پدر به کیو جداگانه با تأخیر 30 ثانیه‌ای
+            if (!empty($orphanVariants)) {
+                ProcessOrphanProductVariants::dispatch($orphanVariants, $this->license_id)
+                    ->delay(now()->addSeconds(30));
+
+                Log::info('فرزندان بی‌پدر برای پردازش بعدی ارسال شدند', [
+                    'count' => count($orphanVariants),
+                    'delay_seconds' => 30
+                ]);
             }
 
         } catch (\Exception $e) {
@@ -545,15 +559,19 @@ class ProcessProductChanges implements ShouldQueue
      * ایجاد واریانت‌های جدید
      *
      * @param array $variantsToCreate
-     * @return array واریانت‌های ایجاد شده
+     * @return array
      */
     protected function createNewVariants($variantsToCreate)
     {
         if (empty($variantsToCreate)) {
-            return [];
+            return [
+                'created' => [],
+                'orphans' => []
+            ];
         }
 
         $createdVariants = [];
+        $orphanVariants = [];
 
         // مرتب‌سازی واریانت‌ها بر اساس parent_id
         usort($variantsToCreate, function($a, $b) {
@@ -581,18 +599,32 @@ class ProcessProductChanges implements ShouldQueue
                     'parent_id' => $variant['parent_id']
                 ]);
             } catch (\Exception $innerException) {
-                Log::error('خطا در ایجاد واریانت', [
-                    'barcode' => $variant['barcode'],
-                    'error' => $innerException->getMessage()
-                ]);
+                // بررسی اینکه خطا به دلیل parent_id است
+                if (strpos($innerException->getMessage(), 'foreign key constraint fails') !== false) {
+                    Log::warning('واریانت بی‌پدر برای پردازش بعدی ذخیره شد', [
+                        'barcode' => $variant['barcode'],
+                        'parent_id' => $variant['parent_id'] ?? null
+                    ]);
+                    // این واریانت برای پردازش بعدی ذخیره می‌شود
+                    $orphanVariants[] = $variant;
+                } else {
+                    Log::error('خطا در ایجاد واریانت', [
+                        'barcode' => $variant['barcode'],
+                        'error' => $innerException->getMessage()
+                    ]);
+                }
             }
         }
 
         Log::info('واریانت‌های جدید با موفقیت ایجاد شدند', [
-            'count' => count($variantsToCreate)
+            'count' => count($createdVariants),
+            'orphans' => count($orphanVariants)
         ]);
 
-        return $createdVariants;
+        return [
+            'created' => $createdVariants,
+            'orphans' => $orphanVariants
+        ];
     }
 
     /**
