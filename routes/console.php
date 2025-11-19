@@ -21,6 +21,26 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+// Command برای retry کردن جاب‌های ناموفق
+Artisan::command('queue:retry-failed-now', function () {
+    $limit = $this->ask('تعداد جاب‌هایی که می‌خواهید retry کنید؟', 50);
+
+    $this->call('queue:retry-failed', [
+        '--limit' => $limit
+    ]);
+})->purpose('مجدد اجرای جاب‌های ناموفق بصورت فوری');
+
+// Command برای retry کردن جاب‌های ناموفق صف specific
+Artisan::command('queue:retry-queue {queue : نام صف}', function () {
+    $queue = $this->argument('queue');
+    $limit = $this->ask('تعداد جاب‌هایی که می‌خواهید retry کنید؟', 50);
+
+    $this->call('queue:retry-failed', [
+        '--queue' => $queue,
+        '--limit' => $limit
+    ]);
+})->purpose('مجدد اجرای جاب‌های ناموفق برای یک صف خاص');
+
 Schedule::call(function () {
     Log::info('Cron schedule executed at: ' . now());
 })->everyTenMinutes();
@@ -37,6 +57,18 @@ Schedule::command('queue:work --queue=products,product-changes,product-sync-all,
 Schedule::command('queue:restart')
     ->everyThirtyMinutes()
     ->onOneServer();
+
+// مجدد اجرای جاب‌های ناموفق هر 10 دقیقه
+Schedule::command('queue:retry-failed --limit=100')
+    ->everyFiveMinutes()
+    ->onOneServer()
+    ->appendOutputTo(storage_path('logs/retry_failed_jobs.log'));
+
+// مجدد اجرای جاب‌های ناموفق صف woocommerce-sync هر 5 دقیقه
+Schedule::command('queue:retry-failed --queue=woocommerce-sync --limit=50')
+    ->everyFiveMinutes()
+    ->onOneServer()
+    ->appendOutputTo(storage_path('logs/retry_woocommerce_sync.log'));
 
 // پاک کردن failed jobs قدیمی‌تر از 7 روز
 Schedule::command('queue:flush')

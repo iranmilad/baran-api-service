@@ -6,8 +6,10 @@ use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Queue\Events\JobFailed;
 use App\Events\SettingsUpdated;
 use App\Events\WarehouseCodeChanged;
+use App\Listeners\LogFailedJob;
 use App\Listeners\NotifySettingsChange;
 use App\Listeners\UpdateProductStockIds;
 
@@ -27,6 +29,9 @@ class EventServiceProvider extends ServiceProvider
         ],
         WarehouseCodeChanged::class => [
             UpdateProductStockIds::class,
+        ],
+        JobFailed::class => [
+            LogFailedJob::class,
         ],
     ];
 
