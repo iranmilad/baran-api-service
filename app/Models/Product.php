@@ -38,7 +38,10 @@ class Product extends Model
 
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(Product::class, 'parent_id', 'item_id');
+        // رابطه بدون کلید خارجی (parent_id ممکن است null باشد)
+        // اگر parent_id null بود، مقدار null برگردانده می‌شود
+        return $this->belongsTo(Product::class, 'parent_id', 'item_id')
+            ->withDefault();
     }
 
     public function variants(): HasMany
