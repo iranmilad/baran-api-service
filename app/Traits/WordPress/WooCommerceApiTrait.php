@@ -2245,6 +2245,8 @@ trait WooCommerceApiTrait
             Log::info('درخواست ایجاد attribute در WooCommerce', [
                 'url' => $url,
                 'attribute_data' => $attributeData,
+                'attribute_name' => $attributeData['name'] ?? 'unknown',
+                'attribute_slug' => $attributeData['slug'] ?? 'none',
                 'license_id' => $license->id
             ]);
 
@@ -2270,6 +2272,77 @@ trait WooCommerceApiTrait
                     'data' => $response->json(),
                     'message' => 'Attribute با موفقیت ایجاد شد'
                 ];
+            }
+
+            // بررسی اگر attribute قبلا وجود داشته باشد
+            if ($response->status() === 400) {
+                $errorBody = $response->json();
+                $errorCode = $errorBody['code'] ?? '';
+                $errorMessage = $errorBody['message'] ?? '';
+
+                // اگر خطا به علت وجود قبلی attribute باشد، سعی کن آن را بازیابی کنی
+                if (strpos($errorCode, 'cannot_create') !== false || strpos($errorMessage, 'پپیش') !== false) {
+                    Log::info('Attribute already exists, attempting to retrieve it', [
+                        'attribute_name' => $attributeData['name'] ?? 'unknown',
+                        'attribute_slug' => $attributeData['slug'] ?? 'none',
+                        'error_code' => $errorCode
+                    ]);
+
+                    $existingAttribute = null;
+
+                    // 1. اول بر اساس slug جستجو کن (اولویت بالا)
+                    if (!empty($attributeData['slug'])) {
+                        $getUrl = $url . '?slug=' . urlencode($attributeData['slug']);
+                        $getResponse = Http::withOptions([
+                            'verify' => false,
+                            'timeout' => 30,
+                            'connect_timeout' => 30
+                        ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                            ->get($getUrl);
+
+                        if ($getResponse->successful()) {
+                            $attributes = $getResponse->json();
+                            if (!empty($attributes)) {
+                                $existingAttribute = $attributes[0];
+                            }
+                        }
+                    }
+
+                    // 2. اگر slug موجود نباشد، بر اساس name جستجو کن
+                    if (!$existingAttribute && !empty($attributeData['name'])) {
+                        $getUrl = $url . '?search=' . urlencode($attributeData['name']);
+                        $getResponse = Http::withOptions([
+                            'verify' => false,
+                            'timeout' => 30,
+                            'connect_timeout' => 30
+                        ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                            ->get($getUrl);
+
+                        if ($getResponse->successful()) {
+                            $attributes = $getResponse->json();
+                            // جستجو برای تطابق دقیق نام
+                            foreach ($attributes as $attr) {
+                                if (strtolower($attr['name']) === strtolower($attributeData['name'])) {
+                                    $existingAttribute = $attr;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if ($existingAttribute) {
+                        Log::info('Retrieved existing attribute', [
+                            'attribute_name' => $existingAttribute['name'] ?? 'unknown',
+                            'attribute_id' => $existingAttribute['id'] ?? 'unknown',
+                            'attribute_slug' => $existingAttribute['slug'] ?? 'unknown'
+                        ]);
+                        return [
+                            'success' => true,
+                            'data' => $existingAttribute,
+                            'message' => 'Attribute قبلا وجود داشت و دریافت شد'
+                        ];
+                    }
+                }
             }
 
             Log::error('WooCommerce Create Attribute Error', [
@@ -2425,6 +2498,89 @@ trait WooCommerceApiTrait
             return [
                 'success' => false,
                 'message' => 'خطا در ایجاد term: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * به‌روزرسانی term موجود در WooCommerce
+     *
+     * @param object $license لایسنس
+     * @param int $attributeId شناسه attribute
+     * @param int $termId شناسه term
+     * @param array $updateData داده‌های به‌روزرسانی
+     * @return array نتیجه
+     */
+    protected function updateWooCommerceAttributeTerm($license, $attributeId, $termId, $updateData)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes/' . $attributeId . '/terms/' . $termId;
+
+            Log::info('درخواست به‌روزرسانی term در WooCommerce', [
+                'url' => $url,
+                'attribute_id' => $attributeId,
+                'term_id' => $termId,
+                'update_data' => $updateData,
+                'license_id' => $license->id
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120,
+                'connect_timeout' => 30
+            ])->withHeaders([
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->put($url, $updateData);
+
+            Log::info('پاسخ به‌روزرسانی term از WooCommerce', [
+                'status' => $response->status(),
+                'successful' => $response->successful(),
+                'term_id' => $termId
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'Term با موفقیت به‌روزرسانی شد'
+                ];
+            }
+
+            Log::error('WooCommerce Update Term Error', [
+                'attribute_id' => $attributeId,
+                'term_id' => $termId,
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در به‌روزرسانی term - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در به‌روزرسانی term در WooCommerce', [
+                'error' => $e->getMessage(),
+                'attribute_id' => $attributeId,
+                'term_id' => $termId,
+                'license_id' => $license->id
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در به‌روزرسانی term: ' . $e->getMessage(),
                 'error' => $e->getMessage()
             ];
         }

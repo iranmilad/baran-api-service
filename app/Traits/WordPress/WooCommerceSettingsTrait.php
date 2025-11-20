@@ -3,12 +3,9 @@
 namespace App\Traits\WordPress;
 
 use Illuminate\Support\Facades\Log;
-use App\Traits\PriceUnitConverter;
 
 trait WooCommerceSettingsTrait
 {
-    use PriceUnitConverter;
-
     /**
      * دریافت تنظیمات واحد قیمت برای WooCommerce
      *
@@ -21,6 +18,29 @@ trait WooCommerceSettingsTrait
             'rain_sale_unit' => $userSettings->rain_sale_price_unit ?? 'rial',
             'woocommerce_unit' => $userSettings->woocommerce_price_unit ?? 'toman'
         ];
+    }
+
+    /**
+     * تبدیل قیمت بر اساس واحد تنظیم شده
+     *
+     * @param float $price قیمت اصلی
+     * @param string $fromUnit واحد مبدا
+     * @param string $toUnit واحد مقصد
+     * @return float قیمت تبدیل شده
+     */
+    protected function convertPriceUnit($price, $fromUnit, $toUnit)
+    {
+        if ($fromUnit === $toUnit) {
+            return $price;
+        }
+
+        if ($fromUnit === 'rial' && $toUnit === 'toman') {
+            return $price / 10; // ریال به تومان
+        } elseif ($fromUnit === 'toman' && $toUnit === 'rial') {
+            return $price * 10; // تومان به ریال
+        }
+
+        return $price; // در صورت عدم تطابق، قیمت اصلی برگردانده می‌شود
     }
 
     /**
