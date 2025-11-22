@@ -121,14 +121,14 @@ class ProductController extends Controller
                 // Process insert products
                 foreach ($request->input('insert', []) as $index => $productData) {
                     try {
-                        if (empty($productData['Barcode'])) {
-                            $errors[] = [
-                                'type' => 'insert',
-                                'index' => $index,
-                                'error' => 'Empty barcode'
-                            ];
-                            continue;
-                        }
+                        // if (empty($productData['Barcode'])) {
+                        //     $errors[] = [
+                        //         'type' => 'insert',
+                        //         'index' => $index,
+                        //         'error' => 'Empty barcode'
+                        //     ];
+                        //     continue;
+                        // }
 
                         // Remap BrandID to parent_id (even if null)
                         // if (array_key_exists('BrandID', $productData)) {
@@ -138,7 +138,7 @@ class ProductController extends Controller
 
                         // Set is_variant based on Brand field
                         if (array_key_exists('ParentID', $productData)) {
-                            $productData['is_variant'] = ($productData['type'] == 239);
+                            $productData['is_variant'] = ($productData['Type'] == 239);
                             $productData['parent_id'] = $productData['ParentID'];
                             unset($productData['ParentID']);
                         }
@@ -165,22 +165,22 @@ class ProductController extends Controller
                 // Process update products
                 foreach ($request->input('update', []) as $index => $productData) {
                     try {
-                        if (empty($productData['Barcode'])) {
-                            $errors[] = [
-                                'type' => 'update',
-                                'index' => $index,
-                                'error' => 'Empty barcode'
-                            ];
-                            continue;
-                        }
+                        // if (empty($productData['Barcode'])) {
+                        //     $errors[] = [
+                        //         'type' => 'update',
+                        //         'index' => $index,
+                        //         'error' => 'Empty barcode'
+                        //     ];
+                        //     continue;
+                        // }
 
                         if (array_key_exists('ParentID', $productData)) {
-                            $productData['is_variant'] = ($productData['type'] == 239);
+                            $productData['is_variant'] = ($productData['Type'] == 239);
                             $productData['parent_id'] = $productData['ParentID'];
                             unset($productData['ParentID']);
                         }
 
-                        
+
                         $changes[] = [
                             'product' => $productData,
                             'change_type' => 'update',
