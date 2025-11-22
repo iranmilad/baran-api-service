@@ -18,7 +18,9 @@ use Illuminate\Support\Facades\Log;
 
 class BulkUpdateWooCommerceProducts implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, PriceUnitConverter, WordPressMasterTrait;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, PriceUnitConverter, WordPressMasterTrait {
+        PriceUnitConverter::convertPriceUnit insteadof WordPressMasterTrait;
+    }
 
     public $tries = 5;
     public $timeout = 180;
