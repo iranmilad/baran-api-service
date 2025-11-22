@@ -75,11 +75,11 @@ class ProductController extends Controller
                     ], 404);
                 }
 
-                if($user->is_admin){
-                    Log::info('Sync request received', [
-                        'request' => $request->all()
-                    ]);
-                }
+                // if($user->is_admin){
+                //     Log::info('Sync request received', [
+                //         'request' => $request->all()
+                //     ]);
+                // }
 
                 // if($user->id==5)
                 //     return response()->json([
