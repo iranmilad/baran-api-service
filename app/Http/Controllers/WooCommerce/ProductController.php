@@ -137,9 +137,10 @@ class ProductController extends Controller
                         // }
 
                         // Set is_variant based on Brand field
-                        if (array_key_exists('parent_id', $productData) and array_key_exists('type', $productData)) {
+                        if (array_key_exists('ParentID', $productData)) {
                             $productData['is_variant'] = ($productData['type'] == 239);
-                            //unset($productData['Brand']);
+                            $productData['parent_id'] = $productData['ParentID'];
+                            unset($productData['ParentID']);
                         }
 
                         $changes[] = [
@@ -173,11 +174,13 @@ class ProductController extends Controller
                             continue;
                         }
 
-                        if (array_key_exists('parent_id', $productData) and array_key_exists('type', $productData)) {
+                        if (array_key_exists('ParentID', $productData)) {
                             $productData['is_variant'] = ($productData['type'] == 239);
-                            //unset($productData['Brand']);
+                            $productData['parent_id'] = $productData['ParentID'];
+                            unset($productData['ParentID']);
                         }
 
+                        
                         $changes[] = [
                             'product' => $productData,
                             'change_type' => 'update',
