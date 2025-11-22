@@ -31,10 +31,12 @@ class Category extends Model
 
     /**
      * دسته والد
+     * استفاده از withDefault() برای جلوگیری از خطا در صورت نبودن دسته والد
      */
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(Category::class, 'parent_id');
+        return $this->belongsTo(Category::class, 'parent_id')
+            ->withDefault();
     }
 
     /**

@@ -69,6 +69,9 @@ class ProcessProductChanges implements ShouldQueue
             $updateIds = [];
             $parentProducts = []; // لیست محصولات مادر
             $childProducts = []; // لیست محصولات متغیر
+            $implicitInserts = []; // درج‌های ضمنی
+            $failedInserts = []; // درج‌های ناموفق
+            $orphanVariants = []; // فرزندان بی‌پدر
 
             // جمع‌آوری تمام بارکدها برای یک کوئری
             $allBarcodes = collect($this->changes)
@@ -367,6 +370,7 @@ class ProcessProductChanges implements ShouldQueue
 
     /**
      * بررسی وجود محصول مادر برای محصولات متغیر
+     * توجه: این متد فقط برای لاگ‌گذاری است و مانع درج محصول نمی‌شود
      *
      * @param array $productData
      * @return void
@@ -380,13 +384,15 @@ class ProcessProductChanges implements ShouldQueue
                 ->exists();
 
             if (!$parentExists) {
-                // اگر محصول مادر هنوز در پایگاه داده وجود ندارد، لاگ هشدار می‌گذاریم
-                Log::warning("محصول مادر با item_id = {$productData['parent_id']} یافت نشد", [
+                // لاگ اطلاعاتی: محصول مادر هنوز درج نشده است
+                // توجه: این مانع درج محصول فرزند نمی‌شود
+                Log::info("محصول فرزند درج می‌شود (محصول مادر هنوز درج نشده)", [
                     'barcode' => $productData['barcode'],
-                    'parent_item_id' => $productData['parent_id']
+                    'parent_item_id' => $productData['parent_id'],
+                    'note' => 'محصول فرزند بدون توجه به وجود محصول مادر درج می‌شود'
                 ]);
             } else {
-                Log::info("محصول متغیر با محصول مادر مرتبط شد", [
+                Log::info("محصول فرزند با محصول مادر موجود مرتبط می‌شود", [
                     'barcode' => $productData['barcode'],
                     'parent_item_id' => $productData['parent_id']
                 ]);
@@ -469,6 +475,8 @@ class ProcessProductChanges implements ShouldQueue
 
     /**
      * ایجاد محصولات جدید
+     * استفاده از updateOrCreate برای جلوگیری از خطای duplicate key
+     * محصولات فرزند حتی بدون وجود محصول مادر درج می‌شوند
      *
      * @param array $parentProducts
      * @param array $childProducts
@@ -486,6 +494,7 @@ class ProcessProductChanges implements ShouldQueue
         $createdProducts = [];
 
         // مرتب‌سازی محصولات برای اطمینان از ایجاد محصولات مادر قبل از محصولات متغیر
+        // توجه: این فقط بهینه‌سازی است، نه الزامی - محصولات فرزند در هر صورت درج می‌شوند
         usort($allProducts, function($a, $b) {
             // اگر یکی parent_id دارد و دیگری ندارد، آنکه parent_id ندارد اول است
             if (empty($a['parent_id']) && !empty($b['parent_id'])) return -1;
@@ -493,9 +502,11 @@ class ProcessProductChanges implements ShouldQueue
             return 0;
         });
 
-        // درج به صورت تک تک برای اطمینان از ترتیب صحیح
+        // درج به صورت تک تک برای اطمینان از ترتیب صحیح و مدیریت خطاها
         foreach ($allProducts as $product) {
             try {
+                // استفاده از updateOrCreate برای جلوگیری از خطای duplicate key
+                // حتی اگر محصول مادر وجود نداشته باشد، محصول فرزند درج می‌شود
                 $createdProduct = Product::updateOrCreate(
                     [
                         'barcode' => $product['barcode'],
@@ -510,12 +521,15 @@ class ProcessProductChanges implements ShouldQueue
                     'barcode' => $product['barcode'],
                     'item_id' => $product['item_id'],
                     'is_variant' => $product['is_variant'],
-                    'parent_id' => $product['parent_id']
+                    'parent_id' => $product['parent_id'] ?? null,
+                    'has_parent' => !empty($product['parent_id'])
                 ]);
             } catch (\Exception $innerException) {
                 Log::error('خطا در ایجاد محصول', [
                     'barcode' => $product['barcode'],
-                    'error' => $innerException->getMessage()
+                    'parent_id' => $product['parent_id'] ?? null,
+                    'error' => $innerException->getMessage(),
+                    'trace' => $innerException->getTraceAsString()
                 ]);
             }
         }
