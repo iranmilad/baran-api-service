@@ -242,11 +242,19 @@ class SyncWooCommerceProducts implements ShouldQueue
                 $regularPrice = (float)($item['Price'] ?? $item['price'] ?? $item['price_amount'] ?? $item['PriceAmount'] ?? 0);
                 $data['regular_price'] = (string)$regularPrice;
 
-                // محاسبه قیمت با تخفیف از CurrentDiscount
-                $currentDiscount = (float)($item['CurrentDiscount'] ?? $item['current_discount'] ?? 0);
-                if ($currentDiscount > 0 && $regularPrice > 0) {
-                    $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
-                    $data['sale_price'] = (string)$salePrice;
+                // بررسی PriceAfterDiscount برای تنظیم قیمت تخفیف‌دار
+                $priceAfterDiscount = (float)($item['PriceAfterDiscount'] ?? $item['price_after_discount'] ?? 0);
+
+                if ($priceAfterDiscount > 0 && $priceAfterDiscount < $regularPrice) {
+                    // اگر PriceAfterDiscount وجود دارد و کمتر از قیمت اصلی است، از آن به عنوان قیمت تخفیف استفاده می‌شود
+                    $data['sale_price'] = (string)$priceAfterDiscount;
+                } else {
+                    // محاسبه قیمت با تخفیف از CurrentDiscount (برای پشتیبانی از روش قدیمی)
+                    $currentDiscount = (float)($item['CurrentDiscount'] ?? $item['current_discount'] ?? 0);
+                    if ($currentDiscount > 0 && $regularPrice > 0) {
+                        $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
+                        $data['sale_price'] = (string)$salePrice;
+                    }
                 }
             }
 
