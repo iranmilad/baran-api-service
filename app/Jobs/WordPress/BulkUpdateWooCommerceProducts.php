@@ -112,6 +112,7 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                             'chunk_index' => $index + 1,
                             'products_count' => count($chunk),
                             'sample_product' => $chunk[0] ?? null, // نمونه اول برای بررسی ساختار
+                            'all_products' => $chunk, // لاگ کامل همه محصولات
                             'request_structure' => [
                                 'products' => count($chunk)
                             ]
