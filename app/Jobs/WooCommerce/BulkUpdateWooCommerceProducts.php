@@ -213,9 +213,22 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
             $priceAfterDiscount = (float)($productData['PriceAfterDiscount'] ?? $productData['price_after_discount'] ?? 0);
             $salePrice = 0;
 
+            Log::info('بررسی قیمت تخفیف در BulkUpdate', [
+                'barcode' => $data['sku'],
+                'product_data_keys' => array_keys($productData),
+                'regular_price' => $regularPrice,
+                'price_after_discount' => $priceAfterDiscount,
+                'license_id' => $this->license_id
+            ]);
+
             // اولویت با PriceAfterDiscount
             if ($priceAfterDiscount > 0 && $priceAfterDiscount < $regularPrice) {
                 $salePrice = $priceAfterDiscount;
+
+                Log::info('قیمت تخفیف از PriceAfterDiscount تنظیم شد', [
+                    'barcode' => $data['sku'],
+                    'sale_price' => $salePrice
+                ]);
             } else {
                 // برای قیمت با تخفیف از CurrentDiscount استفاده می‌کنیم (برای پشتیبانی از روش قدیمی)
                 $currentDiscount = (float)($productData['CurrentDiscount'] ?? $productData['current_discount'] ?? 0);
