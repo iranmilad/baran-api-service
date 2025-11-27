@@ -9,6 +9,7 @@ use App\Models\UserSetting;
 use App\Models\WooCommerceApiKey;
 use App\Traits\PriceUnitConverter;
 use App\Traits\WordPress\WordPressMasterTrait;
+use App\Jobs\WordPress\BulkInsertWooCommerceProducts;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;

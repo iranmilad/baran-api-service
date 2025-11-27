@@ -14,6 +14,8 @@ use App\Models\Product;
 use App\Models\UserSetting;
 use App\Models\WooCommerceApiKey;
 use App\Traits\WordPress\WordPressMasterTrait;
+use App\Jobs\WordPress\BulkInsertWooCommerceProducts;
+use App\Jobs\WordPress\BulkUpdateWooCommerceProducts;
 
 class SyncWooCommerceProducts implements ShouldQueue
 {

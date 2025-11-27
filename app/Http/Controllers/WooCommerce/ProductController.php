@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\WooCommerce;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\WooCommerce\CoordinateProductUpdate;
-use App\Jobs\WooCommerce\UpdateWooCommerceProducts;
-use App\Jobs\WooCommerce\SyncUniqueIds;
-use App\Jobs\WooCommerce\ProcessEmptyUniqueIds;
+use App\Jobs\WordPress\CoordinateProductUpdate;
+use App\Jobs\WordPress\UpdateWooCommerceProducts;
+use App\Jobs\WordPress\SyncUniqueIds;
+use App\Jobs\WordPress\ProcessEmptyUniqueIds;
 use App\Models\UserSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -15,7 +15,7 @@ use Tymon\JWTAuth\Exceptions\TokenExpiredException;
 use Tymon\JWTAuth\Exceptions\TokenInvalidException;
 use App\Jobs\WordPress\ProcessProductChanges;
 use App\Models\License;
-use App\Jobs\WooCommerce\SyncCategories;
+use App\Jobs\WordPress\SyncCategories;
 use Illuminate\Support\Facades\Http;
 
 class ProductController extends Controller

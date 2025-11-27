@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Jobs\ProcessImplicitProductInserts;
 use App\Jobs\RetryFailedProductInserts;
 use App\Jobs\ProcessOrphanProductVariants;
+use App\Jobs\WordPress\SyncWooCommerceProducts;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -172,7 +173,7 @@ class ProcessProductChanges implements ShouldQueue
 
             // استفاده از barcode موجود یا null
             $barcode = !empty($productData['Barcode']) ? $productData['Barcode'] : null;
-            
+
             if ($barcode === null) {
                 Log::info('محصول بدون barcode دریافت شد', [
                     'item_name' => $productData['ItemName'],
@@ -369,7 +370,7 @@ class ProcessProductChanges implements ShouldQueue
 
                 // استفاده از barcode موجود یا null
                 $variantBarcode = !empty($variant['Barcode']) ? $variant['Barcode'] : null;
-                
+
                 if ($variantBarcode === null) {
                     Log::info('واریانت بدون barcode دریافت شد', [
                         'variant_name' => $variant['ItemName'],

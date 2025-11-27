@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\WooCommerce;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\WooCommerce\ProcessInvoice;
+use App\Jobs\WordPress\ProcessInvoice;
 use App\Models\Invoice;
 use App\Models\UserSetting;
 use Illuminate\Http\Request;

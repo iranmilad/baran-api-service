@@ -4,6 +4,7 @@ namespace App\Jobs\WordPress;
 
 use App\Models\License;
 use App\Traits\WordPress\WordPressMasterTrait;
+use App\Jobs\WordPress\ProcessSingleProductBatch;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;

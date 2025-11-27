@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\WooCommerce;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\WooCommerce\SyncProductFromRainSale;
+use App\Jobs\WordPress\SyncProductFromRainSale;
 use App\Models\UserSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use App\Jobs\WooCommerce\ProcessProductSync;
+use App\Jobs\WordPress\ProcessProductSync;
 use Illuminate\Support\Facades\Log;
 
 class ProductSyncController extends Controller
