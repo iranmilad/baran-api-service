@@ -236,6 +236,13 @@ class SyncWooCommerceProducts implements ShouldQueue
                 $data['name'] = $item['Name'] ?? $item['name'] ?? $item['item_name'] ?? $item['ItemName'] ?? '';
             }
 
+            Log::info('بررسی تنظیمات قیمت', [
+                'barcode' => $data['barcode'],
+                'operation' => $this->operation,
+                'enable_price_update' => $userSettings->enable_price_update,
+                'will_process_price' => ($this->operation === 'insert' || $userSettings->enable_price_update)
+            ]);
+
             // برای درج، همیشه قیمت و موجودی را شامل کن
             if ($this->operation === 'insert' || $userSettings->enable_price_update) {
                 // استفاده از ساختار صحیح RainSale API
