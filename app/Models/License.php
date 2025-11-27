@@ -190,7 +190,7 @@ class License extends Authenticatable implements JWTSubject
             return false;
         }
 
-        if ($this->expires_at && $this->expires_at <= now()) {
+        if ($this->token_expires_at && $this->token_expires_at <= now()) {
             return false;
         }
 
