@@ -355,24 +355,58 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             (float)$priceIncreasePercentage
         );
 
-        $salePrice = $this->calculateFinalPrice(
-            (float)$priceAmount,
-            (float)$discountPercentage,
-            (float)$priceIncreasePercentage
-        );
-
         $data['regular_price'] = (string)$this->convertPriceUnit(
             $regularPrice,
             $userSetting->rain_sale_price_unit,
             $userSetting->woocommerce_price_unit
         );
 
-        if ($discountPercentage > 0) {
+        // محاسبه قیمت تخفیف‌دار با اولویت PriceAfterDiscount
+        $salePriceToSet = null;
+
+        // اولویت اول: اگر PriceAfterDiscount ارسال شده و معتبر است
+        if (!empty($priceAfterDiscount) && (float)$priceAfterDiscount > 0 && (float)$priceAfterDiscount < (float)$priceAmount) {
+            $salePriceToSet = $this->calculateFinalPrice(
+                (float)$priceAfterDiscount,
+                0,
+                (float)$priceIncreasePercentage
+            );
+
+            Log::info('استفاده از PriceAfterDiscount برای محصول', [
+                'barcode' => $barcode,
+                'priceAmount' => $priceAmount,
+                'priceAfterDiscount' => $priceAfterDiscount,
+                'salePriceToSet' => $salePriceToSet
+            ]);
+        }
+        // اولویت دوم: اگر CurrentDiscount وجود دارد
+        elseif (!empty($discountPercentage) && (float)$discountPercentage > 0) {
+            $salePriceToSet = $this->calculateFinalPrice(
+                (float)$priceAmount,
+                (float)$discountPercentage,
+                (float)$priceIncreasePercentage
+            );
+
+            Log::info('استفاده از CurrentDiscount برای محصول', [
+                'barcode' => $barcode,
+                'priceAmount' => $priceAmount,
+                'discountPercentage' => $discountPercentage,
+                'salePriceToSet' => $salePriceToSet
+            ]);
+        }
+
+        // تنظیم sale_price در صورتی که محاسبه شده باشد
+        if ($salePriceToSet !== null && $salePriceToSet > 0) {
             $data['sale_price'] = (string)$this->convertPriceUnit(
-                $salePrice,
+                $salePriceToSet,
                 $userSetting->rain_sale_price_unit,
                 $userSetting->woocommerce_price_unit
             );
+
+            Log::info('تنظیم sale_price برای محصول', [
+                'barcode' => $barcode,
+                'sale_price' => $data['sale_price']
+            ]);
         }
 
         // اضافه کردن دسته‌بندی ووکامرس بر اساس department_name
