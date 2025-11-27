@@ -175,7 +175,7 @@ class ProductController extends Controller
                         // }
 
                         if (array_key_exists('ParentID', $productData)) {
-                            $productData['is_variant'] = ($productData['Type'] == 239 && $productData['ParentID']!=null);
+                            $productData['is_variant'] = ($productData['Type'] == 239);
                             $productData['parent_id'] = $productData['ParentID'];
                             unset($productData['ParentID']);
                         }
