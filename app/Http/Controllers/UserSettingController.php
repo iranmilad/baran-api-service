@@ -101,7 +101,7 @@ class UserSettingController extends Controller
                     'invoice_cancelled_type',
                     'invoice_refunded_type',
                     'invoice_failed_type',
-                    'payment_gateways',
+                    'payment_gateway_accounts',
                     'shipping_cost_method',
                     'shipping_product_unique_id',
                     'default_warehouse_code',
@@ -301,7 +301,7 @@ class UserSettingController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'payment_gateways' => []
+                    'payment_gateway_accounts' => []
                 ]
             ]);
         }
@@ -309,7 +309,7 @@ class UserSettingController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'payment_gateways' => $settings->settings['payment_gateways'] ?? []
+                'payment_gateway_accounts' => $settings->settings['payment_gateway_accounts'] ?? []
             ]
         ]);
     }
@@ -319,7 +319,7 @@ class UserSettingController extends Controller
         $validator = Validator::make($request->all(), [
             'serial_key' => 'required|string',
             'site_url' => 'required|url',
-            'payment_gateways' => 'required|array'
+            'payment_gateway_accounts' => 'required|array'
         ]);
 
         if ($validator->fails()) {
@@ -346,12 +346,12 @@ class UserSettingController extends Controller
         if (!$settings) {
             $settings = $license->userSetting()->create([
                 'settings' => [
-                    'payment_gateways' => $request->payment_gateways
+                    'payment_gateway_accounts' => $request->payment_gateway_accounts
                 ]
             ]);
         } else {
             $currentSettings = $settings->settings;
-            $currentSettings['payment_gateways'] = $request->payment_gateways;
+            $currentSettings['payment_gateway_accounts'] = $request->payment_gateway_accounts;
             $settings->update([
                 'settings' => $currentSettings
             ]);
@@ -361,7 +361,7 @@ class UserSettingController extends Controller
             'success' => true,
             'message' => 'تنظیمات درگاه‌های پرداخت با موفقیت به‌روزرسانی شد',
             'data' => [
-                'payment_gateways' => $settings->settings['payment_gateways']
+                'payment_gateway_accounts' => $settings->settings['payment_gateway_accounts']
             ]
         ]);
     }

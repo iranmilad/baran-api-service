@@ -24,7 +24,7 @@ class UserSettingSeeder extends Seeder
                     'enable_new_product' => true,
                     'enable_invoice' => false,
                     'enable_cart_sync' => false,
-                    'payment_gateways' => [],
+                    'payment_gateway_accounts' => [],
                     'invoice_settings' => [
                         'cash_on_delivery' => false,
                         'credit_payment' => false

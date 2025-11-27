@@ -26,7 +26,7 @@ return new class extends Migration
                     'enable_new_product' => true,
                     'enable_invoice' => true,
                     'enable_cart_sync' => true,
-                    'payment_gateways' => json_encode([]),
+                    'payment_gateway_accounts' => json_encode([]),
                     'invoice_settings' => json_encode([
                         'cash_on_delivery' => true,
                         'credit_payment' => true
@@ -43,4 +43,4 @@ return new class extends Migration
         // در صورت نیاز به برگشت، می‌توانیم تنظیمات را حذف کنیم
         DB::table('user_settings')->truncate();
     }
-}; 
+};

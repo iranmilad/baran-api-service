@@ -283,7 +283,7 @@ trait WcTrait
         $curl = curl_init();
 
         curl_setopt_array($curl, array(
-            CURLOPT_URL => $user->siteUrl . '/wp-json/wc/v3/payment_gateways',
+            CURLOPT_URL => $user->siteUrl . '/wp-json/wc/v3/payment_gateway_accounts',
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_MAXREDIRS => 10,
             CURLOPT_TIMEOUT => 0,

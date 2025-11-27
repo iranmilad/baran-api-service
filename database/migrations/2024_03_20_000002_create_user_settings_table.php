@@ -17,7 +17,7 @@ return new class extends Migration
             $table->boolean('enable_new_product')->default(true);
             $table->boolean('enable_invoice')->default(false);
             $table->boolean('enable_cart_sync')->default(false);
-            $table->json('payment_gateways')->nullable();
+            $table->json('payment_gateway_accounts')->nullable();
             $table->json('invoice_settings')->nullable();
             $table->enum('rain_sale_price_unit', ['rial', 'toman'])->default('toman');
             $table->enum('woocommerce_price_unit', ['rial', 'toman'])->default('toman');
