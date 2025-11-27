@@ -104,6 +104,34 @@ Schedule::call(function () {
     }
 })->everyFifteenMinutes();
 
+// غیرفعال کردن لایسنس‌های منقضی شده هر روز ساعت 8 صبح
+Schedule::call(function () {
+    $expiredLicenses = DB::table('licenses')
+        ->where('expires_at', '<', now())
+        ->where('is_active', true)
+        ->get();
+
+    if ($expiredLicenses->count() > 0) {
+        $deactivatedCount = DB::table('licenses')
+            ->where('expires_at', '<', now())
+            ->where('is_active', true)
+            ->update([
+                'is_active' => false,
+                'updated_at' => now()
+            ]);
+
+        Log::info('Expired licenses deactivated', [
+            'deactivated_count' => $deactivatedCount,
+            'expired_licenses' => $expiredLicenses->pluck('id')->toArray(),
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    } else {
+        Log::info('No expired licenses found to deactivate', [
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    }
+})->dailyAt('08:00')->onOneServer();
+
 
 
 //    /usr/local/lsws/lsphp82/bin/php  /home/samtatech.org/public_html/server/artisan schedule:run >> /home/samtatech.org/public_html/logs/artisan_schedule.log 2>&1
