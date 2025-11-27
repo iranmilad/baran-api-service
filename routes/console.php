@@ -130,7 +130,7 @@ Schedule::call(function () {
             'timestamp' => now()->toDateTimeString()
         ]);
     }
-})->dailyAt('08:00')->onOneServer();
+})->dailyAt('08:00')->name('deactivate-expired-licenses')->onOneServer();
 
 
 
