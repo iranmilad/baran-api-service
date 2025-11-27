@@ -213,13 +213,26 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
             // Response: {"GetItemInfosResult": [{"Price": 490000000.000, ...}]}
             $regularPrice = (float)($productData['Price'] ?? $productData['price'] ?? $productData['price_amount'] ?? $productData['PriceAmount'] ?? $productData['regular_price'] ?? 0);
 
-            // برای قیمت با تخفیف از CurrentDiscount استفاده می‌کنیم
-            $currentDiscount = (float)($productData['CurrentDiscount'] ?? $productData['current_discount'] ?? 0);
+            // بررسی PriceAfterDiscount برای تنظیم قیمت تخفیف‌دار
+            $priceAfterDiscount = (float)($productData['PriceAfterDiscount'] ?? $productData['price_after_discount'] ?? 0);
             $salePrice = 0;
 
-            // محاسبه قیمت با تخفیف اگر تخفیف وجود دارد
-            if ($currentDiscount > 0) {
-                $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
+            // اولویت با PriceAfterDiscount
+            if ($priceAfterDiscount > 0 && $priceAfterDiscount < $regularPrice) {
+                $salePrice = $priceAfterDiscount;
+            } else {
+                // برای قیمت با تخفیف از CurrentDiscount استفاده می‌کنیم (برای پشتیبانی از روش قدیمی)
+                $currentDiscount = (float)($productData['CurrentDiscount'] ?? $productData['current_discount'] ?? 0);
+                
+                // محاسبه قیمت با تخفیف اگر تخفیف وجود دارد
+                if ($currentDiscount > 0) {
+                    $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
+                }
+            }
+
+            // اگر sale_price از قبل در $productData وجود دارد (از SyncWooCommerceProducts)، از آن استفاده کن
+            if (isset($productData['sale_price']) && $productData['sale_price'] > 0) {
+                $salePrice = (float)$productData['sale_price'];
             }
 
             // تبدیل قیمت‌ها به واحد ووکامرس
