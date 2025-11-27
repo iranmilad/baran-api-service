@@ -252,6 +252,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         $totalCount = $productData['total_count'] ?? $productData['TotalCount'] ?? $productData['stock_quantity'] ?? 0;
         $departmentName = $productData['department_name'] ?? $productData['DepartmentName'] ?? null;
         $priceAmount = $productData['price_amount'] ?? $productData['PriceAmount'] ?? $productData['regular_price'] ?? 0;
+        $priceAfterDiscount = $productData['price_after_discount'] ?? $productData['PriceAfterDiscount'] ?? 0;
         $isVariant = $productData['is_variant'] ?? $productData['IsVariant'] ?? false;
         $parentId = $productData['parent_id'] ?? $productData['ParentId'] ?? null;
         $discountPercentage = $productData['discount_percentage'] ?? $productData['DiscountPercentage'] ?? 0;
@@ -355,11 +356,23 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             (float)$priceIncreasePercentage
         );
 
-        $salePrice = $this->calculateFinalPrice(
-            (float)$priceAmount,
-            (float)$discountPercentage,
-            (float)$priceIncreasePercentage
-        );
+        // محاسبه قیمت تخفیف‌دار - اولویت با PriceAfterDiscount
+        $salePrice = 0;
+        if ($priceAfterDiscount > 0 && $priceAfterDiscount < $priceAmount) {
+            // اگر PriceAfterDiscount وجود دارد، از آن استفاده می‌کنیم
+            $salePrice = $this->calculateFinalPrice(
+                (float)$priceAfterDiscount,
+                0,
+                (float)$priceIncreasePercentage
+            );
+        } elseif ($discountPercentage > 0) {
+            // در غیر این صورت از discountPercentage استفاده می‌کنیم (روش قدیمی)
+            $salePrice = $this->calculateFinalPrice(
+                (float)$priceAmount,
+                (float)$discountPercentage,
+                (float)$priceIncreasePercentage
+            );
+        }
 
         $data['regular_price'] = (string)$this->convertPriceUnit(
             $regularPrice,
@@ -367,7 +380,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             $userSetting->woocommerce_price_unit
         );
 
-        if ($discountPercentage > 0) {
+        if ($salePrice > 0 && $salePrice < $regularPrice) {
             $data['sale_price'] = (string)$this->convertPriceUnit(
                 $salePrice,
                 $userSetting->rain_sale_price_unit,
