@@ -223,7 +223,7 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
             } else {
                 // برای قیمت با تخفیف از CurrentDiscount استفاده می‌کنیم (برای پشتیبانی از روش قدیمی)
                 $currentDiscount = (float)($productData['CurrentDiscount'] ?? $productData['current_discount'] ?? 0);
-                
+
                 // محاسبه قیمت با تخفیف اگر تخفیف وجود دارد
                 if ($currentDiscount > 0) {
                     $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
