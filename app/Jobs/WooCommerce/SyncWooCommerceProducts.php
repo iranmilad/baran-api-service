@@ -245,9 +245,22 @@ class SyncWooCommerceProducts implements ShouldQueue
                 // بررسی PriceAfterDiscount برای تنظیم قیمت تخفیف‌دار
                 $priceAfterDiscount = (float)($item['PriceAfterDiscount'] ?? $item['price_after_discount'] ?? 0);
 
+                Log::info('بررسی قیمت تخفیف‌دار', [
+                    'barcode' => $data['barcode'],
+                    'regular_price' => $regularPrice,
+                    'price_after_discount' => $priceAfterDiscount,
+                    'item_data' => $item,
+                    'operation' => $this->operation
+                ]);
+
                 if ($priceAfterDiscount > 0 && $priceAfterDiscount < $regularPrice) {
                     // اگر PriceAfterDiscount وجود دارد و کمتر از قیمت اصلی است، از آن به عنوان قیمت تخفیف استفاده می‌شود
                     $data['sale_price'] = (string)$priceAfterDiscount;
+
+                    Log::info('قیمت تخفیف تنظیم شد', [
+                        'barcode' => $data['barcode'],
+                        'sale_price' => $data['sale_price']
+                    ]);
                 } else {
                     // محاسبه قیمت با تخفیف از CurrentDiscount (برای پشتیبانی از روش قدیمی)
                     $currentDiscount = (float)($item['CurrentDiscount'] ?? $item['current_discount'] ?? 0);
