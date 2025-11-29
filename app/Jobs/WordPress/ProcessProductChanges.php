@@ -67,8 +67,11 @@ class ProcessProductChanges implements ShouldQueue
             $variantsToCreate = [];
             $variantsToDelete = [];
             $updateIds = [];
-            $parentProducts = []; // لیست محصولات مادر
-            $childProducts = []; // لیست محصولات متغیر
+            $parentProducts = [];
+            $childProducts = [];
+            $implicitInserts = [];
+            $failedInserts = [];
+            $orphanVariants = [];
 
             // جمع‌آوری تمام بارکدها برای یک کوئری
             $allBarcodes = collect($this->changes)
@@ -77,8 +80,10 @@ class ProcessProductChanges implements ShouldQueue
                 ->values()
                 ->toArray();
 
-            // دریافت تمام محصولات موجود در یک کوئری
+            // دریافت تمام محصولات موجود در یک کوئری با فقط فیلدهای مورد نیاز
             $existingProducts = Product::whereIn('barcode', $allBarcodes)
+                ->where('license_id', $this->license_id)
+                ->select(['id', 'barcode', 'item_id', 'is_variant', 'parent_id'])
                 ->get()
                 ->keyBy('barcode');
 
@@ -86,16 +91,18 @@ class ProcessProductChanges implements ShouldQueue
             $this->processChanges($now, $existingProducts, $parentProducts, $childProducts, $productsToCreate, $productsToUpdate, $variantsToCreate, $variantsToDelete, $updateIds, $implicitInserts);
 
             // حذف واریانت‌های قدیمی در یک عملیات
-            $this->deleteOldVariants($variantsToDelete);
+            if (!empty($variantsToDelete)) {
+                $this->deleteOldVariants($variantsToDelete);
+            }
 
             // به‌روزرسانی محصولات موجود در یک عملیات
-            $processedUpdates = $this->updateExistingProducts($productsToUpdate);
+            $processedUpdates = !empty($productsToUpdate) ? $this->updateExistingProducts($productsToUpdate) : [];
 
             // ایجاد محصولات جدید در یک عملیات
             $processedInserts = $this->createNewProducts($parentProducts, $childProducts, $productsToCreate);
 
             // ایجاد واریانت‌های جدید در یک عملیات
-            $processedVariants = $this->createNewVariants($variantsToCreate);
+            $processedVariants = !empty($variantsToCreate) ? $this->createNewVariants($variantsToCreate) : [];
 
             DB::commit();
 
@@ -110,17 +117,20 @@ class ProcessProductChanges implements ShouldQueue
 
             // ارسال درج‌های ضمنی به کیو جداگانه
             if (!empty($implicitInserts)) {
-                ProcessImplicitProductInserts::dispatch($implicitInserts, $this->license_id);
+                ProcessImplicitProductInserts::dispatch($implicitInserts, $this->license_id)
+                    ->onQueue('implicit-inserts');
             }
 
             // ارسال درج‌های ناموفق به کیو جداگانه (retry)
             if (!empty($failedInserts)) {
-                RetryFailedProductInserts::dispatch($failedInserts, $this->license_id);
+                RetryFailedProductInserts::dispatch($failedInserts, $this->license_id)
+                    ->onQueue('failed-inserts');
             }
 
             // ارسال فرزندان بی‌پدر به کیو جداگانه با تأخیر 30 ثانیه‌ای
             if (!empty($orphanVariants)) {
                 ProcessOrphanProductVariants::dispatch($orphanVariants, $this->license_id)
+                    ->onQueue('orphan-variants')
                     ->delay(now()->addSeconds(30));
 
                 Log::info('فرزندان بی‌پدر برای پردازش بعدی ارسال شدند', [
@@ -415,7 +425,7 @@ class ProcessProductChanges implements ShouldQueue
     }
 
     /**
-     * به‌روزرسانی محصولات موجود
+     * به‌روزرسانی محصولات موجود با استفاده از Bulk Update
      *
      * @param array $productsToUpdate
      * @return array محصولات به‌روزرسانی شده
@@ -426,39 +436,45 @@ class ProcessProductChanges implements ShouldQueue
             return [];
         }
 
-        $updateQuery = "UPDATE products SET ";
-        $updateFields = [];
-        $fields = ['barcode', 'item_name', 'item_id', 'price_amount', 'price_after_discount',
-                 'total_count', 'stock_id', 'is_variant', 'parent_id', 'last_sync_at',
-                 'license_id', 'updated_at', 'created_at'];
-
-        foreach ($fields as $field) {
-            $updateFields[] = "`$field` = ?";
-        }
-
-        $updateQuery .= implode(", ", $updateFields);
-        $updateQuery .= " WHERE id = ?";
-
+        // استفاده از upsert برای به‌روزرسانی گروهی بهینه
+        $updateData = [];
         foreach ($productsToUpdate as $product) {
-            $values = [
-                $product['barcode'],
-                $product['item_name'],
-                $product['item_id'],
-                $product['price_amount'],
-                $product['price_after_discount'],
-                $product['total_count'],
-                $product['stock_id'],
-                $product['is_variant'],
-                $product['parent_id'],
-                $product['last_sync_at'],
-                $product['license_id'],
-                $product['updated_at'],
-                $product['created_at'],
-                $product['id'] // برای شرط WHERE
+            $updateData[] = [
+                'id' => $product['id'],
+                'barcode' => $product['barcode'],
+                'item_name' => $product['item_name'],
+                'item_id' => $product['item_id'],
+                'price_amount' => $product['price_amount'],
+                'price_after_discount' => $product['price_after_discount'],
+                'total_count' => $product['total_count'],
+                'stock_id' => $product['stock_id'],
+                'is_variant' => $product['is_variant'],
+                'parent_id' => $product['parent_id'],
+                'last_sync_at' => $product['last_sync_at'],
+                'license_id' => $product['license_id'],
+                'updated_at' => $product['updated_at'],
             ];
-
-            DB::update($updateQuery, $values);
         }
+
+        // به‌روزرسانی دسته‌ای با استفاده از CASE WHEN
+        $ids = array_column($updateData, 'id');
+        $cases = [];
+        $params = [];
+
+        foreach (['item_name', 'item_id', 'price_amount', 'price_after_discount', 'total_count', 'stock_id', 'is_variant', 'parent_id', 'last_sync_at', 'updated_at'] as $field) {
+            $whenClauses = [];
+            foreach ($updateData as $data) {
+                $whenClauses[] = "WHEN ? THEN ?";
+                $params[] = $data['id'];
+                $params[] = $data[$field];
+            }
+            $cases[] = "`$field` = CASE `id` " . implode(' ', $whenClauses) . " END";
+        }
+
+        $sql = "UPDATE products SET " . implode(', ', $cases) . " WHERE id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")";
+        $params = array_merge($params, $ids);
+
+        DB::update($sql, $params);
 
         Log::info('محصولات با موفقیت به‌روزرسانی شدند', [
             'count' => count($productsToUpdate)
@@ -468,7 +484,7 @@ class ProcessProductChanges implements ShouldQueue
     }
 
     /**
-     * ایجاد محصولات جدید
+     * ایجاد محصولات جدید با استفاده از Bulk Insert
      *
      * @param array $parentProducts
      * @param array $childProducts
@@ -481,47 +497,72 @@ class ProcessProductChanges implements ShouldQueue
             return [];
         }
 
-        // ترکیب همه محصولات برای درج
-        $allProducts = array_merge($parentProducts, $productsToCreate, $childProducts);
         $createdProducts = [];
 
-        // مرتب‌سازی محصولات برای اطمینان از ایجاد محصولات مادر قبل از محصولات متغیر
-        usort($allProducts, function($a, $b) {
-            // اگر یکی parent_id دارد و دیگری ندارد، آنکه parent_id ندارد اول است
-            if (empty($a['parent_id']) && !empty($b['parent_id'])) return -1;
-            if (!empty($a['parent_id']) && empty($b['parent_id'])) return 1;
-            return 0;
-        });
-
-        // درج به صورت تک تک برای اطمینان از ترتیب صحیح
-        foreach ($allProducts as $product) {
+        // مرحله 1: درج محصولات مادر و معمولی (بدون parent_id)
+        $parentsAndRegular = array_merge($parentProducts, $productsToCreate);
+        if (!empty($parentsAndRegular)) {
             try {
-                $createdProduct = Product::updateOrCreate(
-                    [
-                        'barcode' => $product['barcode'],
-                        'license_id' => $this->license_id
-                    ],
-                    $product
-                );
+                DB::table('products')->insert($parentsAndRegular);
+                $createdProducts = array_merge($createdProducts, $parentsAndRegular);
 
-                $createdProducts[] = $product;
+                Log::info('محصولات مادر و معمولی ایجاد شدند', [
+                    'count' => count($parentsAndRegular)
+                ]);
+            } catch (\Exception $e) {
+                Log::error('خطا در درج دسته‌ای محصولات مادر', [
+                    'error' => $e->getMessage()
+                ]);
 
-                Log::info('محصول ایجاد شد', [
-                    'barcode' => $product['barcode'],
-                    'item_id' => $product['item_id'],
-                    'is_variant' => $product['is_variant'],
-                    'parent_id' => $product['parent_id']
+                // Fallback: درج تک تک
+                foreach ($parentsAndRegular as $product) {
+                    try {
+                        DB::table('products')->insert($product);
+                        $createdProducts[] = $product;
+                    } catch (\Exception $innerException) {
+                        Log::error('خطا در ایجاد محصول', [
+                            'barcode' => $product['barcode'],
+                            'error' => $innerException->getMessage()
+                        ]);
+                    }
+                }
+            }
+        }
+
+        // مرحله 2: درج محصولات متغیر (با parent_id)
+        if (!empty($childProducts)) {
+            try {
+                // تأخیر کوچک برای اطمینان از ایجاد والدین
+                usleep(100000); // 100ms
+
+                DB::table('products')->insert($childProducts);
+                $createdProducts = array_merge($createdProducts, $childProducts);
+
+                Log::info('محصولات متغیر ایجاد شدند', [
+                    'count' => count($childProducts)
                 ]);
-            } catch (\Exception $innerException) {
-                Log::error('خطا در ایجاد محصول', [
-                    'barcode' => $product['barcode'],
-                    'error' => $innerException->getMessage()
+            } catch (\Exception $e) {
+                Log::error('خطا در درج دسته‌ای محصولات متغیر', [
+                    'error' => $e->getMessage()
                 ]);
+
+                // Fallback: درج تک تک
+                foreach ($childProducts as $product) {
+                    try {
+                        DB::table('products')->insert($product);
+                        $createdProducts[] = $product;
+                    } catch (\Exception $innerException) {
+                        Log::error('خطا در ایجاد محصول متغیر', [
+                            'barcode' => $product['barcode'],
+                            'error' => $innerException->getMessage()
+                        ]);
+                    }
+                }
             }
         }
 
         Log::info('محصولات جدید با موفقیت ایجاد شدند', [
-            'count' => count($allProducts),
+            'total_count' => count($createdProducts),
             'parents' => count($parentProducts),
             'children' => count($childProducts),
             'regular' => count($productsToCreate)
@@ -531,7 +572,7 @@ class ProcessProductChanges implements ShouldQueue
     }
 
     /**
-     * ایجاد واریانت‌های جدید
+     * ایجاد واریانت‌های جدید با استفاده از Bulk Insert
      *
      * @param array $variantsToCreate
      * @return array واریانت‌های ایجاد شده
@@ -544,42 +585,32 @@ class ProcessProductChanges implements ShouldQueue
 
         $createdVariants = [];
 
-        // مرتب‌سازی واریانت‌ها بر اساس parent_id
-        usort($variantsToCreate, function($a, $b) {
-            // اگر یکی parent_id دارد و دیگری ندارد، آنکه parent_id ندارد اول است
-            if (empty($a['parent_id']) && !empty($b['parent_id'])) return -1;
-            if (!empty($a['parent_id']) && empty($b['parent_id'])) return 1;
-            return 0;
-        });
+        try {
+            // درج دسته‌ای واریانت‌ها
+            DB::table('products')->insert($variantsToCreate);
+            $createdVariants = $variantsToCreate;
 
-        // درج به صورت تک تک برای اطمینان از ترتیب صحیح
-        foreach ($variantsToCreate as $variant) {
-            try {
-                $createdVariant = Product::updateOrCreate(
-                    [
+            Log::info('واریانت‌های جدید با موفقیت ایجاد شدند', [
+                'count' => count($variantsToCreate)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('خطا در درج دسته‌ای واریانت‌ها', [
+                'error' => $e->getMessage()
+            ]);
+
+            // Fallback: درج تک تک در صورت خطا
+            foreach ($variantsToCreate as $variant) {
+                try {
+                    DB::table('products')->insert($variant);
+                    $createdVariants[] = $variant;
+                } catch (\Exception $innerException) {
+                    Log::error('خطا در ایجاد واریانت', [
                         'barcode' => $variant['barcode'],
-                        'license_id' => $this->license_id
-                    ],
-                    $variant
-                );
-
-                $createdVariants[] = $variant;
-
-                Log::info('واریانت ایجاد شد', [
-                    'barcode' => $variant['barcode'],
-                    'parent_id' => $variant['parent_id']
-                ]);
-            } catch (\Exception $innerException) {
-                Log::error('خطا در ایجاد واریانت', [
-                    'barcode' => $variant['barcode'],
-                    'error' => $innerException->getMessage()
-                ]);
+                        'error' => $innerException->getMessage()
+                    ]);
+                }
             }
         }
-
-        Log::info('واریانت‌های جدید با موفقیت ایجاد شدند', [
-            'count' => count($variantsToCreate)
-        ]);
 
         return $createdVariants;
     }

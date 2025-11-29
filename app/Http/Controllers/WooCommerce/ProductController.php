@@ -201,13 +201,12 @@ class ProductController extends Controller
                 }
 
                 // Process changes in batches
-                $batchSize = 5; // کاهش اندازه batch از 10 به 5
+                $batchSize = 50;
                 foreach (array_chunk($changes, $batchSize) as $batchIndex => $batch) {
                     try {
                         // Dispatch batch changes to queue with increasing delay
                         ProcessProductChanges::dispatch($batch, $license->id)
-                            ->onQueue('products')
-                            ->delay(now()->addSeconds($batchIndex * 20)); // افزایش delay از 15 به 20
+                            ->onQueue('products');
 
                     } catch (\Exception $e) {
                         Log::error('Error dispatching batch: ' . $e->getMessage());
