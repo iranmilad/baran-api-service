@@ -201,7 +201,7 @@ class ProductController extends Controller
                 }
 
                 // Process changes in batches
-                $batchSize = 50;
+                $batchSize = 100;
                 foreach (array_chunk($changes, $batchSize) as $batchIndex => $batch) {
                     try {
                         // Dispatch batch changes to queue with increasing delay

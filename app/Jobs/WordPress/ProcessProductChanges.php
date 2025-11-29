@@ -90,11 +90,6 @@ class ProcessProductChanges implements ShouldQueue
             // پردازش هر تغییر و دسته‌بندی محصولات
             $this->processChanges($now, $existingProducts, $parentProducts, $childProducts, $productsToCreate, $productsToUpdate, $variantsToCreate, $variantsToDelete, $updateIds, $implicitInserts);
 
-            // حذف واریانت‌های قدیمی در یک عملیات
-            if (!empty($variantsToDelete)) {
-                $this->deleteOldVariants($variantsToDelete);
-            }
-
             // به‌روزرسانی محصولات موجود در یک عملیات
             $processedUpdates = !empty($productsToUpdate) ? $this->updateExistingProducts($productsToUpdate) : [];
 
@@ -318,10 +313,6 @@ class ProcessProductChanges implements ShouldQueue
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
-
-                if (!empty($productData['attributes'])) {
-                    $variantsToDelete[] = $existingProduct->item_id;
-                }
             }
         } else {
             $existingProduct = $existingProducts->get($barcode);
@@ -329,10 +320,6 @@ class ProcessProductChanges implements ShouldQueue
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
-
-                if (!empty($productData['attributes'])) {
-                    $variantsToDelete[] = $existingProduct->item_id;
-                }
             } else {
                 // اگر محصول برای به‌روزرسانی یافت نشد، به insert تغییر می‌دهیم
                 Log::info("محصول با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
