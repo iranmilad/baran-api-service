@@ -4,8 +4,10 @@ namespace App\Jobs\WordPress;
 
 use App\Models\License;
 use App\Models\ProductAttribute;
+use App\Models\ProductProperty;
 use App\Models\Notification;
 use App\Traits\WordPress\WooCommerceApiTrait;
+use App\Traits\Baran\BaranApiTrait;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -16,7 +18,7 @@ use Illuminate\Support\Facades\Log;
 class SyncAttributesWithWooCommerceJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-    use WooCommerceApiTrait;
+    use WooCommerceApiTrait, BaranApiTrait;
 
     public $timeout = 600; // 10 دقیقه
     public $tries = 3;
@@ -31,12 +33,12 @@ class SyncAttributesWithWooCommerceJob implements ShouldQueue
 
     public function handle()
     {
-        Log::info('=== شروع Job همگام‌سازی ویژگی‌ها ===', [
+        Log::info('=== شروع Job همگام‌سازی ویژگی‌ها از Baran ===', [
             'license_id' => $this->licenseId
         ]);
 
         try {
-            $license = License::with('woocommerceApiKey')->findOrFail($this->licenseId);
+            $license = License::with(['woocommerceApiKey', 'user'])->findOrFail($this->licenseId);
 
             // بررسی نوع وب سرویس
             if ($license->web_service_type !== License::WEB_SERVICE_WORDPRESS) {
@@ -47,8 +49,20 @@ class SyncAttributesWithWooCommerceJob implements ShouldQueue
                 throw new \Exception('کلید API برای این لایسنس تنظیم نشده است');
             }
 
+            // دریافت ویژگی‌ها از Baran API
+            $baranAttributes = $this->getBaranAttributes($license);
+
+            if (empty($baranAttributes)) {
+                throw new \Exception('هیچ ویژگی‌ای از Baran دریافت نشد');
+            }
+
+            Log::info('Baran attributes fetched', [
+                'count' => count($baranAttributes)
+            ]);
+
             $syncedAttributes = 0;
-            $syncedTerms = 0;
+            $syncedProperties = 0;
+            $createdInDatabase = 0;
             $errors = [];
 
             // دریافت درخت کامل attributes از WooCommerce (یک درخواست به جای چندین)
@@ -68,15 +82,35 @@ class SyncAttributesWithWooCommerceJob implements ShouldQueue
             ]);
 
             // ایجاد map از attributes موجود برای جستجوی سریع
+            // جستجو بر اساس slug با اولویت، سپس name
             $existingAttributesMap = [];
             foreach ($globalAttributes as $attr) {
-                $key = strtolower($attr['slug']);
-                $existingAttributesMap[$key] = [
+                $attributeData = [
                     'id' => $attr['id'],
                     'name' => $attr['name'],
                     'slug' => $attr['slug'],
                     'terms' => $attr['terms'] ?? []
                 ];
+
+                // 1. اضافه کردن بر اساس slug
+                $slugKey = strtolower($attr['slug']);
+                $existingAttributesMap['slug:' . $slugKey] = $attributeData;
+
+                // 2. اضافه کردن کلیدهای جایگزین برای attributes با prefix "pa_"
+                if (strpos($slugKey, 'pa_') === 0) {
+                    $slugWithoutPrefix = substr($slugKey, 3);
+                    $existingAttributesMap['slug:' . $slugWithoutPrefix] = $attributeData;
+                } else {
+                    // اگر بدون prefix باشد، با prefix هم اضافه کن
+                    $slugWithPrefix = 'pa_' . $slugKey;
+                    $existingAttributesMap['slug:' . $slugWithPrefix] = $attributeData;
+                }
+
+                // 3. اضافه کردن بر اساس name (اولویت کمتر)
+                $nameKey = strtolower($attr['name']);
+                if (!isset($existingAttributesMap['name:' . $nameKey])) {
+                    $existingAttributesMap['name:' . $nameKey] = $attributeData;
+                }
             }
 
             // دریافت تمام ویژگی‌های فعال از دیتابیس
@@ -93,21 +127,39 @@ class SyncAttributesWithWooCommerceJob implements ShouldQueue
 
             foreach ($attributes as $attribute) {
                 try {
-                    $attributeKey = strtolower($attribute->slug);
+                    $attributeSlug = strtolower($attribute->slug);
+                    $attributeName = strtolower($attribute->name);
+
+                    // تلاش برای یافتن attribute: اول slug، سپس name
+                    $wcAttribute = null;
+                    $matchType = null;
+
+                    // 1. جستجو بر اساس slug (اولویت بالا)
+                    if (isset($existingAttributesMap['slug:' . $attributeSlug])) {
+                        $wcAttribute = $existingAttributesMap['slug:' . $attributeSlug];
+                        $matchType = 'slug_exact';
+                    }
+                    // 2. اگر slug دقیق پیدا نشد، نام را جستجو کن
+                    elseif (isset($existingAttributesMap['name:' . $attributeName])) {
+                        $wcAttribute = $existingAttributesMap['name:' . $attributeName];
+                        $matchType = 'name';
+                    }
 
                     // بررسی وجود در global attributes
-                    if (isset($existingAttributesMap[$attributeKey])) {
-                        $wcAttribute = $existingAttributesMap[$attributeKey];
-
+                    if ($wcAttribute !== null) {
                         Log::info('Attribute already exists in WooCommerce', [
                             'attribute_name' => $attribute->name,
-                            'wc_id' => $wcAttribute['id']
+                            'database_slug' => $attribute->slug,
+                            'woocommerce_slug' => $wcAttribute['slug'],
+                            'wc_id' => $wcAttribute['id'],
+                            'match_type' => $matchType
                         ]);
                     } else {
                         // ایجاد attribute جدید
                         Log::info('Creating new attribute in WooCommerce', [
                             'attribute_name' => $attribute->name,
-                            'slug' => $attribute->slug
+                            'slug_from_database' => $attribute->slug,
+                            'sending_slug_to_woocommerce' => true
                         ]);
 
                         $wcAttributeResult = $this->createWooCommerceAttribute($license, $attribute->name, $attribute->slug);
@@ -130,8 +182,11 @@ class SyncAttributesWithWooCommerceJob implements ShouldQueue
                             'terms' => []
                         ];
 
-                        // اضافه به map
-                        $existingAttributesMap[$attributeKey] = $wcAttribute;
+                        // اضافه کردن به map
+                        $slugKey = strtolower($wcAttribute['slug']);
+                        $existingAttributesMap['slug:' . $slugKey] = $wcAttribute;
+                        $nameKey = strtolower($wcAttribute['name']);
+                        $existingAttributesMap['name:' . $nameKey] = $wcAttribute;
 
                         Log::info('Attribute created successfully', [
                             'attribute_name' => $attribute->name,
@@ -163,16 +218,55 @@ class SyncAttributesWithWooCommerceJob implements ShouldQueue
                             }
 
                             $termNameKey = strtolower(trim($termValue));
-                            $termSlugKey = strtolower(trim($property->slug));
+                            $propertySlug = !empty($property->slug) ? $property->slug : $property->name;
+                            $termSlugKey = strtolower(trim($propertySlug));
 
-                            // بررسی وجود term با name یا slug
-                            if (isset($existingTermsMap[$termNameKey]) || isset($existingTermsMap[$termSlugKey])) {
+                            // بررسی وجود term با name
+                            $existingTerm = null;
+                            if (isset($existingTermsMap[$termNameKey])) {
+                                $existingTerm = $existingTermsMap[$termNameKey];
+                            } elseif (isset($existingTermsMap[$termSlugKey])) {
+                                $existingTerm = $existingTermsMap[$termSlugKey];
+                            }
+
+                            if ($existingTerm) {
+                                // اگر term با همین name وجود داشت، بررسی کن slug متفاوت است یا نه
+                                $existingSlug = strtolower(trim($existingTerm['slug']));
+                                $desiredSlug = strtolower(trim($propertySlug));
+
+                                if ($existingSlug !== $desiredSlug) {
+                                    // به‌روزرسانی slug در WooCommerce
+                                    Log::info('Updating term slug in WooCommerce', [
+                                        'attribute_name' => $attribute->name,
+                                        'term_name' => $termValue,
+                                        'old_slug' => $existingSlug,
+                                        'new_slug' => $desiredSlug
+                                    ]);
+
+                                    $updateResult = $this->updateWooCommerceAttributeTerm(
+                                        $license,
+                                        $wcAttribute['id'],
+                                        $existingTerm['id'],
+                                        [
+                                            'slug' => $propertySlug
+                                        ]
+                                    );
+
+                                    if ($updateResult['success']) {
+                                        Log::info('Term slug updated successfully', [
+                                            'term_id' => $existingTerm['id'],
+                                            'new_slug' => $propertySlug
+                                        ]);
+                                    }
+                                } else {
+                                    Log::info('Term already exists with correct slug, skipping', [
+                                        'attribute_name' => $attribute->name,
+                                        'term_name' => $termValue,
+                                        'slug' => $existingSlug
+                                    ]);
+                                }
+
                                 $syncedTerms++;
-
-                                Log::info('Term already exists, skipping', [
-                                    'attribute_name' => $attribute->name,
-                                    'term_name' => $termValue
-                                ]);
                                 continue;
                             }
 

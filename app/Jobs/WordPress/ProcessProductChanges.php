@@ -6,7 +6,6 @@ use App\Models\Product;
 use App\Jobs\ProcessImplicitProductInserts;
 use App\Jobs\RetryFailedProductInserts;
 use App\Jobs\ProcessOrphanProductVariants;
-use App\Jobs\WordPress\SyncWooCommerceProducts;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -70,9 +69,6 @@ class ProcessProductChanges implements ShouldQueue
             $updateIds = [];
             $parentProducts = []; // لیست محصولات مادر
             $childProducts = []; // لیست محصولات متغیر
-            $implicitInserts = []; // درج‌های ضمنی
-            $failedInserts = []; // درج‌های ناموفق
-            $orphanVariants = []; // فرزندان بی‌پدر
 
             // جمع‌آوری تمام بارکدها برای یک کوئری
             $allBarcodes = collect($this->changes)
@@ -159,26 +155,15 @@ class ProcessProductChanges implements ShouldQueue
     {
         foreach ($this->changes as $change) {
             $productData = $change['product'];
+            $barcode = $productData['Barcode'];
             $changeType = $change['change_type'];
 
-            // بررسی وجود ItemName - تنها فیلد اجباری
-            if (empty($productData['ItemName'])) {
-                Log::warning('نام محصول (ItemName) وجود ندارد - محصول رد می‌شود', [
-                    'barcode' => $productData['Barcode'] ?? null,
-                    'item_id' => $productData['ItemId'] ?? null,
+            if (empty($barcode) || empty($productData['ItemName'])) {
+                Log::warning('داده‌های ضروری محصول وجود ندارد', [
+                    'barcode' => $barcode ?? null,
                     'item_name' => $productData['ItemName'] ?? null
                 ]);
                 continue;
-            }
-
-            // استفاده از barcode موجود یا null
-            $barcode = !empty($productData['Barcode']) ? $productData['Barcode'] : null;
-
-            if ($barcode === null) {
-                Log::info('محصول بدون barcode دریافت شد', [
-                    'item_name' => $productData['ItemName'],
-                    'item_id' => $productData['ItemId'] ?? null
-                ]);
             }
 
             $productData = [
@@ -255,7 +240,7 @@ class ProcessProductChanges implements ShouldQueue
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
 
-                if (!empty($productData['Attributes'])) {
+                if (!empty($productData['attributes'])) {
                     $variantsToDelete[] = $existingProduct->item_id;
                 }
             } else {
@@ -324,7 +309,7 @@ class ProcessProductChanges implements ShouldQueue
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
 
-                if (!empty($productData['Attributes'])) {
+                if (!empty($productData['attributes'])) {
                     $variantsToDelete[] = $existingProduct->item_id;
                 }
             }
@@ -335,7 +320,7 @@ class ProcessProductChanges implements ShouldQueue
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
 
-                if (!empty($productData['Attributes'])) {
+                if (!empty($productData['attributes'])) {
                     $variantsToDelete[] = $existingProduct->item_id;
                 }
             } else {
@@ -348,7 +333,6 @@ class ProcessProductChanges implements ShouldQueue
 
     /**
      * پردازش واریانت‌های محصول
-     * اگر barcode نداشته باشد، null ذخیره می‌شود
      *
      * @param array $productData
      * @param \Carbon\Carbon $now
@@ -357,29 +341,14 @@ class ProcessProductChanges implements ShouldQueue
      */
     protected function processProductVariants($productData, $now, &$variantsToCreate)
     {
-        if (!empty($productData['Attributes'])) {
-            foreach ($productData['Attributes'] as $variant) {
-                // بررسی وجود ItemName - تنها فیلد اجباری برای واریانت
-                if (empty($variant['ItemName'])) {
-                    Log::warning('نام واریانت (ItemName) وجود ندارد - واریانت رد می‌شود', [
-                        'barcode' => $variant['Barcode'] ?? null,
-                        'parent_item_id' => $productData['item_id'] ?? null
-                    ]);
+        if (!empty($productData['attributes'])) {
+            foreach ($productData['attributes'] as $variant) {
+                if (empty($variant['Barcode']) || empty($variant['ItemName'])) {
                     continue;
                 }
 
-                // استفاده از barcode موجود یا null
-                $variantBarcode = !empty($variant['Barcode']) ? $variant['Barcode'] : null;
-
-                if ($variantBarcode === null) {
-                    Log::info('واریانت بدون barcode دریافت شد', [
-                        'variant_name' => $variant['ItemName'],
-                        'parent_item_id' => $productData['item_id'] ?? null
-                    ]);
-                }
-
                 $variantsToCreate[] = [
-                    'barcode' => $variantBarcode,
+                    'barcode' => $variant['Barcode'],
                     'item_name' => $variant['ItemName'],
                     'price_amount' => (int)($variant['PriceAmount'] ?? 0),
                     'price_after_discount' => (int)($variant['PriceAfterDiscount'] ?? 0),
@@ -398,7 +367,6 @@ class ProcessProductChanges implements ShouldQueue
 
     /**
      * بررسی وجود محصول مادر برای محصولات متغیر
-     * توجه: این متد فقط برای لاگ‌گذاری است و مانع درج محصول نمی‌شود
      *
      * @param array $productData
      * @return void
@@ -412,15 +380,13 @@ class ProcessProductChanges implements ShouldQueue
                 ->exists();
 
             if (!$parentExists) {
-                // لاگ اطلاعاتی: محصول مادر هنوز درج نشده است
-                // توجه: این مانع درج محصول فرزند نمی‌شود
-                Log::info("محصول فرزند درج می‌شود (محصول مادر هنوز درج نشده)", [
+                // اگر محصول مادر هنوز در پایگاه داده وجود ندارد، لاگ هشدار می‌گذاریم
+                Log::warning("محصول مادر با item_id = {$productData['parent_id']} یافت نشد", [
                     'barcode' => $productData['barcode'],
-                    'parent_item_id' => $productData['parent_id'],
-                    'note' => 'محصول فرزند بدون توجه به وجود محصول مادر درج می‌شود'
+                    'parent_item_id' => $productData['parent_id']
                 ]);
             } else {
-                Log::info("محصول فرزند با محصول مادر موجود مرتبط می‌شود", [
+                Log::info("محصول متغیر با محصول مادر مرتبط شد", [
                     'barcode' => $productData['barcode'],
                     'parent_item_id' => $productData['parent_id']
                 ]);
@@ -503,8 +469,6 @@ class ProcessProductChanges implements ShouldQueue
 
     /**
      * ایجاد محصولات جدید
-     * استفاده از updateOrCreate برای جلوگیری از خطای duplicate key
-     * محصولات فرزند حتی بدون وجود محصول مادر درج می‌شوند
      *
      * @param array $parentProducts
      * @param array $childProducts
@@ -522,7 +486,6 @@ class ProcessProductChanges implements ShouldQueue
         $createdProducts = [];
 
         // مرتب‌سازی محصولات برای اطمینان از ایجاد محصولات مادر قبل از محصولات متغیر
-        // توجه: این فقط بهینه‌سازی است، نه الزامی - محصولات فرزند در هر صورت درج می‌شوند
         usort($allProducts, function($a, $b) {
             // اگر یکی parent_id دارد و دیگری ندارد، آنکه parent_id ندارد اول است
             if (empty($a['parent_id']) && !empty($b['parent_id'])) return -1;
@@ -530,51 +493,29 @@ class ProcessProductChanges implements ShouldQueue
             return 0;
         });
 
-        // درج به صورت تک تک برای اطمینان از ترتیب صحیح و مدیریت خطاها
+        // درج به صورت تک تک برای اطمینان از ترتیب صحیح
         foreach ($allProducts as $product) {
             try {
-                // تعیین کلید یکتا برای updateOrCreate
-                // اگر barcode موجود باشد از barcode استفاده می‌شود
-                // در غیر این صورت از item_id استفاده می‌شود
-                if (!empty($product['barcode'])) {
-                    $uniqueKey = [
+                $createdProduct = Product::updateOrCreate(
+                    [
                         'barcode' => $product['barcode'],
                         'license_id' => $this->license_id
-                    ];
-                } elseif (!empty($product['item_id'])) {
-                    $uniqueKey = [
-                        'item_id' => $product['item_id'],
-                        'license_id' => $this->license_id
-                    ];
-                } else {
-                    // اگر نه barcode نه item_id وجود ندارد، از item_name استفاده می‌کنیم
-                    $uniqueKey = [
-                        'item_name' => $product['item_name'],
-                        'license_id' => $this->license_id
-                    ];
-                }
-
-                // استفاده از updateOrCreate برای جلوگیری از خطای duplicate key
-                // حتی اگر محصول مادر وجود نداشته باشد، محصول فرزند درج می‌شود
-                $createdProduct = Product::updateOrCreate($uniqueKey, $product);
+                    ],
+                    $product
+                );
 
                 $createdProducts[] = $product;
 
                 Log::info('محصول ایجاد شد', [
-                    'barcode' => $product['barcode'] ?? null,
-                    'item_id' => $product['item_id'] ?? null,
+                    'barcode' => $product['barcode'],
+                    'item_id' => $product['item_id'],
                     'is_variant' => $product['is_variant'],
-                    'parent_id' => $product['parent_id'] ?? null,
-                    'has_parent' => !empty($product['parent_id']),
-                    'unique_key' => array_keys($uniqueKey)[0]
+                    'parent_id' => $product['parent_id']
                 ]);
             } catch (\Exception $innerException) {
                 Log::error('خطا در ایجاد محصول', [
-                    'barcode' => $product['barcode'] ?? null,
-                    'item_id' => $product['item_id'] ?? null,
-                    'parent_id' => $product['parent_id'] ?? null,
-                    'error' => $innerException->getMessage(),
-                    'trace' => $innerException->getTraceAsString()
+                    'barcode' => $product['barcode'],
+                    'error' => $innerException->getMessage()
                 ]);
             }
         }
@@ -614,36 +555,23 @@ class ProcessProductChanges implements ShouldQueue
         // درج به صورت تک تک برای اطمینان از ترتیب صحیح
         foreach ($variantsToCreate as $variant) {
             try {
-                // تعیین کلید یکتا برای updateOrCreate
-                // اگر barcode موجود باشد از barcode استفاده می‌شود
-                // در غیر این صورت از ترکیب parent_id و item_name استفاده می‌شود
-                if (!empty($variant['barcode'])) {
-                    $uniqueKey = [
+                $createdVariant = Product::updateOrCreate(
+                    [
                         'barcode' => $variant['barcode'],
                         'license_id' => $this->license_id
-                    ];
-                } else {
-                    $uniqueKey = [
-                        'parent_id' => $variant['parent_id'] ?? null,
-                        'item_name' => $variant['item_name'],
-                        'license_id' => $this->license_id
-                    ];
-                }
-
-                $createdVariant = Product::updateOrCreate($uniqueKey, $variant);
+                    ],
+                    $variant
+                );
 
                 $createdVariants[] = $variant;
 
                 Log::info('واریانت ایجاد شد', [
-                    'barcode' => $variant['barcode'] ?? null,
-                    'item_name' => $variant['item_name'],
-                    'parent_id' => $variant['parent_id'] ?? null,
-                    'unique_key' => array_keys($uniqueKey)[0]
+                    'barcode' => $variant['barcode'],
+                    'parent_id' => $variant['parent_id']
                 ]);
             } catch (\Exception $innerException) {
                 Log::error('خطا در ایجاد واریانت', [
-                    'barcode' => $variant['barcode'] ?? null,
-                    'item_name' => $variant['item_name'] ?? null,
+                    'barcode' => $variant['barcode'],
                     'error' => $innerException->getMessage()
                 ]);
             }
@@ -666,10 +594,31 @@ class ProcessProductChanges implements ShouldQueue
      */
     protected function dispatchToWooCommerceSync($updatedProducts, $newProducts, $newVariants)
     {
+        // بررسی تیک به‌روزرسانی برای عملیات update
         if (!empty($updatedProducts)) {
-            SyncWooCommerceProducts::dispatch($updatedProducts, $this->license_id, 'update')
-                ->onQueue('woocommerce-sync')
-                ->delay(now()->addSeconds(5));
+            $license = \App\Models\License::with('userSetting')->find($this->license_id);
+            $userSettings = $license->userSetting;
+
+            // فقط اگر حداقل یکی از تیک‌های به‌روزرسانی فعال باشد
+            if ($userSettings && (
+                $userSettings->enable_price_update ||
+                $userSettings->enable_stock_update ||
+                $userSettings->enable_name_update
+            )) {
+                SyncWooCommerceProducts::dispatch($updatedProducts, $this->license_id, 'update')
+                    ->onQueue('woocommerce-sync')
+                    ->delay(now()->addSeconds(5));
+
+                Log::info('محصولات به‌روزرسانی شده به صف WooCommerce ارسال شد', [
+                    'count' => count($updatedProducts),
+                    'license_id' => $this->license_id
+                ]);
+            } else {
+                Log::info('به‌روزرسانی WooCommerce غیرفعال است - محصولات ارسال نشد', [
+                    'count' => count($updatedProducts),
+                    'license_id' => $this->license_id
+                ]);
+            }
         }
 
         if (!empty($newProducts) || !empty($newVariants)) {

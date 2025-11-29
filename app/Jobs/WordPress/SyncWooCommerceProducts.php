@@ -83,8 +83,20 @@ class SyncWooCommerceProducts implements ShouldQueue
                 return;
             }
 
-            // دریافت دسته‌بندی‌های ووکامرس فقط یک بار
-            $categories = $this->fetchWooCommerceCategories($license, $wooApiKey);
+            // دریافت دسته‌بندی‌های ووکامرس فقط برای عملیات insert
+            $categories = [];
+            if ($this->operation === 'insert') {
+                $categories = $this->fetchWooCommerceCategories($license, $wooApiKey);
+                Log::info('دسته‌بندی‌های ووکامرس برای insert دریافت شد', [
+                    'categories_count' => count($categories),
+                    'license_id' => $this->license_id
+                ]);
+            } else {
+                Log::info('دریافت دسته‌بندی برای عملیات update رد شد', [
+                    'operation' => $this->operation,
+                    'license_id' => $this->license_id
+                ]);
+            }
 
             // آماده‌سازی داده‌ها برای ارسال به API
             $preparedProducts = $this->prepareProductsData($userSettings, $categories);
@@ -280,11 +292,18 @@ class SyncWooCommerceProducts implements ShouldQueue
                 $data['manage_stock'] = true;
             }
 
-            // اگر department_name وجود داشت و در دسته‌بندی‌ها بود، category_id را اضافه کن
-            // REMOVED: Category updates are not allowed during regular updates
-            // if (!empty($item['department_name'] ?? $item['DepartmentName']) && isset($categories[$item['department_name'] ?? $item['DepartmentName']])) {
-            //     $data['category_id'] = $categories[$item['department_name'] ?? $item['DepartmentName']]['id'];
-            // }
+            // اضافه کردن دسته‌بندی فقط برای عملیات insert
+            if ($this->operation === 'insert' && !empty($categories)) {
+                $departmentName = $item['department_name'] ?? $item['DepartmentName'] ?? null;
+                if (!empty($departmentName) && isset($categories[$departmentName])) {
+                    $data['category_id'] = $categories[$departmentName]['id'];
+                    Log::info('دسته‌بندی برای محصول تنظیم شد', [
+                        'barcode' => $data['barcode'],
+                        'department_name' => $departmentName,
+                        'category_id' => $data['category_id']
+                    ]);
+                }
+            }
 
             // تعیین نوع محصول بر اساس is_variant و parent_id
             // REMOVED: Product type updates are not allowed during regular updates
