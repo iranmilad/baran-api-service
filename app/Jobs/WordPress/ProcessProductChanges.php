@@ -80,12 +80,43 @@ class ProcessProductChanges implements ShouldQueue
                 ->values()
                 ->toArray();
 
-            // دریافت تمام محصولات موجود در یک کوئری با فقط فیلدهای مورد نیاز
-            $existingProducts = Product::whereIn('barcode', $allBarcodes)
-                ->where('license_id', $this->license_id)
-                ->select(['id', 'barcode', 'item_id', 'is_variant', 'parent_id'])
-                ->get()
-                ->keyBy('barcode');
+            // جمع‌آوری ترکیب‌های item_id + stock_id برای چک کردن یونیک
+            $itemStockCombinations = collect($this->changes)
+                ->map(function($change) {
+                    return [
+                        'item_id' => $change['product']['ItemId'] ?? null,
+                        'stock_id' => $change['product']['StockID'] ?? null,
+                        'barcode' => $change['product']['Barcode'] ?? null,
+                    ];
+                })
+                ->filter(function($combo) {
+                    return !empty($combo['item_id']) && !empty($combo['stock_id']);
+                })
+                ->values()
+                ->toArray();
+
+            // دریافت تمام محصولات موجود بر اساس ترکیب item_id + stock_id + license_id
+            $existingProducts = collect();
+
+            if (!empty($itemStockCombinations)) {
+                $query = Product::where('license_id', $this->license_id)
+                    ->select(['id', 'barcode', 'item_id', 'stock_id', 'is_variant', 'parent_id'])
+                    ->where(function($q) use ($itemStockCombinations) {
+                        foreach ($itemStockCombinations as $combo) {
+                            $q->orWhere(function($subQ) use ($combo) {
+                                $subQ->where('item_id', $combo['item_id'])
+                                     ->where('stock_id', $combo['stock_id']);
+                            });
+                        }
+                    });
+
+                $existingProducts = $query->get();
+
+                // ایجاد key ترکیبی برای دسترسی سریع
+                $existingProducts = $existingProducts->keyBy(function($product) {
+                    return $product->item_id . '_' . $product->stock_id;
+                });
+            }
 
             // پردازش هر تغییر و دسته‌بندی محصولات
             $this->processChanges($now, $existingProducts, $parentProducts, $childProducts, $productsToCreate, $productsToUpdate, $variantsToCreate, $variantsToDelete, $updateIds, $implicitInserts);
@@ -270,21 +301,50 @@ class ProcessProductChanges implements ShouldQueue
      */
     protected function processChildProduct($productData, $barcode, $changeType, $existingProducts, &$childProducts, &$productsToUpdate, &$updateIds)
     {
+        // ایجاد کلید ترکیبی برای جستجو
+        $compositeKey = $productData['item_id'] . '_' . $productData['stock_id'];
+        $existingProduct = $existingProducts->get($compositeKey);
+
         if ($changeType === 'insert') {
-            Log::info("محصول متغیر برای درج: {$barcode}, parent_id: {$productData['parent_id']}");
-            $childProducts[] = $productData;
+            if (!$existingProduct) {
+                Log::info("محصول متغیر برای درج: {$barcode}, parent_id: {$productData['parent_id']}");
+                $childProducts[] = $productData;
+            } else {
+                // محصول وجود دارد، به update تبدیل می‌شود
+                Log::info("محصول متغیر با کلید ترکیبی موجود است، به update تبدیل می‌شود", [
+                    'barcode' => $barcode,
+                    'item_id' => $productData['item_id'],
+                    'stock_id' => $productData['stock_id']
+                ]);
+                $productData['id'] = $existingProduct->id;
+                $productsToUpdate[] = $productData;
+                $updateIds[] = $existingProduct->id;
+            }
         } else {
             // پردازش برای به‌روزرسانی
-            $existingProduct = $existingProducts->get($barcode);
             if ($existingProduct) {
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
             } else {
                 // اگر محصول متغیر برای به‌روزرسانی یافت نشد، به لیست درج اضافه می‌کنیم
-                Log::info("محصول متغیر با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                Log::info("محصول متغیر با کلید ترکیبی {$compositeKey} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
                 $childProducts[] = $productData;
             }
+        }
+    }
+
+    /**
+     * پردازش محصول مادر (is_variant=true و parent_id خالی)
+     *
+     * @param array $productData
+     * @param string $barcode
+     * @param string $changeType
+     * @param \Illuminate\Support\Collection $existingProducts
+     * @param array &$parentProducts
+     * @param array &$productsToUpdate
+     * @param array &$updateIds
+     * @param array &$variantsToDelete
         }
     }
 
@@ -303,26 +363,33 @@ class ProcessProductChanges implements ShouldQueue
      */
     protected function processRegularProduct($productData, $barcode, $changeType, $existingProducts, &$productsToCreate, &$productsToUpdate, &$updateIds, &$variantsToDelete)
     {
+        // ایجاد کلید ترکیبی برای جستجو
+        $compositeKey = $productData['item_id'] . '_' . $productData['stock_id'];
+        $existingProduct = $existingProducts->get($compositeKey);
+
         if ($changeType === 'insert') {
             // بررسی وجود محصول قبل از اضافه کردن به لیست insert
-            if (!$existingProducts->has($barcode)) {
+            if (!$existingProduct) {
                 $productsToCreate[] = $productData;
             } else {
                 // اگر محصول وجود داشت، به update تغییر می‌دهیم
-                $existingProduct = $existingProducts->get($barcode);
+                Log::info("محصول با کلید ترکیبی موجود است، به update تبدیل می‌شود", [
+                    'barcode' => $barcode,
+                    'item_id' => $productData['item_id'],
+                    'stock_id' => $productData['stock_id']
+                ]);
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
             }
         } else {
-            $existingProduct = $existingProducts->get($barcode);
             if ($existingProduct) {
                 $productData['id'] = $existingProduct->id;
                 $productsToUpdate[] = $productData;
                 $updateIds[] = $existingProduct->id;
             } else {
                 // اگر محصول برای به‌روزرسانی یافت نشد، به insert تغییر می‌دهیم
-                Log::info("محصول با بارکد {$barcode} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
+                Log::info("محصول با کلید ترکیبی {$compositeKey} برای به‌روزرسانی یافت نشد، به عنوان محصول جدید درج می‌شود");
                 $productsToCreate[] = $productData;
             }
         }
