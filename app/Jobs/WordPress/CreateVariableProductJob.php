@@ -141,17 +141,72 @@ class CreateVariableProductJob implements ShouldQueue
             $userSetting = $license->userSetting;
             $defaultWarehouseCode = $userSetting->default_warehouse_code ?? null;
 
+            // تبدیل از JSON اگر رشته است
+            if (is_string($defaultWarehouseCode) && !empty($defaultWarehouseCode)) {
+                $decoded = json_decode($defaultWarehouseCode, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $defaultWarehouseCode = $decoded;
+                }
+            }
+
             Log::info('تنظیمات انبار', [
                 'default_warehouse_code' => $defaultWarehouseCode,
                 'grouped_items_count' => count($groupedItems)
             ]);
 
-            // فیلتر و محاسبه موجودی برای هر آیتم
+            // فیلتر و تجمیع موجودی برای هر آیتم بر اساس تنظیمات
             $baranItems = [];
             foreach ($groupedItems as $itemId => $itemStocks) {
-                $filteredItem = $this->filterAndCalculateStock($itemStocks, $defaultWarehouseCode);
-                if ($filteredItem) {
-                    $baranItems[] = $filteredItem;
+                if (empty($defaultWarehouseCode)) {
+                    // اگر خالی باشد، موجودی از همه انبارها تجمیع شود
+                    $totalQuantity = array_sum(array_column($itemStocks, 'stockQuantity'));
+                    $result = $itemStocks[0];
+                    $result['stockQuantity'] = $totalQuantity;
+
+                    if (count($itemStocks) > 1) {
+                        $warehouseNames = array_column($itemStocks, 'stockName');
+                        $result['stockName'] = implode(' + ', array_slice($warehouseNames, 0, 3)) . (count($warehouseNames) > 3 ? '...' : '');
+                    }
+
+                    Log::info('موجودی از مجموع تمام انبارها محاسبه شد', [
+                        'item_id' => strtolower($itemId),
+                        'warehouses_count' => count($itemStocks),
+                        'total_quantity' => $totalQuantity
+                    ]);
+
+                    $baranItems[] = $result;
+                } else {
+                    // اگر لیست انبارهای مجاز تنظیم شده، فقط از آنها تجمیع کن
+                    $allowedWarehouses = is_array($defaultWarehouseCode) ? $defaultWarehouseCode : [$defaultWarehouseCode];
+
+                    $filteredStocks = array_filter($itemStocks, function($stock) use ($allowedWarehouses) {
+                        return in_array($stock['stockID'] ?? '', $allowedWarehouses);
+                    });
+
+                    if (empty($filteredStocks)) {
+                        Log::warning('هیچ موجودی در انبار(های) مجاز یافت نشد', [
+                            'item_id' => strtolower($itemId),
+                            'allowed_warehouses' => $allowedWarehouses
+                        ]);
+                        continue;
+                    }
+
+                    $totalQuantity = array_sum(array_column($filteredStocks, 'stockQuantity'));
+                    $result = reset($filteredStocks);
+                    $result['stockQuantity'] = $totalQuantity;
+
+                    if (count($filteredStocks) > 1) {
+                        $warehouseNames = array_column($filteredStocks, 'stockName');
+                        $result['stockName'] = implode(' + ', $warehouseNames);
+                    }
+
+                    Log::info('موجودی از انبار(های) مجاز محاسبه شد', [
+                        'item_id' => strtolower($itemId),
+                        'warehouses_count' => count($filteredStocks),
+                        'total_quantity' => $totalQuantity
+                    ]);
+
+                    $baranItems[] = $result;
                 }
             }
 
