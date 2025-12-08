@@ -556,62 +556,127 @@ class ProcessProductChanges implements ShouldQueue
         // مرحله 1: درج محصولات مادر و معمولی (بدون parent_id)
         $parentsAndRegular = array_merge($parentProducts, $productsToCreate);
         if (!empty($parentsAndRegular)) {
-            try {
-                DB::table('products')->insert($parentsAndRegular);
-                $createdProducts = array_merge($createdProducts, $parentsAndRegular);
+            // چک کردن محصولات موجود قبل از درج
+            $existingKeys = DB::table('products')
+                ->where('license_id', $this->license_id)
+                ->whereIn(DB::raw("CONCAT(item_id, '_', stock_id)"),
+                    array_map(function($p) {
+                        return $p['item_id'] . '_' . $p['stock_id'];
+                    }, $parentsAndRegular)
+                )
+                ->pluck(DB::raw("CONCAT(item_id, '_', stock_id)"))
+                ->toArray();
 
-                Log::info('محصولات مادر و معمولی ایجاد شدند', [
-                    'count' => count($parentsAndRegular)
-                ]);
-            } catch (\Exception $e) {
-                Log::error('خطا در درج دسته‌ای محصولات مادر', [
-                    'error' => $e->getMessage()
-                ]);
+            // فیلتر کردن محصولاتی که قبلاً وجود ندارند
+            $productsToInsert = array_filter($parentsAndRegular, function($product) use ($existingKeys) {
+                $key = $product['item_id'] . '_' . $product['stock_id'];
+                return !in_array($key, $existingKeys);
+            });
 
-                // Fallback: درج تک تک
-                foreach ($parentsAndRegular as $product) {
-                    try {
-                        DB::table('products')->insert($product);
-                        $createdProducts[] = $product;
-                    } catch (\Exception $innerException) {
-                        Log::error('خطا در ایجاد محصول', [
-                            'barcode' => $product['barcode'],
-                            'error' => $innerException->getMessage()
-                        ]);
+            if (!empty($productsToInsert)) {
+                try {
+                    DB::table('products')->insert($productsToInsert);
+                    $createdProducts = array_merge($createdProducts, $productsToInsert);
+
+                    Log::info('محصولات مادر و معمولی ایجاد شدند', [
+                        'count' => count($productsToInsert),
+                        'skipped' => count($parentsAndRegular) - count($productsToInsert)
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('خطا در درج دسته‌ای محصولات مادر', [
+                        'error' => $e->getMessage()
+                    ]);
+
+                    // Fallback: درج تک تک با insertOrIgnore
+                    foreach ($productsToInsert as $product) {
+                        try {
+                            $inserted = DB::table('products')
+                                ->where('item_id', $product['item_id'])
+                                ->where('stock_id', $product['stock_id'])
+                                ->where('license_id', $product['license_id'])
+                                ->doesntExist();
+
+                            if ($inserted) {
+                                DB::table('products')->insert($product);
+                                $createdProducts[] = $product;
+                            }
+                        } catch (\Exception $innerException) {
+                            Log::error('خطا در ایجاد محصول', [
+                                'barcode' => $product['barcode'],
+                                'item_id' => $product['item_id'],
+                                'stock_id' => $product['stock_id'],
+                                'error' => $innerException->getMessage()
+                            ]);
+                        }
                     }
                 }
+            } else {
+                Log::info('تمام محصولات مادر و معمولی قبلاً وجود دارند', [
+                    'count' => count($parentsAndRegular)
+                ]);
             }
         }
 
         // مرحله 2: درج محصولات متغیر (با parent_id)
         if (!empty($childProducts)) {
-            try {
-                // تأخیر کوچک برای اطمینان از ایجاد والدین
-                usleep(100000); // 100ms
+            // چک کردن محصولات موجود قبل از درج
+            $existingKeys = DB::table('products')
+                ->where('license_id', $this->license_id)
+                ->whereIn(DB::raw("CONCAT(item_id, '_', stock_id)"),
+                    array_map(function($p) {
+                        return $p['item_id'] . '_' . $p['stock_id'];
+                    }, $childProducts)
+                )
+                ->pluck(DB::raw("CONCAT(item_id, '_', stock_id)"))
+                ->toArray();
 
-                DB::table('products')->insert($childProducts);
-                $createdProducts = array_merge($createdProducts, $childProducts);
+            // فیلتر کردن محصولاتی که قبلاً وجود ندارند
+            $productsToInsert = array_filter($childProducts, function($product) use ($existingKeys) {
+                $key = $product['item_id'] . '_' . $product['stock_id'];
+                return !in_array($key, $existingKeys);
+            });
 
-                Log::info('محصولات متغیر ایجاد شدند', [
-                    'count' => count($childProducts)
-                ]);
-            } catch (\Exception $e) {
-                Log::error('خطا در درج دسته‌ای محصولات متغیر', [
-                    'error' => $e->getMessage()
-                ]);
+            if (!empty($productsToInsert)) {
+                try {
+                    DB::table('products')->insert($productsToInsert);
+                    $createdProducts = array_merge($createdProducts, $productsToInsert);
 
-                // Fallback: درج تک تک
-                foreach ($childProducts as $product) {
-                    try {
-                        DB::table('products')->insert($product);
-                        $createdProducts[] = $product;
-                    } catch (\Exception $innerException) {
-                        Log::error('خطا در ایجاد محصول متغیر', [
-                            'barcode' => $product['barcode'],
-                            'error' => $innerException->getMessage()
-                        ]);
+                    Log::info('محصولات متغیر ایجاد شدند', [
+                        'count' => count($productsToInsert),
+                        'skipped' => count($childProducts) - count($productsToInsert)
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('خطا در درج دسته‌ای محصولات متغیر', [
+                        'error' => $e->getMessage()
+                    ]);
+
+                    // Fallback: درج تک تک با چک
+                    foreach ($productsToInsert as $product) {
+                        try {
+                            $exists = DB::table('products')
+                                ->where('item_id', $product['item_id'])
+                                ->where('stock_id', $product['stock_id'])
+                                ->where('license_id', $product['license_id'])
+                                ->exists();
+
+                            if (!$exists) {
+                                DB::table('products')->insert($product);
+                                $createdProducts[] = $product;
+                            }
+                        } catch (\Exception $innerException) {
+                            Log::error('خطا در ایجاد محصول متغیر', [
+                                'barcode' => $product['barcode'],
+                                'item_id' => $product['item_id'],
+                                'stock_id' => $product['stock_id'],
+                                'error' => $innerException->getMessage()
+                            ]);
+                        }
                     }
                 }
+            } else {
+                Log::info('تمام محصولات متغیر قبلاً وجود دارند', [
+                    'count' => count($childProducts)
+                ]);
             }
         }
 
@@ -639,31 +704,65 @@ class ProcessProductChanges implements ShouldQueue
 
         $createdVariants = [];
 
-        try {
-            // درج دسته‌ای واریانت‌ها
-            DB::table('products')->insert($variantsToCreate);
-            $createdVariants = $variantsToCreate;
+        // چک کردن واریانت‌های موجود قبل از درج
+        $existingKeys = DB::table('products')
+            ->where('license_id', $this->license_id)
+            ->whereIn(DB::raw("CONCAT(item_id, '_', stock_id)"),
+                array_map(function($v) {
+                    return ($v['item_id'] ?? '') . '_' . ($v['stock_id'] ?? '');
+                }, $variantsToCreate)
+            )
+            ->pluck(DB::raw("CONCAT(item_id, '_', stock_id)"))
+            ->toArray();
 
-            Log::info('واریانت‌های جدید با موفقیت ایجاد شدند', [
-                'count' => count($variantsToCreate)
-            ]);
-        } catch (\Exception $e) {
-            Log::error('خطا در درج دسته‌ای واریانت‌ها', [
-                'error' => $e->getMessage()
-            ]);
+        // فیلتر کردن واریانت‌هایی که قبلاً وجود ندارند
+        $variantsToInsert = array_filter($variantsToCreate, function($variant) use ($existingKeys) {
+            $key = ($variant['item_id'] ?? '') . '_' . ($variant['stock_id'] ?? '');
+            return !in_array($key, $existingKeys);
+        });
 
-            // Fallback: درج تک تک در صورت خطا
-            foreach ($variantsToCreate as $variant) {
-                try {
-                    DB::table('products')->insert($variant);
-                    $createdVariants[] = $variant;
-                } catch (\Exception $innerException) {
-                    Log::error('خطا در ایجاد واریانت', [
-                        'barcode' => $variant['barcode'],
-                        'error' => $innerException->getMessage()
-                    ]);
+        if (!empty($variantsToInsert)) {
+            try {
+                // درج دسته‌ای واریانت‌ها
+                DB::table('products')->insert($variantsToInsert);
+                $createdVariants = $variantsToInsert;
+
+                Log::info('واریانت‌های جدید با موفقیت ایجاد شدند', [
+                    'count' => count($variantsToInsert),
+                    'skipped' => count($variantsToCreate) - count($variantsToInsert)
+                ]);
+            } catch (\Exception $e) {
+                Log::error('خطا در درج دسته‌ای واریانت‌ها', [
+                    'error' => $e->getMessage()
+                ]);
+
+                // Fallback: درج تک تک در صورت خطا با چک
+                foreach ($variantsToInsert as $variant) {
+                    try {
+                        $exists = DB::table('products')
+                            ->where('item_id', $variant['item_id'])
+                            ->where('stock_id', $variant['stock_id'])
+                            ->where('license_id', $variant['license_id'])
+                            ->exists();
+
+                        if (!$exists) {
+                            DB::table('products')->insert($variant);
+                            $createdVariants[] = $variant;
+                        }
+                    } catch (\Exception $innerException) {
+                        Log::error('خطا در ایجاد واریانت', [
+                            'barcode' => $variant['barcode'],
+                            'item_id' => $variant['item_id'] ?? null,
+                            'stock_id' => $variant['stock_id'] ?? null,
+                            'error' => $innerException->getMessage()
+                        ]);
+                    }
                 }
             }
+        } else {
+            Log::info('تمام واریانت‌ها قبلاً وجود دارند', [
+                'count' => count($variantsToCreate)
+            ]);
         }
 
         return $createdVariants;
