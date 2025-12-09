@@ -231,8 +231,13 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
             }
 
             // اگر sale_price از قبل در $productData وجود دارد (از SyncWooCommerceProducts)، از آن استفاده کن
-            if (isset($productData['sale_price']) && $productData['sale_price'] > 0) {
-                $salePrice = (float)$productData['sale_price'];
+            if (isset($productData['sale_price'])) {
+                if (!empty($productData['sale_price']) && $productData['sale_price'] > 0) {
+                    $salePrice = (float)$productData['sale_price'];
+                } elseif ($productData['sale_price'] === '' || $productData['sale_price'] === 0) {
+                    // اگر sale_price خالی یا صفر است، باید از WooCommerce حذف شود
+                    $salePrice = 0;
+                }
             }
 
             // تبدیل قیمت‌ها به واحد ووکامرس
@@ -250,6 +255,9 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                         $userSetting->rain_sale_price_unit,
                         $userSetting->woocommerce_price_unit
                     );
+                } else {
+                    // اگر تخفیفی وجود ندارد، sale_price را خالی می‌کنیم تا از WooCommerce حذف شود
+                    $data['sale_price'] = '';
                 }
             }
         }

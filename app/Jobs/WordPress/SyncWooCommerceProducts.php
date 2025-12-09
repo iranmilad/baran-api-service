@@ -268,6 +268,9 @@ class SyncWooCommerceProducts implements ShouldQueue
                     if ($currentDiscount > 0 && $regularPrice > 0) {
                         $salePrice = $regularPrice - ($regularPrice * $currentDiscount / 100);
                         $data['sale_price'] = (string)$salePrice;
+                    } else {
+                        // اگر هیچ تخفیفی وجود ندارد، sale_price را خالی می‌کنیم تا از WooCommerce حذف شود
+                        $data['sale_price'] = '';
                     }
                 }
             }

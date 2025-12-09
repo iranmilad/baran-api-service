@@ -407,6 +407,13 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 'barcode' => $barcode,
                 'sale_price' => $data['sale_price']
             ]);
+        } else {
+            // اگر تخفیفی وجود ندارد، sale_price را خالی می‌کنیم
+            $data['sale_price'] = '';
+            
+            Log::info('تخفیفی وجود ندارد، sale_price خالی است', [
+                'barcode' => $barcode
+            ]);
         }
 
         // اضافه کردن دسته‌بندی ووکامرس بر اساس department_name
