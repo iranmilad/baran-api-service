@@ -410,7 +410,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         } else {
             // اگر تخفیفی وجود ندارد، sale_price را خالی می‌کنیم
             $data['sale_price'] = '';
-            
+
             Log::info('تخفیفی وجود ندارد، sale_price خالی است', [
                 'barcode' => $barcode
             ]);
