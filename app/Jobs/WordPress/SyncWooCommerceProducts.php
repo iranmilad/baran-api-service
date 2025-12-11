@@ -285,13 +285,24 @@ class SyncWooCommerceProducts implements ShouldQueue
                     // دریافت کدهای انبارهای فعال
                     $defaultWarehouseCodes = [];
                     if (!empty($userSettings->default_warehouse_code)) {
-                        // اگر رشته‌ای است با کاما یا semicolon جدا شده
-                        if (is_string($userSettings->default_warehouse_code)) {
-                            $defaultWarehouseCodes = array_filter(
-                                array_map('trim', preg_split('/[,;]/', $userSettings->default_warehouse_code))
-                            );
-                        } elseif (is_array($userSettings->default_warehouse_code)) {
-                            $defaultWarehouseCodes = $userSettings->default_warehouse_code;
+                        $rawCode = $userSettings->default_warehouse_code;
+
+                        // سعی برای تجزیه JSON
+                        if (is_string($rawCode)) {
+                            // اگر JSON array است
+                            if (substr(trim($rawCode), 0, 1) === '[') {
+                                $decoded = json_decode($rawCode, true);
+                                if (is_array($decoded)) {
+                                    $defaultWarehouseCodes = array_filter($decoded);
+                                }
+                            } else {
+                                // اگر رشته‌ای است با کاما یا semicolon جدا شده
+                                $defaultWarehouseCodes = array_filter(
+                                    array_map('trim', preg_split('/[,;]/', $rawCode))
+                                );
+                            }
+                        } elseif (is_array($rawCode)) {
+                            $defaultWarehouseCodes = array_filter($rawCode);
                         }
                     }
 
@@ -322,6 +333,7 @@ class SyncWooCommerceProducts implements ShouldQueue
                         'total_quantity' => $stockQuantity,
                         'warehouse_filter' => !empty($defaultWarehouseCodes) ? 'configured' : 'all',
                         'configured_warehouses' => $defaultWarehouseCodes,
+                        'raw_default_warehouse_code' => $userSettings->default_warehouse_code ?? 'null',
                         'license_id' => $this->license_id,
                         'operation' => $this->operation,
                         'timestamp' => now()->toDateTimeString()
