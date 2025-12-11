@@ -212,12 +212,15 @@ class ProcessSingleProductBatch implements ShouldQueue
                         $decoded = json_decode($defaultWarehouseCode, true);
                         if (is_array($decoded)) {
                             // صاف کردن تمام مقادیر و حذف فضاهای خالی و escapes
+                            // تبدیل به حروف کوچک برای مقایسه case-insensitive
                             $warehouseCodes = array_filter(array_map(function($code) {
-                                return trim(stripslashes((string)$code));
+                                return strtolower(trim(stripslashes((string)$code)));
                             }, $decoded));
                         }
                     } else {
-                        $warehouseCodes = array_filter(array_map('trim', preg_split('/[,;]/', $defaultWarehouseCode)));
+                        $warehouseCodes = array_filter(array_map(function($code) {
+                            return strtolower(trim($code));
+                        }, preg_split('/[,;]/', $defaultWarehouseCode)));
                     }
                 }
             }
@@ -234,7 +237,7 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             foreach ($allItems as $item) {
                 $itemId = $item['itemID'];
-                $stockId = $item['stockID'] ?? null;
+                $stockId = isset($item['stockID']) ? strtolower($item['stockID']) : null;
 
                 // اگر warehouse codes تنظیم شده‌اند، فقط آیتم‌های مربوط به انبارهای کنفیگ شده را در نظر بگیر
                 if (!empty($warehouseCodes)) {
