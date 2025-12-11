@@ -369,19 +369,23 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                     ]);
 
                     try {
-                        $newProduct = Product::create([
-                            'license_id' => $license->id,
-                            'item_id' => $itemId,
-                            'item_name' => $product['ItemName'] ?? 'نامشخص',
-                            'barcode' => $barcode,
-                            'price_amount' => (int)($product['PriceAmount'] ?? 0),
-                            'price_after_discount' => (int)($product['PriceAfterDiscount'] ?? 0),
-                            'total_count' => (int)($product['TotalCount'] ?? 0),
-                            'stock_id' => $product['StockID'] ?? null,
-                            'department_name' => $product['DepartmentName'] ?? '',
-                            'is_variant' => false,
-                            'last_sync_at' => now()
-                        ]);
+                        $newProduct = Product::updateOrCreate(
+                            [
+                                'license_id' => $license->id,
+                                'item_id' => $itemId,
+                                'stock_id' => $product['StockID'] ?? null
+                            ],
+                            [
+                                'item_name' => $product['ItemName'] ?? 'نامشخص',
+                                'barcode' => $barcode,
+                                'price_amount' => (int)($product['PriceAmount'] ?? 0),
+                                'price_after_discount' => (int)($product['PriceAfterDiscount'] ?? 0),
+                                'total_count' => (int)($product['TotalCount'] ?? 0),
+                                'department_name' => $product['DepartmentName'] ?? '',
+                                'is_variant' => false,
+                                'last_sync_at' => now()
+                            ]
+                        );
 
                         // استفاده از داده‌های محصول جدید برای ادامه پردازش
                         $baranProduct = [
@@ -392,7 +396,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                             'priceAfterDiscount' => $newProduct->price_after_discount ?? 0
                         ];
 
-                        Log::info('محصول جدید با موفقیت ایجاد شد', [
+                        Log::info('محصول جدید یا موجود با موفقیت ایجاد یا به‌روزرسانی شد', [
                             'item_id' => $itemId,
                             'barcode' => $barcode,
                             'product_id' => $newProduct->id,
@@ -403,9 +407,9 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                         $errorCount++;
                         $errors[] = [
                             'code' => $itemId,
-                            'message' => 'خطا در ایجاد محصول: ' . $ex->getMessage()
+                            'message' => 'خطا در ایجاد یا به‌روزرسانی محصول: ' . $ex->getMessage()
                         ];
-                        Log::error('خطا در ایجاد محصول جدید', [
+                        Log::error('خطا در ایجاد یا به‌روزرسانی محصول جدید', [
                             'item_id' => $itemId,
                             'barcode' => $barcode,
                             'error' => $ex->getMessage()
@@ -584,30 +588,34 @@ class ProcessTantoooSyncRequest implements ShouldQueue
                             'action' => 'updated'
                         ]);
                     } else {
-                        // ایجاد محصول جدید
-                        Product::create([
-                            'license_id' => $license->id,
-                            'item_id' => $itemId,
-                            'item_name' => $productData['itemName'],
-                            'barcode' => $productData['barcode'],
-                            'price_amount' => (int)$productData['salePrice'],
-                            'price_after_discount' => (int)$productData['priceAfterDiscount'],
-                            'total_count' => (int)$productData['totalQuantity'], // موجودی جمع‌شده
-                            'stock_id' => $productData['firstStockId'],
-                            'department_name' => $productData['departmentName'],
-                            'is_variant' => false,
-                            'last_sync_at' => now()
-                        ]);
+                        // ایجاد محصول جدید یا به‌روزرسانی اگر موجود باشد
+                        Product::updateOrCreate(
+                            [
+                                'license_id' => $license->id,
+                                'item_id' => $itemId,
+                                'stock_id' => $productData['firstStockId']
+                            ],
+                            [
+                                'item_name' => $productData['itemName'],
+                                'barcode' => $productData['barcode'],
+                                'price_amount' => (int)$productData['salePrice'],
+                                'price_after_discount' => (int)$productData['priceAfterDiscount'],
+                                'total_count' => (int)$productData['totalQuantity'], // موجودی جمع‌شده
+                                'department_name' => $productData['departmentName'],
+                                'is_variant' => false,
+                                'last_sync_at' => now()
+                            ]
+                        );
                         $savedCount++;
 
-                        Log::info('محصول جدید ذخیره شد', [
+                        Log::info('محصول جدید ذخیره یا به‌روزرسانی شد', [
                             'license_id' => $license->id,
                             'item_id' => $itemId,
                             'barcode' => $productData['barcode'],
                             'total_quantity' => $productData['totalQuantity'],
                             'warehouse_count' => count($productData['stocks']),
                             'stocks_detail' => $productData['stocks'],
-                            'action' => 'created'
+                            'action' => 'created_or_updated'
                         ]);
                     }
                 } catch (\Exception $ex) {

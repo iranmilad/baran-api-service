@@ -569,13 +569,13 @@ class ProcessProductChanges implements ShouldQueue
 
             // فیلتر کردن محصولاتی که قبلاً وجود ندارند
             $productsToInsert = array_filter($parentsAndRegular, function($product) use ($existingKeys) {
-                $key = $product['item_id'] . '_' . $product['stock_id'];
+                $key = $product['license_id'] . '_' . $product['item_id'] . '_' . $product['stock_id'];
                 return !in_array($key, $existingKeys);
             });
 
             if (!empty($productsToInsert)) {
                 try {
-                    DB::table('products')->insert($productsToInsert);
+                    DB::table('products')->insertOrIgnore($productsToInsert);
                     $createdProducts = array_merge($createdProducts, $productsToInsert);
 
                     Log::info('محصولات مادر و معمولی ایجاد شدند', [
@@ -590,21 +590,14 @@ class ProcessProductChanges implements ShouldQueue
                     // Fallback: درج تک تک با insertOrIgnore
                     foreach ($productsToInsert as $product) {
                         try {
-                            $inserted = DB::table('products')
-                                ->where('item_id', $product['item_id'])
-                                ->where('stock_id', $product['stock_id'])
-                                ->where('license_id', $product['license_id'])
-                                ->doesntExist();
-
-                            if ($inserted) {
-                                DB::table('products')->insert($product);
-                                $createdProducts[] = $product;
-                            }
+                            DB::table('products')->insertOrIgnore($product);
+                            $createdProducts[] = $product;
                         } catch (\Exception $innerException) {
                             Log::error('خطا در ایجاد محصول', [
                                 'barcode' => $product['barcode'],
                                 'item_id' => $product['item_id'],
                                 'stock_id' => $product['stock_id'],
+                                'license_id' => $product['license_id'],
                                 'error' => $innerException->getMessage()
                             ]);
                         }
@@ -632,13 +625,13 @@ class ProcessProductChanges implements ShouldQueue
 
             // فیلتر کردن محصولاتی که قبلاً وجود ندارند
             $productsToInsert = array_filter($childProducts, function($product) use ($existingKeys) {
-                $key = $product['item_id'] . '_' . $product['stock_id'];
+                $key = $product['license_id'] . '_' . $product['item_id'] . '_' . $product['stock_id'];
                 return !in_array($key, $existingKeys);
             });
 
             if (!empty($productsToInsert)) {
                 try {
-                    DB::table('products')->insert($productsToInsert);
+                    DB::table('products')->insertOrIgnore($productsToInsert);
                     $createdProducts = array_merge($createdProducts, $productsToInsert);
 
                     Log::info('محصولات متغیر ایجاد شدند', [
@@ -653,21 +646,14 @@ class ProcessProductChanges implements ShouldQueue
                     // Fallback: درج تک تک با چک
                     foreach ($productsToInsert as $product) {
                         try {
-                            $exists = DB::table('products')
-                                ->where('item_id', $product['item_id'])
-                                ->where('stock_id', $product['stock_id'])
-                                ->where('license_id', $product['license_id'])
-                                ->exists();
-
-                            if (!$exists) {
-                                DB::table('products')->insert($product);
-                                $createdProducts[] = $product;
-                            }
+                            DB::table('products')->insertOrIgnore($product);
+                            $createdProducts[] = $product;
                         } catch (\Exception $innerException) {
                             Log::error('خطا در ایجاد محصول متغیر', [
                                 'barcode' => $product['barcode'],
                                 'item_id' => $product['item_id'],
                                 'stock_id' => $product['stock_id'],
+                                'license_id' => $product['license_id'],
                                 'error' => $innerException->getMessage()
                             ]);
                         }
@@ -724,7 +710,7 @@ class ProcessProductChanges implements ShouldQueue
         if (!empty($variantsToInsert)) {
             try {
                 // درج دسته‌ای واریانت‌ها
-                DB::table('products')->insert($variantsToInsert);
+                DB::table('products')->insertOrIgnore($variantsToInsert);
                 $createdVariants = $variantsToInsert;
 
                 Log::info('واریانت‌های جدید با موفقیت ایجاد شدند', [
@@ -739,21 +725,14 @@ class ProcessProductChanges implements ShouldQueue
                 // Fallback: درج تک تک در صورت خطا با چک
                 foreach ($variantsToInsert as $variant) {
                     try {
-                        $exists = DB::table('products')
-                            ->where('item_id', $variant['item_id'])
-                            ->where('stock_id', $variant['stock_id'])
-                            ->where('license_id', $variant['license_id'])
-                            ->exists();
-
-                        if (!$exists) {
-                            DB::table('products')->insert($variant);
-                            $createdVariants[] = $variant;
-                        }
+                        DB::table('products')->insertOrIgnore($variant);
+                        $createdVariants[] = $variant;
                     } catch (\Exception $innerException) {
                         Log::error('خطا در ایجاد واریانت', [
                             'barcode' => $variant['barcode'],
                             'item_id' => $variant['item_id'] ?? null,
                             'stock_id' => $variant['stock_id'] ?? null,
+                            'license_id' => $variant['license_id'] ?? null,
                             'error' => $innerException->getMessage()
                         ]);
                     }
