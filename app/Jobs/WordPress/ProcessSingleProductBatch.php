@@ -16,7 +16,9 @@ use Illuminate\Support\Facades\Http;
 
 class ProcessSingleProductBatch implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait, PriceUnitConverter;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait, PriceUnitConverter {
+        PriceUnitConverter::convertPriceUnit insteadof WordPressMasterTrait;
+    }
 
     protected $licenseId;
     protected $uniqueIds;
