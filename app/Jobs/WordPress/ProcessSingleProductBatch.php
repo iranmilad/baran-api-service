@@ -105,19 +105,27 @@ class ProcessSingleProductBatch implements ShouldQueue
     private function getRainProducts($uniqueIds, $user)
     {
         try {
-            if (!$user->warehouse_api_url || !$user->warehouse_api_username || !$user->warehouse_api_password) {
-                Log::warning('فرآیند متوقف شد - اطلاعات API انبار کامل نیست', [
-                    'license_id' => $this->licenseId,
-                    'warehouse_api_url_exists' => !empty($user->warehouse_api_url),
-                    'warehouse_api_username_exists' => !empty($user->warehouse_api_username),
-                    'warehouse_api_password_exists' => !empty($user->warehouse_api_password)
+            // دریافت لایسنس با تنظیمات برای دسترسی به اطلاعات API انبار
+            $license = License::with('userSetting')->find($this->licenseId);
+            if (!$license || !$license->userSetting) {
+                Log::warning('فرآیند متوقف شد - تنظیمات کاربر یافت نشد', [
+                    'license_id' => $this->licenseId
                 ]);
                 return [];
             }
 
-            // دریافت لایسنس با تنظیمات برای دسترسی به default_warehouse_code
-            $license = License::with('userSetting')->find($this->licenseId);
-            $defaultWarehouseCode = $license && $license->userSetting ? $license->userSetting->default_warehouse_code : '';
+            $userSettings = $license->userSetting;
+            $defaultWarehouseCode = $userSettings->default_warehouse_code ?? '';
+
+            if (!$userSettings->warehouse_api_url || !$userSettings->warehouse_api_username || !$userSettings->warehouse_api_password) {
+                Log::warning('فرآیند متوقف شد - اطلاعات API انبار کامل نیست', [
+                    'license_id' => $this->licenseId,
+                    'warehouse_api_url_exists' => !empty($userSettings->warehouse_api_url),
+                    'warehouse_api_username_exists' => !empty($userSettings->warehouse_api_username),
+                    'warehouse_api_password_exists' => !empty($userSettings->warehouse_api_password)
+                ]);
+                return [];
+            }
 
             $response = Http::withOptions([
                 'verify' => false,
@@ -125,8 +133,8 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'connect_timeout' => 120
             ])->withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
-            ])->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
+                'Authorization' => 'Basic ' . base64_encode($userSettings->warehouse_api_username . ':' . $userSettings->warehouse_api_password)
+            ])->post($userSettings->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
 
 
 
