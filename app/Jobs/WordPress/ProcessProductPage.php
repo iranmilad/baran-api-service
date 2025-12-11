@@ -121,17 +121,39 @@ class ProcessProductPage implements ShouldQueue
             // بررسی نهایی زمان
             $finalElapsedTime = microtime(true) - $startTime;
 
-            // فقط اگر همه محصولات پردازش شدند و تعداد برابر 100 بود، صفحه بعد را پردازش کن
-            if ($processedProducts === count($products) && count($products) === 100 && $finalElapsedTime < $maxExecutionTime) {
+            // اگر تعداد محصولات کمتر از 100 است، صفحات دیگر وجود ندارد (این آخرین صفحه است)
+            // اگر تعداد برابر 100 است و زمان اجرا کم است، صفحه بعد را پردازش کن
+            if (count($products) === 100 && $finalElapsedTime < $maxExecutionTime) {
                 ProcessProductPage::dispatch($this->licenseId, $this->page + 1)
                     ->onQueue('empty-unique-ids')
                     ->delay(now()->addSeconds(10));
+
+                Log::info('ارسال صفحه بعد برای پردازش', [
+                    'license_id' => $this->licenseId,
+                    'current_page' => $this->page,
+                    'next_page' => $this->page + 1,
+                    'elapsed_time' => $finalElapsedTime
+                ]);
+            } elseif (count($products) < 100) {
+                Log::info('پایان پردازش - تمام صفحات تکمیل شد', [
+                    'license_id' => $this->licenseId,
+                    'current_page' => $this->page,
+                    'products_in_this_page' => count($products)
+                ]);
+            } else {
+                Log::warning('صفحه بعد ارسال نشد - زمان اجرا بیش از حد مجاز است', [
+                    'license_id' => $this->licenseId,
+                    'current_page' => $this->page,
+                    'elapsed_time' => $finalElapsedTime,
+                    'max_time' => $maxExecutionTime
+                ]);
             }
 
             Log::info('پایان پردازش صفحه محصولات', [
                 'license_id' => $this->licenseId,
                 'page' => $this->page,
-                'processed_products' => $processedProducts
+                'processed_products' => $processedProducts,
+                'total_products_in_page' => count($products)
             ]);
 
         } catch (\Exception $e) {
