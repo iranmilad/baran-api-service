@@ -128,6 +128,22 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
             ])->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
 
+            // لاگ درخواست و پاسخ API باران
+            Log::info('درخواست به API باران', [
+                'license_id' => $this->licenseId,
+                'endpoint' => $user->warehouse_api_url . '/api/itemlist/GetItemsByIds',
+                'request_data' => [
+                    'unique_ids_count' => count($uniqueIds),
+                    'unique_ids_sample' => array_slice($uniqueIds, 0, 5), // نمونه اول 5 مورد
+                    'timeout' => 300,
+                    'connect_timeout' => 120
+                ],
+                'response_status' => $response->status(),
+                'response_headers' => $response->headers(),
+                'response_body_sample' => substr($response->body(), 0, 500), // اولین 500 کاراکتر
+                'timestamp' => now()->toDateTimeString()
+            ]);
+
 
 
             if (!$response->successful()) {
@@ -135,14 +151,17 @@ class ProcessSingleProductBatch implements ShouldQueue
                     'license_id' => $this->licenseId,
                     'status_code' => $response->status(),
                     'response_body' => $response->body(),
-                    'unique_ids_count' => count($uniqueIds)
+                    'unique_ids_count' => count($uniqueIds),
+                    'endpoint' => $user->warehouse_api_url . '/api/itemlist/GetItemsByIds',
+                    'timestamp' => now()->toDateTimeString()
                 ]);
 
                 // اگر خطای 500 بود، لاگ کن و ادامه نده
                 if ($response->status() == 500) {
                     Log::error('خطای 500 در درخواست Baran API', [
                         'license_id' => $this->licenseId,
-                        'status' => $response->status()
+                        'status' => $response->status(),
+                        'response_body' => $response->body()
                     ]);
                 }
                 return [];
@@ -154,10 +173,24 @@ class ProcessSingleProductBatch implements ShouldQueue
                 Log::warning('فرآیند متوقف شد - هیچ محصولی از API باران بازگردانده نشد', [
                     'license_id' => $this->licenseId,
                     'unique_ids_count' => count($uniqueIds),
-                    'response_structure' => is_array($allItems) ? 'array' : gettype($allItems)
+                    'response_structure' => is_array($allItems) ? 'array' : gettype($allItems),
+                    'response_status' => $response->status(),
+                    'endpoint' => $user->warehouse_api_url . '/api/itemlist/GetItemsByIds',
+                    'timestamp' => now()->toDateTimeString()
                 ]);
                 return [];
             }
+
+            // لاگ موفقیت درخواست
+            Log::info('درخواست API باران موفق', [
+                'license_id' => $this->licenseId,
+                'response_status' => $response->status(),
+                'items_returned' => count($allItems),
+                'unique_ids_requested' => count($uniqueIds),
+                'endpoint' => $user->warehouse_api_url . '/api/itemlist/GetItemsByIds',
+                'first_item_sample' => count($allItems) > 0 ? array_slice($allItems, 0, 1) : null,
+                'timestamp' => now()->toDateTimeString()
+            ]);
             $filteredProducts = [];
 
             Log::info('شروع فیلتر کردن محصولات', [
