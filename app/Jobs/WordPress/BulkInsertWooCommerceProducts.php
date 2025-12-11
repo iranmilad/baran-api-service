@@ -249,13 +249,69 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         $itemId = $productData['item_id'] ?? $productData['ItemId'] ?? null;
         $barcode = $productData['barcode'] ?? $productData['Barcode'] ?? '';
         $itemName = $productData['item_name'] ?? $productData['ItemName'] ?? $productData['name'] ?? '';
-        $totalCount = $productData['total_count'] ?? $productData['TotalCount'] ?? $productData['stock_quantity'] ?? 0;
         $departmentName = $productData['department_name'] ?? $productData['DepartmentName'] ?? null;
         $priceAmount = $productData['price_amount'] ?? $productData['PriceAmount'] ?? $productData['regular_price'] ?? 0;
         $isVariant = $productData['is_variant'] ?? $productData['IsVariant'] ?? false;
         $parentId = $productData['parent_id'] ?? $productData['ParentId'] ?? null;
         $discountPercentage = $productData['discount_percentage'] ?? $productData['DiscountPercentage'] ?? 0;
         $priceIncreasePercentage = $productData['price_increase_percentage'] ?? $productData['PriceIncreasePercentage'] ?? 0;
+        $stockId = $productData['stock_id'] ?? $productData['StockID'] ?? null;
+
+        // دریافت موجودی از انبارهای تنظیم‌شده یا تمام انبارها
+        $totalCount = 0;
+        $warehouseInfo = [];
+        
+        if ($itemId) {
+            // دریافت کدهای انبارهای فعال
+            $defaultWarehouseCodes = [];
+            if (!empty($userSetting->default_warehouse_code)) {
+                // اگر رشته‌ای است با کاما یا semicolon جدا شده
+                if (is_string($userSetting->default_warehouse_code)) {
+                    $defaultWarehouseCodes = array_filter(
+                        array_map('trim', preg_split('/[,;]/', $userSetting->default_warehouse_code))
+                    );
+                } elseif (is_array($userSetting->default_warehouse_code)) {
+                    $defaultWarehouseCodes = $userSetting->default_warehouse_code;
+                }
+            }
+
+            // نوشتن کوئری برای دریافت موجودی
+            $query = \App\Models\Product::where('item_id', $itemId)
+                ->where('license_id', $this->license_id);
+
+            // اگر انبارهای خاصی تنظیم شده‌اند، فقط از آن‌ها استفاده کن
+            if (!empty($defaultWarehouseCodes)) {
+                $query->whereIn('stock_id', $defaultWarehouseCodes);
+            }
+
+            $localProducts = $query->get();
+
+            foreach ($localProducts as $product) {
+                $totalCount += (int)$product->total_count;
+                $warehouseInfo[] = [
+                    'stock_id' => $product->stock_id,
+                    'quantity' => (int)$product->total_count
+                ];
+            }
+
+            // لاگ تجمیع موجودی برای مدیران
+            Log::info('تجمیع موجودی انبار برای ووکامرس', [
+                'barcode' => $barcode,
+                'item_id' => $itemId,
+                'warehouses' => $warehouseInfo,
+                'total_quantity' => $totalCount,
+                'warehouse_filter' => !empty($defaultWarehouseCodes) ? 'configured' : 'all',
+                'configured_warehouses' => $defaultWarehouseCodes,
+                'license_id' => $this->license_id,
+                'operation' => 'insert',
+                'timestamp' => now()->toDateTimeString()
+            ]);
+        }
+
+        // اگر TotalCount در درخواست وجود دارد و موجودی از انبارها پیدا نشد، از درخواست استفاده کن
+        if ($totalCount === 0) {
+            $totalCount = (int)($productData['total_count'] ?? $productData['TotalCount'] ?? $productData['stock_quantity'] ?? 0);
+        }
 
         $data = [
             'unique_id' => (string)$itemId,

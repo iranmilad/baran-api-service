@@ -276,18 +276,56 @@ class SyncWooCommerceProducts implements ShouldQueue
             }
 
             if ($this->operation === 'insert' || $userSettings->enable_stock_update) {
-                // دریافت موجودی از مدل Product محلی به جای API باران
+                // دریافت موجودی از انبارهای تنظیم‌شده یا تمام انبارها
                 $itemId = $item['ItemID'] ?? $item['item_id'] ?? $item['ItemId'] ?? null;
                 $stockQuantity = 0;
+                $warehouseInfo = [];
 
                 if ($itemId) {
-                    $localProduct = Product::where('item_id', $itemId)
-                        ->where('license_id', $this->license_id)
-                        ->first();
-
-                    if ($localProduct) {
-                        $stockQuantity = (int)$localProduct->total_count;
+                    // دریافت کدهای انبارهای فعال
+                    $defaultWarehouseCodes = [];
+                    if (!empty($userSettings->default_warehouse_code)) {
+                        // اگر رشته‌ای است با کاما یا semicolon جدا شده
+                        if (is_string($userSettings->default_warehouse_code)) {
+                            $defaultWarehouseCodes = array_filter(
+                                array_map('trim', preg_split('/[,;]/', $userSettings->default_warehouse_code))
+                            );
+                        } elseif (is_array($userSettings->default_warehouse_code)) {
+                            $defaultWarehouseCodes = $userSettings->default_warehouse_code;
+                        }
                     }
+
+                    // نوشتن کوئری برای دریافت موجودی
+                    $query = Product::where('item_id', $itemId)
+                        ->where('license_id', $this->license_id);
+
+                    // اگر انبارهای خاصی تنظیم شده‌اند، فقط از آن‌ها استفاده کن
+                    if (!empty($defaultWarehouseCodes)) {
+                        $query->whereIn('stock_id', $defaultWarehouseCodes);
+                    }
+
+                    $localProducts = $query->get();
+
+                    foreach ($localProducts as $product) {
+                        $stockQuantity += (int)$product->total_count;
+                        $warehouseInfo[] = [
+                            'stock_id' => $product->stock_id,
+                            'quantity' => (int)$product->total_count
+                        ];
+                    }
+
+                    // لاگ تجمیع موجودی برای مدیران
+                    Log::info('تجمیع موجودی انبار برای ووکامرس', [
+                        'barcode' => $item['Barcode'] ?? $item['barcode'] ?? '',
+                        'item_id' => $itemId,
+                        'warehouses' => $warehouseInfo,
+                        'total_quantity' => $stockQuantity,
+                        'warehouse_filter' => !empty($defaultWarehouseCodes) ? 'configured' : 'all',
+                        'configured_warehouses' => $defaultWarehouseCodes,
+                        'license_id' => $this->license_id,
+                        'operation' => $this->operation,
+                        'timestamp' => now()->toDateTimeString()
+                    ]);
                 }
 
                 $data['stock_quantity'] = $stockQuantity;
