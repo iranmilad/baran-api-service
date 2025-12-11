@@ -752,6 +752,36 @@ class ProcessInvoice implements ShouldQueue
             $this->invoice->customer_id = $customerResult['CustomerID'];
             $this->invoice->save();
 
+            // دریافت تنظیمات انبار
+            $userSettings = UserSetting::where('license_id', $this->license->id)->first();
+            $enableDynamicWarehouseInvoice = $userSettings->enable_dynamic_warehouse_invoice ?? false;
+            $defaultWarehouseCode = $userSettings->default_warehouse_code ?? '';
+
+            // تجزیه کدهای انبار
+            $warehouseCodes = [];
+            if (!empty($defaultWarehouseCode)) {
+                if (is_string($defaultWarehouseCode)) {
+                    if (substr(trim($defaultWarehouseCode), 0, 1) === '[') {
+                        $decoded = json_decode($defaultWarehouseCode, true);
+                        if (is_array($decoded)) {
+                            $warehouseCodes = array_filter(array_map(function($code) {
+                                return strtolower(trim(stripslashes((string)$code)));
+                            }, $decoded));
+                        }
+                    } else {
+                        $warehouseCodes = array_filter(array_map(function($code) {
+                            return strtolower(trim($code));
+                        }, preg_split('/[,;]/', $defaultWarehouseCode)));
+                    }
+                }
+            }
+
+            Log::info('تنظیمات انبار برای فاکتور', [
+                'invoice_id' => $this->invoice->id,
+                'enable_dynamic_warehouse' => $enableDynamicWarehouseInvoice,
+                'warehouse_codes_count' => count($warehouseCodes),
+                'warehouse_codes' => $warehouseCodes
+            ]);
 
             // آماده‌سازی آیتم‌های فاکتور
             $items = [];
@@ -812,6 +842,57 @@ class ProcessInvoice implements ShouldQueue
                 $itemQuantity = (int)$item['quantity'];
                 $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
 
+                // تعیین StockId بر اساس تنظیمات انبار
+                $stockId = null;
+
+                if (!$enableDynamicWarehouseInvoice && !empty($warehouseCodes)) {
+                    // حالت ثابت: از اولین انبار استفاده کن
+                    $stockId = reset($warehouseCodes); // اولین انبار
+                    Log::info('انبار ثابت برای آیتم', [
+                        'invoice_id' => $this->invoice->id,
+                        'item_id' => $itemId,
+                        'stock_id' => $stockId,
+                        'warehouse_mode' => 'static'
+                    ]);
+                } elseif ($enableDynamicWarehouseInvoice && !empty($warehouseCodes)) {
+                    // حالت پویا: بررسی موجودی از دیتابیس
+                    $product = \App\Models\Product::where('license_id', $this->license->id)
+                        ->where('item_id', $itemId)
+                        ->first();
+
+                    if ($product && $product->stock_id) {
+                        $lowerStockId = strtolower($product->stock_id);
+
+                        // بررسی اینکه آیا اولویت این انبار در دیتابیس موجود است
+                        if (in_array($lowerStockId, $warehouseCodes)) {
+                            $stockId = $lowerStockId;
+                            Log::info('انبار پویا برای آیتم (موجودی دارد)', [
+                                'invoice_id' => $this->invoice->id,
+                                'item_id' => $itemId,
+                                'stock_id' => $stockId,
+                                'warehouse_mode' => 'dynamic'
+                            ]);
+                        } else {
+                            // اگر stock_id پیش‌فرض در لیست نیست، از اولی استفاده کن
+                            $stockId = reset($warehouseCodes);
+                            Log::warning('انبار در دیتابیس با اولویت‌ها مطابقت ندارد، از اول استفاده شود', [
+                                'invoice_id' => $this->invoice->id,
+                                'item_id' => $itemId,
+                                'db_stock_id' => $lowerStockId,
+                                'selected_stock_id' => $stockId
+                            ]);
+                        }
+                    } else {
+                        // اگر محصول در دیتابیس نیست، از اولی استفاده کن
+                        $stockId = reset($warehouseCodes);
+                        Log::warning('محصول در دیتابیس یافت نشد، از اول انبار استفاده شود', [
+                            'invoice_id' => $this->invoice->id,
+                            'item_id' => $itemId,
+                            'selected_stock_id' => $stockId
+                        ]);
+                    }
+                }
+
                 $items[] = [
                     'IsPriceWithTax' => true,
                     'ItemId' => $itemId,
@@ -822,7 +903,7 @@ class ProcessInvoice implements ShouldQueue
                     'Price' => $itemPrice,
                     'Quantity' => $itemQuantity,
                     'Tax' => isset($item['tax']) ? (float)$item['tax'] : 0,
-                    //'StockId' => $product->stock_id,
+                    'StockId' => $stockId,
                     'Type' => 302
                 ];
             }
