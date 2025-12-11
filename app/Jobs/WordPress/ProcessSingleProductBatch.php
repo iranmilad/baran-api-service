@@ -105,27 +105,19 @@ class ProcessSingleProductBatch implements ShouldQueue
     private function getRainProducts($uniqueIds, $user)
     {
         try {
-            // دریافت لایسنس با تنظیمات برای دسترسی به اطلاعات API انبار
-            $license = License::with('userSetting')->find($this->licenseId);
-            if (!$license || !$license->userSetting) {
-                Log::warning('فرآیند متوقف شد - تنظیمات کاربر یافت نشد', [
-                    'license_id' => $this->licenseId
-                ]);
-                return [];
-            }
-
-            $userSettings = $license->userSetting;
-            $defaultWarehouseCode = $userSettings->default_warehouse_code ?? '';
-
-            if (!$userSettings->warehouse_api_url || !$userSettings->warehouse_api_username || !$userSettings->warehouse_api_password) {
+            if (!$user->warehouse_api_url || !$user->warehouse_api_username || !$user->warehouse_api_password) {
                 Log::warning('فرآیند متوقف شد - اطلاعات API انبار کامل نیست', [
                     'license_id' => $this->licenseId,
-                    'warehouse_api_url_exists' => !empty($userSettings->warehouse_api_url),
-                    'warehouse_api_username_exists' => !empty($userSettings->warehouse_api_username),
-                    'warehouse_api_password_exists' => !empty($userSettings->warehouse_api_password)
+                    'warehouse_api_url_exists' => !empty($user->warehouse_api_url),
+                    'warehouse_api_username_exists' => !empty($user->warehouse_api_username),
+                    'warehouse_api_password_exists' => !empty($user->warehouse_api_password)
                 ]);
                 return [];
             }
+
+            // دریافت لایسنس با تنظیمات برای دسترسی به default_warehouse_code
+            $license = License::with('userSetting')->find($this->licenseId);
+            $defaultWarehouseCode = $license && $license->userSetting ? $license->userSetting->default_warehouse_code : '';
 
             $response = Http::withOptions([
                 'verify' => false,
@@ -133,8 +125,8 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'connect_timeout' => 120
             ])->withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($userSettings->warehouse_api_username . ':' . $userSettings->warehouse_api_password)
-            ])->post($userSettings->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
+                'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
+            ])->post($user->warehouse_api_url . '/api/itemlist/GetItemsByIds', $uniqueIds);
 
 
 
@@ -204,13 +196,32 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'license_id' => $this->licenseId
             ]);
 
+            $filteredCount = 0;
+            $includedCount = 0;
+
             foreach ($allItems as $item) {
                 $itemId = $item['itemID'];
                 $stockId = $item['stockID'] ?? null;
 
                 // اگر warehouse codes تنظیم شده‌اند، فقط آیتم‌های مربوط به انبارهای کنفیگ شده را در نظر بگیر
-                if (!empty($warehouseCodes) && !in_array($stockId, $warehouseCodes)) {
-                    continue; // این آیتم را نادیده بگیر
+                if (!empty($warehouseCodes)) {
+                    if (!in_array($stockId, $warehouseCodes)) {
+                        $filteredCount++;
+                        // لاگ نمونه‌های فیلتر شده
+                        if ($filteredCount <= 5) {
+                            Log::info('آیتم فیلتر شده توسط warehouse', [
+                                'item_id' => $itemId,
+                                'stock_id' => $stockId,
+                                'expected_warehouse_codes' => $warehouseCodes,
+                                'license_id' => $this->licenseId
+                            ]);
+                        }
+                        continue; // این آیتم را نادیده بگیر
+                    } else {
+                        $includedCount++;
+                    }
+                } else {
+                    $includedCount++;
                 }
 
                 // اگر آیتم جدید است، آن را اضافه کن
@@ -258,8 +269,11 @@ class ProcessSingleProductBatch implements ShouldQueue
                 'license_id' => $this->licenseId,
                 'original_count' => count($allItems),
                 'grouped_count' => count($filteredProducts),
+                'filtered_count' => $filteredCount ?? 0,
+                'included_count' => $includedCount ?? 0,
                 'default_warehouse_code' => $defaultWarehouseCode,
-                'warehouse_filter_enabled' => !empty($defaultWarehouseCode)
+                'parsed_warehouse_codes' => $warehouseCodes,
+                'warehouse_filter_enabled' => !empty($warehouseCodes)
             ]);
 
             return $filteredProducts;
