@@ -306,7 +306,8 @@ class SyncWooCommerceProducts implements ShouldQueue
                         }
                     }
 
-                    // نوشتن کوئری برای دریافت موجودی
+                    // برای insert: اگر محصول قبلاً در دیتابیس وجود دارد، موجودی از دیتابیس بگیر
+                    // ورنه از درخواست استفاده کن
                     $query = Product::where('item_id', $itemId)
                         ->where('license_id', $this->license_id);
 
@@ -317,12 +318,29 @@ class SyncWooCommerceProducts implements ShouldQueue
 
                     $localProducts = $query->get();
 
-                    foreach ($localProducts as $product) {
-                        $stockQuantity += (int)$product->total_count;
-                        $warehouseInfo[] = [
-                            'stock_id' => $product->stock_id,
-                            'quantity' => (int)$product->total_count
-                        ];
+                    if ($localProducts->isNotEmpty()) {
+                        // محصول در دیتابیس وجود دارد - موجودی از دیتابیس بگیر
+                        foreach ($localProducts as $product) {
+                            $stockQuantity += (int)$product->total_count;
+                            $warehouseInfo[] = [
+                                'stock_id' => $product->stock_id,
+                                'quantity' => (int)$product->total_count
+                            ];
+                        }
+                    } else {
+                        // محصول در دیتابیس نیست - از درخواست استفاده کن
+                        $totalCount = (int)($item['TotalCount'] ?? $item['total_count'] ?? 0);
+                        $stockId = $item['StockID'] ?? $item['stock_id'] ?? null;
+
+                        if ($totalCount > 0) {
+                            $stockQuantity = $totalCount;
+                            if ($stockId) {
+                                $warehouseInfo[] = [
+                                    'stock_id' => $stockId,
+                                    'quantity' => $totalCount
+                                ];
+                            }
+                        }
                     }
 
                     // لاگ تجمیع موجودی برای مدیران
@@ -334,6 +352,7 @@ class SyncWooCommerceProducts implements ShouldQueue
                         'warehouse_filter' => !empty($defaultWarehouseCodes) ? 'configured' : 'all',
                         'configured_warehouses' => $defaultWarehouseCodes,
                         'raw_default_warehouse_code' => $userSettings->default_warehouse_code ?? 'null',
+                        'source' => $localProducts->isNotEmpty() ? 'database' : 'request',
                         'license_id' => $this->license_id,
                         'operation' => $this->operation,
                         'timestamp' => now()->toDateTimeString()
