@@ -5,6 +5,7 @@ namespace App\Jobs\WordPress;
 use App\Models\License;
 use App\Models\Product;
 use App\Traits\WordPress\WordPressMasterTrait;
+use App\Traits\PriceUnitConverter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\Http;
 
 class ProcessSingleProductBatch implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait, PriceUnitConverter;
 
     protected $licenseId;
     protected $uniqueIds;
@@ -166,15 +167,30 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             // گروه‌بندی محصولات بر اساس itemID
             $groupedItems = [];
+            $warehouseBreakdown = []; // برای لاگ
+
             foreach ($allItems as $item) {
                 $itemId = $item['itemID'];
+                $stockId = $item['stockID'] ?? null;
 
-                // // اگر default_warehouse_code تنظیم شده، فقط آیتم‌های مربوط به آن انبار را در نظر بگیر
-                // if (!empty($defaultWarehouseCode)) {
-                //     if (!isset($item['stockID']) || $item['stockID'] !== $defaultWarehouseCode) {
-                //         continue; // این آیتم را نادیده بگیر
-                //     }
-                // }
+                // اگر default_warehouse_code تنظیم شده، فقط آیتم‌های مربوط به انبارهای کنفیگ شده را در نظر بگیر
+                if (!empty($defaultWarehouseCode)) {
+                    // تجزیه JSON یا comma-separated warehouse codes
+                    $warehouseCodes = [];
+                    if (is_string($defaultWarehouseCode)) {
+                        if (substr(trim($defaultWarehouseCode), 0, 1) === '[') {
+                            $decoded = json_decode($defaultWarehouseCode, true);
+                            $warehouseCodes = is_array($decoded) ? $decoded : [];
+                        } else {
+                            $warehouseCodes = array_filter(array_map('trim', preg_split('/[,;]/', $defaultWarehouseCode)));
+                        }
+                    }
+
+                    // بررسی اینکه آیا این انبار در لیست کنفیگ شده انبارها است
+                    if (!empty($warehouseCodes) && !in_array($stockId, $warehouseCodes)) {
+                        continue; // این آیتم را نادیده بگیر
+                    }
+                }
 
                 // اگر آیتم جدید است، آن را اضافه کن
                 if (!isset($groupedItems[$itemId])) {
@@ -185,22 +201,44 @@ class ProcessSingleProductBatch implements ShouldQueue
                         'Price' => $item['salePrice'],
                         'CurrentDiscount' => $item['currentDiscount'],
                         'StockQuantity' => 0, // شروع با صفر
-                        'StockID' => $item['stockID'] // اولین stockID
+                        'StockID' => $stockId, // اولین stockID
+                        'WarehouseBreakdown' => [] // برای لاگ
                     ];
+                    $warehouseBreakdown[$itemId] = [];
                 }
 
                 // موجودی را جمع کن
-                $groupedItems[$itemId]['StockQuantity'] += (float)$item['stockQuantity'];
+                $quantity = (float)$item['stockQuantity'];
+                $groupedItems[$itemId]['StockQuantity'] += $quantity;
+                $groupedItems[$itemId]['WarehouseBreakdown'][] = [
+                    'stock_id' => $stockId,
+                    'quantity' => $quantity
+                ];
             }
 
-            // تبدیل گروه‌بندی شده به آرایه
-            $filteredProducts = array_values($groupedItems);
+            // تبدیل گروه‌بندی شده به آرایه و لاگ تفکیک انبارها
+            $filteredProducts = [];
+            foreach ($groupedItems as $itemId => $item) {
+                Log::info('تجمیع موجودی انبار برای bulk-sync', [
+                    'item_id' => $itemId,
+                    'barcode' => $item['Barcode'],
+                    'warehouses' => $item['WarehouseBreakdown'],
+                    'total_quantity' => $item['StockQuantity'],
+                    'license_id' => $this->licenseId,
+                    'timestamp' => now()->toDateTimeString()
+                ]);
+
+                // حذف WarehouseBreakdown از محصول برای ارسال به WooCommerce
+                unset($item['WarehouseBreakdown']);
+                $filteredProducts[] = $item;
+            }
 
             Log::info('نتیجه گروه‌بندی محصولات', [
                 'license_id' => $this->licenseId,
                 'original_count' => count($allItems),
                 'grouped_count' => count($filteredProducts),
-                'default_warehouse_code' => $defaultWarehouseCode
+                'default_warehouse_code' => $defaultWarehouseCode,
+                'warehouse_filter_enabled' => !empty($defaultWarehouseCode)
             ]);
 
             return $filteredProducts;
@@ -231,17 +269,37 @@ class ProcessSingleProductBatch implements ShouldQueue
             foreach ($baranProducts as $baranProduct) {
                 // محاسبه قیمت نهایی با تخفیف (currentDiscount درصد تخفیف است)
                 $finalPrice = $baranProduct["Price"];
+                $salePrice = null;
+
                 if (isset($baranProduct["CurrentDiscount"]) && $baranProduct["CurrentDiscount"] > 0) {
                     $discountAmount = ($baranProduct["Price"] * $baranProduct["CurrentDiscount"]) / 100;
                     $finalPrice = $baranProduct["Price"] - $discountAmount;
+                    $salePrice = $finalPrice;
+                }
+
+                // تبدیل قیمت به واحد ووکامرس
+                $convertedPrice = $this->convertPriceUnit(
+                    $finalPrice,
+                    $userSettings->rain_sale_price_unit,
+                    $userSettings->woocommerce_price_unit
+                );
+
+                $convertedSalePrice = null;
+                if ($salePrice !== null) {
+                    $convertedSalePrice = $this->convertPriceUnit(
+                        $salePrice,
+                        $userSettings->rain_sale_price_unit,
+                        $userSettings->woocommerce_price_unit
+                    );
                 }
 
                 $productData = $this->prepareProductDataForBatchUpdate([
                     'unique_id' => $baranProduct["ItemID"],
                     'barcode' => $baranProduct["Barcode"],
                     'name' => $baranProduct["Name"],
-                    'regular_price' => $finalPrice, // قیمت نهایی (با تخفیف در صورت وجود)
-                    'stock_quantity' => $baranProduct["StockQuantity"], // موجودی از Baran API
+                    'regular_price' => $convertedPrice,
+                    'sale_price' => $convertedSalePrice,
+                    'stock_quantity' => $baranProduct["StockQuantity"],
                 ], $userSettings);
 
                 if (!empty($productData)) {
@@ -280,6 +338,14 @@ class ProcessSingleProductBatch implements ShouldQueue
         // بررسی تنظیمات کاربر برای قیمت
         if ($userSettings->enable_price_update && !empty($product['regular_price'])) {
             $data['regular_price'] = (string) $product['regular_price'];
+
+            // اگر sale_price داریم، آن را هم اضافه کن
+            if (isset($product['sale_price']) && $product['sale_price'] !== null && $product['sale_price'] > 0) {
+                $data['sale_price'] = (string) $product['sale_price'];
+            } else {
+                // اگر تخفیفی نیست، sale_price را خالی کن
+                $data['sale_price'] = '';
+            }
         }
 
         // بررسی تنظیمات کاربر برای موجودی
