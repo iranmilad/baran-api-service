@@ -121,8 +121,8 @@ class ProcessSingleProductBatch implements ShouldQueue
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 180,
-                'connect_timeout' => 60
+                'timeout' => 300,
+                'connect_timeout' => 120
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($user->warehouse_api_username . ':' . $user->warehouse_api_password)
@@ -171,27 +171,38 @@ class ProcessSingleProductBatch implements ShouldQueue
             $groupedItems = [];
             $warehouseBreakdown = []; // برای لاگ
 
+            // تجزیه warehouse codes یک بار برای تمام items
+            $warehouseCodes = [];
+            if (!empty($defaultWarehouseCode)) {
+                if (is_string($defaultWarehouseCode)) {
+                    if (substr(trim($defaultWarehouseCode), 0, 1) === '[') {
+                        $decoded = json_decode($defaultWarehouseCode, true);
+                        if (is_array($decoded)) {
+                            // صاف کردن تمام مقادیر و حذف فضاهای خالی و escapes
+                            $warehouseCodes = array_filter(array_map(function($code) {
+                                return trim(stripslashes((string)$code));
+                            }, $decoded));
+                        }
+                    } else {
+                        $warehouseCodes = array_filter(array_map('trim', preg_split('/[,;]/', $defaultWarehouseCode)));
+                    }
+                }
+            }
+
+            Log::info('تجزیه کدهای انبار', [
+                'raw_default_warehouse_code' => $defaultWarehouseCode,
+                'parsed_warehouse_codes' => $warehouseCodes,
+                'warehouse_filter_enabled' => !empty($warehouseCodes),
+                'license_id' => $this->licenseId
+            ]);
+
             foreach ($allItems as $item) {
                 $itemId = $item['itemID'];
                 $stockId = $item['stockID'] ?? null;
 
-                // اگر default_warehouse_code تنظیم شده، فقط آیتم‌های مربوط به انبارهای کنفیگ شده را در نظر بگیر
-                if (!empty($defaultWarehouseCode)) {
-                    // تجزیه JSON یا comma-separated warehouse codes
-                    $warehouseCodes = [];
-                    if (is_string($defaultWarehouseCode)) {
-                        if (substr(trim($defaultWarehouseCode), 0, 1) === '[') {
-                            $decoded = json_decode($defaultWarehouseCode, true);
-                            $warehouseCodes = is_array($decoded) ? $decoded : [];
-                        } else {
-                            $warehouseCodes = array_filter(array_map('trim', preg_split('/[,;]/', $defaultWarehouseCode)));
-                        }
-                    }
-
-                    // بررسی اینکه آیا این انبار در لیست کنفیگ شده انبارها است
-                    if (!empty($warehouseCodes) && !in_array($stockId, $warehouseCodes)) {
-                        continue; // این آیتم را نادیده بگیر
-                    }
+                // اگر warehouse codes تنظیم شده‌اند، فقط آیتم‌های مربوط به انبارهای کنفیگ شده را در نظر بگیر
+                if (!empty($warehouseCodes) && !in_array($stockId, $warehouseCodes)) {
+                    continue; // این آیتم را نادیده بگیر
                 }
 
                 // اگر آیتم جدید است، آن را اضافه کن
