@@ -260,7 +260,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         // دریافت موجودی از انبارهای تنظیم‌شده یا تمام انبارها
         $totalCount = 0;
         $warehouseInfo = [];
-        
+
         if ($itemId) {
             // دریافت کدهای انبارهای فعال
             $defaultWarehouseCodes = [];
