@@ -205,7 +205,23 @@ class ProcessProductVariations implements ShouldQueue
                 return null;
             }
 
-            return $result['data'] ?? null;
+            $data = $result['data'] ?? null;
+
+            // اگر data یک string است (JSON)، آن را decode کنید
+            if (is_string($data)) {
+                $data = json_decode($data, true);
+            }
+
+            // اگر هنوز array نیست، null برگردانید
+            if (!is_array($data)) {
+                Log::warning('محصول داده‌های نامعتبری دارد', [
+                    'product_id' => $productId,
+                    'data_type' => gettype($data)
+                ]);
+                return null;
+            }
+
+            return $data;
 
         } catch (Exception $e) {
             Log::error('خطا در دریافت اطلاعات محصول', [
@@ -260,6 +276,14 @@ class ProcessProductVariations implements ShouldQueue
                 }
 
                 $variations = $result['data'] ?? [];
+
+                // اگر variations یک string است (JSON)، آن را decode کنید
+                if (is_string($variations)) {
+                    $variations = json_decode($variations, true);
+                    if (!is_array($variations)) {
+                        $variations = [];
+                    }
+                }
 
                 if (empty($variations)) {
                     Log::info('تمام variations دریافت شدند', [
