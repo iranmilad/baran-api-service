@@ -1218,6 +1218,13 @@ trait WooCommerceApiTrait
             $websiteUrl = rtrim($websiteUrl, '/');
             $url = $websiteUrl . '/wp-json/wc/v3/products/unique/batch-update-sku';
 
+            // لاگ تفصیلی درخواست
+            Log::info('تهیه درخواست batch update unique IDs', [
+                'url' => $url,
+                'products_count' => count($batchData['products'] ?? []),
+                'products' => $batchData['products'] ?? []
+            ]);
+
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($apiKey . ':' . $apiSecret)
@@ -1228,7 +1235,22 @@ trait WooCommerceApiTrait
                 'http_errors' => false
             ])->post($url, $batchData);
 
+            // لاگ تفصیلی پاسخ
+            Log::info('دریافت پاسخ از WooCommerce', [
+                'status_code' => $response->status(),
+                'successful' => $response->successful(),
+                'response_body' => $response->body(),
+                'response_json' => $response->successful() ? $response->json() : null
+            ]);
+
             if (!$response->successful()) {
+                Log::error('خطا در batch update unique IDs - پاسخ ناموفق', [
+                    'status_code' => $response->status(),
+                    'response_body' => substr($response->body(), 0, 1000),
+                    'url' => $url,
+                    'products_count' => count($batchData['products'] ?? [])
+                ]);
+
                 return [
                     'success' => false,
                     'message' => 'خطا در batch update unique IDs - کد: ' . $response->status(),
@@ -1239,6 +1261,11 @@ trait WooCommerceApiTrait
 
             $responseData = $response->json();
 
+            Log::info('batch update unique IDs با موفقیت انجام شد', [
+                'products_count' => count($batchData['products'] ?? []),
+                'response_data' => $responseData
+            ]);
+
             return [
                 'success' => true,
                 'data' => $responseData,
@@ -1246,6 +1273,13 @@ trait WooCommerceApiTrait
             ];
 
         } catch (\Exception $e) {
+            Log::error('استثنا در batch update unique IDs', [
+                'error_message' => $e->getMessage(),
+                'error_code' => $e->getCode(),
+                'trace' => $e->getTraceAsString(),
+                'products_count' => count($batchData['products'] ?? [])
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'خطا در batch update unique IDs: ' . $e->getMessage(),

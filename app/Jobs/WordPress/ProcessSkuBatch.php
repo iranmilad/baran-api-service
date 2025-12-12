@@ -214,6 +214,13 @@ class ProcessSkuBatch implements ShouldQueue
                 'products' => $uniqueIdMapping
             ];
 
+            Log::info('تهیه داده‌های batch update برای ارسال به WooCommerce', [
+                'license_id' => $this->licenseId,
+                'website_url' => $websiteUrl,
+                'products_count' => count($uniqueIdMapping),
+                'batch_data' => $batchData
+            ]);
+
             // استفاده از trait برای batch update unique IDs
             $result = $this->batchUpdateWooCommerceUniqueIdsBySku(
                 $websiteUrl,
@@ -221,6 +228,14 @@ class ProcessSkuBatch implements ShouldQueue
                 $wooApiKey->api_secret,
                 $batchData
             );
+
+            Log::info('نتیجه batch update از WooCommerce', [
+                'license_id' => $this->licenseId,
+                'success' => $result['success'],
+                'message' => $result['message'] ?? 'بدون پیام',
+                'status_code' => $result['status_code'] ?? 'N/A',
+                'full_result' => $result
+            ]);
 
             if ($result['success']) {
                 $responseData = $result['data'];
