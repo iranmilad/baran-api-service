@@ -124,65 +124,109 @@ class ProcessSkuBatch implements ShouldQueue
     }
 
     /**
-     * Get unique IDs by SKUs from Baran API
+     * Get unique IDs by SKUs from local products database only
      */
     private function getUniqueIdsBySkusFromBaran($skus, $user, $stockId)
     {
         $uniqueIdMapping = [];
 
         try {
-            Log::info('Fetching unique IDs from Baran API', [
-                'sku_count' => count($skus),
+            // استخراج SKU‌ها (آرایه یا رشته‌ای)
+            $barcodes = array_map(function($item) {
+                return is_array($item) ? $item['sku'] : $item;
+            }, $skus);
+
+            Log::info('جستجوی محصولات در جدول محلی', [
+                'license_id' => $this->licenseId,
+                'sku_count' => count($barcodes),
                 'stock_id' => $stockId
             ]);
 
-            // آماده‌سازی body درخواست
-            $requestBody = ['barcodes' => $skus];
-
-            // اضافه کردن stockId فقط در صورت وجود مقدار
+            // تجزیه warehouse code برای استفاده در جستجو
+            $warehouseCodes = [];
             if (!empty($stockId)) {
-                $requestBody['stockId'] = $stockId;
-            }
-
-            $response = Http::withOptions([
-                'verify' => false,
-                'timeout' => 180,
-                'connect_timeout' => 60
-            ])->withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
-            ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfos', $requestBody);
-
-            if ($response->successful()) {
-                $body = $response->json();
-                $results = $body['GetItemInfosResult'] ?? [];
-
-                foreach ($results as $item) {
-                    $barcode = $item['Barcode'] ?? null;
-                    $itemId = $item['ItemID'] ?? null;
-
-                    if ($barcode && $itemId && $itemId !== '00000000-0000-0000-0000-000000000000') {
-                        $uniqueIdMapping[] = [
-                            'unique_id' => $itemId,
-                            'sku' => $barcode
-                        ];
+                if (is_string($stockId)) {
+                    if (substr(trim($stockId), 0, 1) === '[') {
+                        $decoded = json_decode($stockId, true);
+                        if (is_array($decoded)) {
+                            $warehouseCodes = array_filter(array_map(function($code) {
+                                return strtolower(trim(stripslashes((string)$code)));
+                            }, $decoded));
+                        }
+                    } else {
+                        $warehouseCodes = array_filter(array_map(function($code) {
+                            return strtolower(trim($code));
+                        }, preg_split('/[,;]/', $stockId)));
                     }
                 }
-
-                Log::info('Successfully fetched unique IDs from Baran API', [
-                    'mapping_count' => count($uniqueIdMapping)
-                ]);
-            } else {
-                Log::error('Failed to fetch unique IDs from Baran API', [
-                    'status' => $response->status(),
-                    'skus' => $skus
-                ]);
             }
 
+            Log::info('کدهای انبار برای جستجو', [
+                'license_id' => $this->licenseId,
+                'warehouse_codes_count' => count($warehouseCodes),
+                'warehouse_codes' => $warehouseCodes
+            ]);
+
+            // جستجو در جدول products برای تمام SKU‌ها
+            $foundCount = 0;
+            $notFoundCount = 0;
+
+            foreach ($barcodes as $barcode) {
+                $product = null;
+
+                if (!empty($warehouseCodes)) {
+                    // اگر warehouse codes موجود است، فقط برای اولین انبار جستجو کنید
+                    $firstWarehouseCode = reset($warehouseCodes);
+
+                    $product = \App\Models\Product::where('license_id', $this->licenseId)
+                        ->where('barcode', $barcode)
+                        ->where('stock_id', $firstWarehouseCode)
+                        ->first();
+                } else {
+                    // اگر warehouse code تعریف نشده، برای هر انبار جستجو کنید
+                    $product = \App\Models\Product::where('license_id', $this->licenseId)
+                        ->where('barcode', $barcode)
+                        ->first();
+                }
+
+                if ($product && $product->item_id) {
+                    $uniqueIdMapping[] = [
+                        'unique_id' => $product->item_id,
+                        'sku' => $barcode
+                    ];
+
+                    $foundCount++;
+
+                    Log::info('محصول در جدول محلی یافت شد', [
+                        'barcode' => $barcode,
+                        'item_id' => $product->item_id,
+                        'stock_id' => $product->stock_id,
+                        'license_id' => $this->licenseId
+                    ]);
+                } else {
+                    $notFoundCount++;
+
+                    Log::warning('محصول در جدول محلی یافت نشد', [
+                        'barcode' => $barcode,
+                        'license_id' => $this->licenseId,
+                        'warehouse_codes' => $warehouseCodes
+                    ]);
+                }
+            }
+
+            Log::info('نتیجه جستجو در جدول محلی', [
+                'license_id' => $this->licenseId,
+                'total_skus' => count($barcodes),
+                'found_count' => $foundCount,
+                'not_found_count' => $notFoundCount,
+                'mapping_count' => count($uniqueIdMapping)
+            ]);
+
         } catch (\Exception $e) {
-            Log::error('Error fetching unique IDs from Baran API', [
+            Log::error('خطا در دریافت کدهای یکتا از جدول محلی', [
+                'license_id' => $this->licenseId,
                 'error' => $e->getMessage(),
-                'skus' => $skus
+                'trace' => $e->getTraceAsString()
             ]);
         }
 
