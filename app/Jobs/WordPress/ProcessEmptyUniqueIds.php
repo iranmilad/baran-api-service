@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Http;
 use App\Models\License;
 use App\Jobs\WordPress\ProcessSkuBatch;
 use App\Jobs\WordPress\ProcessProductPage;
+use App\Jobs\WordPress\FindAllEmptyUniqueIds;
 use Exception;
 
 class ProcessEmptyUniqueIds implements ShouldQueue
@@ -87,11 +88,11 @@ class ProcessEmptyUniqueIds implements ShouldQueue
         try {
             Log::info('Starting to process products with empty bim_unique_id');
 
-            // Start processing from the first page by dispatching ProcessProductPage job
-            ProcessProductPage::dispatch($this->licenseId, 1)
+            // استفاده از job جدید برای جستجوی تمام محصولات (بدون pagination محدود)
+            FindAllEmptyUniqueIds::dispatch($this->licenseId)
                 ->onQueue('empty-unique-ids');
 
-            Log::info('Dispatched first page processing job for products with empty bim_unique_id');
+            Log::info('Dispatched FindAllEmptyUniqueIds job for comprehensive product search');
 
         } catch (\Exception $e) {
             Log::error('Error starting product page processing', [

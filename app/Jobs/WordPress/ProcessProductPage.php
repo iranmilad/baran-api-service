@@ -126,7 +126,14 @@ class ProcessProductPage implements ShouldQueue
                 }
 
                 // Handle variations for variable products
+                // حتی اگر محصول مادر unique_id داشته باشد
                 if ($product['type'] === 'variable' && $elapsedTime < ($maxExecutionTime - 10)) {
+                    Log::info('شروع دریافت variations برای محصول variable', [
+                        'product_id' => $product['id'],
+                        'parent_unique_id' => $product['bim_unique_id'] ?? 'empty',
+                        'note' => 'دریافت تمام variations بدون توجه به unique_id محصول مادر'
+                    ]);
+
                     $variations = $this->getVariationSkus($license, $product['id']);
 
                     foreach ($variations as $variation) {
@@ -138,13 +145,23 @@ class ProcessProductPage implements ShouldQueue
                                 'type' => 'variation'
                             ];
 
-                            Log::info('واریانت بدون unique_id یافت شد', [
+                            Log::info('واریانت بدون unique_id (محصول مادر ممکن است unique_id نداشته باشد)', [
                                 'product_id' => $product['id'],
                                 'variation_id' => $variation['id'],
-                                'sku' => $variation['sku']
+                                'sku' => $variation['sku'],
+                                'parent_has_unique_id' => !empty($product['bim_unique_id']),
+                                'parent_unique_id' => $product['bim_unique_id'] ?? 'empty'
                             ]);
                         }
                     }
+
+                    Log::info('تکمیل دریافت variations برای محصول variable', [
+                        'product_id' => $product['id'],
+                        'total_variations' => count($variations),
+                        'variations_without_unique_id' => count(array_filter($variations, function($v) {
+                            return empty($v['bim_unique_id']) && !empty($v['sku']);
+                        }))
+                    ]);
                 }
 
                 $productsProcessed++;
@@ -176,8 +193,7 @@ class ProcessProductPage implements ShouldQueue
             // بررسی نهایی زمان
             $finalElapsedTime = microtime(true) - $startTime;
 
-            // اگر تعداد محصولات کمتر از 100 است، صفحات دیگر وجود ندارد (این آخرین صفحه است)
-            // اگر تعداد برابر 100 است و زمان اجرا کم است، صفحه بعد را پردازش کن
+            // فقط اگر همه محصولات پردازش شدند و تعداد برابر 100 بود، صفحه بعد را پردازش کن
             if (count($products) === 100 && $finalElapsedTime < $maxExecutionTime) {
                 ProcessProductPage::dispatch($this->licenseId, $this->page + 1)
                     ->onQueue('empty-unique-ids')
@@ -187,21 +203,25 @@ class ProcessProductPage implements ShouldQueue
                     'license_id' => $this->licenseId,
                     'current_page' => $this->page,
                     'next_page' => $this->page + 1,
-                    'elapsed_time' => $finalElapsedTime
+                    'elapsed_time' => $finalElapsedTime,
+                    'products_processed' => $productsProcessed,
+                    'skus_found' => count($skus)
                 ]);
             } elseif (count($products) < 100) {
                 Log::info('پایان پردازش - تمام صفحات تکمیل شد', [
                     'license_id' => $this->licenseId,
                     'current_page' => $this->page,
                     'products_in_this_page' => count($products),
-                    'total_skus_without_unique_id' => count($skus)
+                    'total_skus_without_unique_id' => count($skus),
+                    'elapsed_time' => $finalElapsedTime
                 ]);
             } else {
                 Log::warning('صفحه بعد ارسال نشد - زمان اجرا بیش از حد مجاز است', [
                     'license_id' => $this->licenseId,
                     'current_page' => $this->page,
                     'elapsed_time' => $finalElapsedTime,
-                    'max_time' => $maxExecutionTime
+                    'max_time' => $maxExecutionTime,
+                    'skus_found' => count($skus)
                 ]);
             }
 

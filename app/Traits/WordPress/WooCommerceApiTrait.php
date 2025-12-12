@@ -1244,6 +1244,35 @@ trait WooCommerceApiTrait
             ]);
 
             if (!$response->successful()) {
+                // اگر endpoint پیدا نشد یا error داد، سعی کنید variations را به طور جداگانه آپدیت کنید
+                if ($response->status() === 404 || $response->status() === 405) {
+                    Log::warning('batch-update-sku endpoint not found, trying individual variation updates', [
+                        'status_code' => $response->status(),
+                        'url' => $url
+                    ]);
+
+                    // Check if we have variations to update
+                    $hasVariations = false;
+                    foreach ($batchData['products'] ?? [] as $product) {
+                        if (!empty($product['variation_id']) && !empty($product['product_id'])) {
+                            $hasVariations = true;
+                            break;
+                        }
+                    }
+
+                    if ($hasVariations) {
+                        Log::info('درخواست دستی برای variations شروع شد');
+                        // Will handle individual variation updates in PHP code
+                        return [
+                            'success' => false,
+                            'message' => 'Batch endpoint not available, using individual updates',
+                            'status_code' => $response->status(),
+                            'needs_individual_update' => true,
+                            'response_body' => substr($response->body(), 0, 500)
+                        ];
+                    }
+                }
+
                 Log::error('خطا در batch update unique IDs - پاسخ ناموفق', [
                     'status_code' => $response->status(),
                     'response_body' => substr($response->body(), 0, 1000),
@@ -1283,6 +1312,79 @@ trait WooCommerceApiTrait
             return [
                 'success' => false,
                 'message' => 'خطا در batch update unique IDs: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * آپدیت direct variation unique_id
+     */
+    protected function updateWooCommerceVariationUniqueId($websiteUrl, $apiKey, $apiSecret, $productId, $variationId, $uniqueId)
+    {
+        try {
+            $websiteUrl = rtrim($websiteUrl, '/');
+            $url = $websiteUrl . "/wp-json/wc/v3/products/{$productId}/variations/{$variationId}";
+
+            Log::info('درخواست آپدیت variation unique_id مستقیم', [
+                'url' => $url,
+                'product_id' => $productId,
+                'variation_id' => $variationId,
+                'unique_id' => $uniqueId
+            ]);
+
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':' . $apiSecret)
+            ])->withOptions([
+                'verify' => false,
+                'timeout' => 30,
+                'connect_timeout' => 10,
+                'http_errors' => false
+            ])->put($url, [
+                'meta_data' => [
+                    [
+                        'key' => '_bim_unique_id',
+                        'value' => $uniqueId
+                    ]
+                ]
+            ]);
+
+            if ($response->successful()) {
+                Log::info('variation unique_id با موفقیت آپدیت شد', [
+                    'product_id' => $productId,
+                    'variation_id' => $variationId,
+                    'unique_id' => $uniqueId
+                ]);
+
+                return [
+                    'success' => true,
+                    'data' => $response->json()
+                ];
+            } else {
+                Log::error('خطا در آپدیت variation unique_id', [
+                    'status_code' => $response->status(),
+                    'response_body' => substr($response->body(), 0, 500),
+                    'product_id' => $productId,
+                    'variation_id' => $variationId
+                ]);
+
+                return [
+                    'success' => false,
+                    'status_code' => $response->status(),
+                    'error' => $response->body()
+                ];
+            }
+
+        } catch (\Exception $e) {
+            Log::error('استثنا در آپدیت variation unique_id', [
+                'error' => $e->getMessage(),
+                'product_id' => $productId,
+                'variation_id' => $variationId
+            ]);
+
+            return [
+                'success' => false,
                 'error' => $e->getMessage()
             ];
         }
