@@ -197,6 +197,15 @@ class ProcessProductVariations implements ShouldQueue
                 $productId
             );
 
+            // اگر result یک string است (JSON)، آن را decode کنید
+            if (is_string($result)) {
+                Log::info('محصول response یک JSON string است', [
+                    'product_id' => $productId,
+                    'string_length' => strlen($result)
+                ]);
+                $result = json_decode($result, true);
+            }
+
             // بررسی اینکه $result یک array است
             if (!is_array($result)) {
                 Log::error('محصول response یک array نیست', [
@@ -287,6 +296,16 @@ class ProcessProductVariations implements ShouldQueue
                     $productId,
                     $params
                 );
+
+                // اگر result یک string است (JSON)، آن را decode کنید
+                if (is_string($result)) {
+                    Log::info('variations response یک JSON string است', [
+                        'product_id' => $productId,
+                        'page' => $page,
+                        'string_length' => strlen($result)
+                    ]);
+                    $result = json_decode($result, true);
+                }
 
                 // بررسی اینکه $result یک array است
                 if (!is_array($result)) {
