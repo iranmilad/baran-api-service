@@ -1120,8 +1120,8 @@ trait WooCommerceApiTrait
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 30, // کاهش timeout
-                'connect_timeout' => 10,
+                'timeout' => 15, // کاهش timeout به 15 ثانیه
+                'connect_timeout' => 5,
             ])->get($url, $params);
 
             if (!$response->successful()) {

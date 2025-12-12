@@ -34,7 +34,7 @@ class ProcessProductPage implements ShouldQueue
     /**
      * The number of seconds the job can run before timing out.
      */
-    public $timeout = 50; // 50 ثانیه
+    public $timeout = 120; // 120 ثانیه
 
     /**
      * Calculate the number of seconds to wait before retrying the job.
@@ -79,6 +79,7 @@ class ProcessProductPage implements ShouldQueue
 
             // استخراج SKU‌های بدون unique_id
             $skus = [];
+            $variableProductCount = 0;
 
             foreach ($products as $product) {
                 // محصولات ساده بدون unique_id
@@ -95,14 +96,12 @@ class ProcessProductPage implements ShouldQueue
                     ]);
                 }
 
-                // تمام محصولات variable (برای بررسی variations آنها)
-                // حتی اگر محصول مادر unique_id داشته باشد
+                // تمام محصولات variable - فقط بررسی variations بدون فیلتر
                 if ($product['type'] === 'variable') {
-                    Log::info('دریافت variations برای محصول variable', [
-                        'product_id' => $product['id'],
-                        'parent_unique_id' => $product['bim_unique_id'] ?? 'empty'
-                    ]);
+                    $variableProductCount++;
 
+                    // بررسی تنها variations اول (صفحه اول)
+                    // برای کاهش تعداد API requests
                     $variations = $this->getVariationSkus($license, $product['id']);
 
                     foreach ($variations as $variation) {
@@ -130,6 +129,14 @@ class ProcessProductPage implements ShouldQueue
                 }
             }
 
+            Log::info('خلاصه صفحه پردازش شد', [
+                'license_id' => $this->licenseId,
+                'page' => $this->page,
+                'total_products' => count($products),
+                'variable_products_count' => $variableProductCount,
+                'skus_found' => count($skus)
+            ]);
+
             // ارسال SKU‌ها برای batch processing
             if (!empty($skus)) {
                 $skuBatches = array_chunk($skus, 50);
@@ -154,7 +161,6 @@ class ProcessProductPage implements ShouldQueue
             }
 
             // اگر تعداد محصولات = 100 است، صفحه بعدی وجود دارد
-            // اگر تعداد محصولات < 100 است، این آخرین صفحه است
             if (count($products) === 100) {
                 ProcessProductPage::dispatch($this->licenseId, $this->page + 1)
                     ->onQueue('empty-unique-ids')
