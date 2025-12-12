@@ -251,6 +251,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
         $itemName = $productData['item_name'] ?? $productData['ItemName'] ?? $productData['name'] ?? '';
         $departmentName = $productData['department_name'] ?? $productData['DepartmentName'] ?? null;
         $priceAmount = $productData['price_amount'] ?? $productData['PriceAmount'] ?? $productData['regular_price'] ?? 0;
+        $priceAfterDiscount = $productData['price_after_discount'] ?? $productData['PriceAfterDiscount'] ?? null;
         $isVariant = $productData['is_variant'] ?? $productData['IsVariant'] ?? false;
         $parentId = $productData['parent_id'] ?? $productData['ParentId'] ?? null;
         $discountPercentage = $productData['discount_percentage'] ?? $productData['DiscountPercentage'] ?? 0;
@@ -423,11 +424,22 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             (float)$priceIncreasePercentage
         );
 
-        $data['regular_price'] = (string)$this->convertPriceUnit(
+        $convertedRegularPrice = $this->convertPriceUnit(
             $regularPrice,
             $userSetting->rain_sale_price_unit,
             $userSetting->woocommerce_price_unit
         );
+        
+        $data['regular_price'] = (string)$convertedRegularPrice;
+        
+        Log::info('تبدیل قیمت عادی', [
+            'barcode' => $barcode,
+            'original_price' => $priceAmount,
+            'after_increase' => $regularPrice,
+            'from_unit' => $userSetting->rain_sale_price_unit,
+            'to_unit' => $userSetting->woocommerce_price_unit,
+            'converted_price' => $convertedRegularPrice
+        ]);
 
         // محاسبه قیمت تخفیف‌دار با اولویت PriceAfterDiscount
         $salePriceToSet = null;
@@ -465,15 +477,20 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
 
         // تنظیم sale_price در صورتی که محاسبه شده باشد
         if ($salePriceToSet !== null && $salePriceToSet > 0) {
-            $data['sale_price'] = (string)$this->convertPriceUnit(
+            $convertedSalePrice = $this->convertPriceUnit(
                 $salePriceToSet,
                 $userSetting->rain_sale_price_unit,
                 $userSetting->woocommerce_price_unit
             );
+            
+            $data['sale_price'] = (string)$convertedSalePrice;
 
             Log::info('تنظیم sale_price برای محصول', [
                 'barcode' => $barcode,
-                'sale_price' => $data['sale_price']
+                'original_sale_price' => $salePriceToSet,
+                'from_unit' => $userSetting->rain_sale_price_unit,
+                'to_unit' => $userSetting->woocommerce_price_unit,
+                'converted_sale_price' => $convertedSalePrice
             ]);
         } else {
             // اگر تخفیفی وجود ندارد، sale_price را خالی می‌کنیم

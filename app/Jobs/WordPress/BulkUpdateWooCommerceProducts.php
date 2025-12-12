@@ -242,19 +242,39 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
 
             // تبدیل قیمت‌ها به واحد ووکامرس
             if ($regularPrice > 0) {
-                $data['regular_price'] = (string)$this->convertPriceUnit(
+                $convertedRegularPrice = $this->convertPriceUnit(
                     $regularPrice,
                     $userSetting->rain_sale_price_unit,
                     $userSetting->woocommerce_price_unit
                 );
+                
+                $data['regular_price'] = (string)$convertedRegularPrice;
+                
+                Log::info('تبدیل قیمت عادی - بروزرسانی', [
+                    'sku' => $data['sku'],
+                    'original_price' => $regularPrice,
+                    'from_unit' => $userSetting->rain_sale_price_unit,
+                    'to_unit' => $userSetting->woocommerce_price_unit,
+                    'converted_price' => $convertedRegularPrice
+                ]);
 
                 // اگر تخفیف وجود دارد، قیمت فروش را تنظیم می‌کنیم
                 if ($salePrice > 0 && $salePrice < $regularPrice) {
-                    $data['sale_price'] = (string)$this->convertPriceUnit(
+                    $convertedSalePrice = $this->convertPriceUnit(
                         $salePrice,
                         $userSetting->rain_sale_price_unit,
                         $userSetting->woocommerce_price_unit
                     );
+                    
+                    $data['sale_price'] = (string)$convertedSalePrice;
+                    
+                    Log::info('تبدیل قیمت فروش - بروزرسانی', [
+                        'sku' => $data['sku'],
+                        'original_sale_price' => $salePrice,
+                        'from_unit' => $userSetting->rain_sale_price_unit,
+                        'to_unit' => $userSetting->woocommerce_price_unit,
+                        'converted_sale_price' => $convertedSalePrice
+                    ]);
                 } else {
                     // اگر تخفیفی وجود ندارد، sale_price را خالی می‌کنیم تا از WooCommerce حذف شود
                     $data['sale_price'] = '';
