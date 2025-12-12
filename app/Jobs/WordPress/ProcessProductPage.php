@@ -257,13 +257,11 @@ class ProcessProductPage implements ShouldQueue
 
     /**
      * Get variations that need unique ID from a variable product
+     * فقط صفحه اول را دریافت کنید برای کاهش زمان پردازش
      */
     private function getVariationSkus($license, $productId)
     {
         $variations = [];
-        $page = 1;
-        $hasMore = true;
-        $maxPages = 10; // افزایش برای دریافت تمام واریانت‌ها
 
         try {
             $wooApiKey = $license->woocommerceApiKey;
@@ -271,79 +269,48 @@ class ProcessProductPage implements ShouldQueue
                 return $variations;
             }
 
-            while ($hasMore && $page <= $maxPages) {
-                // پارامترهای درخواست - بدون bim_unique_id_empty
-                $params = [
-                    'page' => $page,
-                    'per_page' => 100
-                ];
+            // فقط صفحه اول واریانت‌ها (100 تا اول)
+            $params = [
+                'page' => 1,
+                'per_page' => 100
+            ];
 
-                Log::info('درخواست واریانت‌های محصول', [
+            Log::info('درخواست واریانت‌های محصول (صفحه اول)', [
+                'product_id' => $productId,
+                'per_page' => 100
+            ]);
+
+            // استفاده از trait برای دریافت واریانت‌ها
+            $result = $this->getWooCommerceProductVariations(
+                $license->website_url,
+                $wooApiKey->api_key,
+                $wooApiKey->api_secret,
+                $productId,
+                $params
+            );
+
+            if (!$result['success']) {
+                Log::warning('Failed to fetch variations', [
+                    'license_id' => $license->id,
                     'product_id' => $productId,
-                    'page' => $page,
-                    'per_page' => 100
+                    'error' => $result['message']
                 ]);
-
-                // استفاده از trait برای دریافت واریانت‌ها
-                $result = $this->getWooCommerceProductVariations(
-                    $license->website_url,
-                    $wooApiKey->api_key,
-                    $wooApiKey->api_secret,
-                    $productId,
-                    $params
-                );
-
-                if (!$result['success']) {
-                    Log::error('Failed to fetch variations', [
-                        'license_id' => $license->id,
-                        'product_id' => $productId,
-                        'page' => $page,
-                        'error' => $result['message']
-                    ]);
-                    $hasMore = false;
-                    continue;
-                }
-
-                $fetchedVariations = $result['data'];
-
-                if (empty($fetchedVariations)) {
-                    Log::info('واریانت‌های کافی دریافت شد', [
-                        'product_id' => $productId,
-                        'total_variations' => count($variations),
-                        'current_page' => $page
-                    ]);
-                    $hasMore = false;
-                    continue;
-                }
-
-                // اضافه کردن واریانت‌ها (بدون فیلتر، برای بررسی در handle)
-                $variations = array_merge($variations, $fetchedVariations);
-
-                Log::info('واریانت‌های صفحه دریافت شد', [
-                    'product_id' => $productId,
-                    'page' => $page,
-                    'page_variations_count' => count($fetchedVariations),
-                    'total_variations' => count($variations)
-                ]);
-
-                $page++;
-
-                if (count($fetchedVariations) < 100) {
-                    $hasMore = false;
-                }
+                return $variations;
             }
 
-            Log::info('پایان دریافت واریانت‌های محصول', [
+            $variations = $result['data'] ?? [];
+
+            Log::info('واریانت‌های محصول دریافت شد (صفحه اول)', [
                 'product_id' => $productId,
-                'total_variations' => count($variations)
+                'total_variations' => count($variations),
+                'note' => 'فقط 100 واریانت اول'
             ]);
 
         } catch (\Exception $e) {
             Log::error('Error fetching variations', [
                 'license_id' => $license->id,
                 'error' => $e->getMessage(),
-                'product_id' => $productId,
-                'trace' => $e->getTraceAsString()
+                'product_id' => $productId
             ]);
         }
 
