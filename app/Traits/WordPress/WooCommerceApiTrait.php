@@ -1118,13 +1118,35 @@ trait WooCommerceApiTrait
             $params['consumer_key'] = $apiKey;
             $params['consumer_secret'] = $apiSecret;
 
+            Log::info('درخواست WooCommerce Variations API', [
+                'url' => $url,
+                'product_id' => $productId,
+                'page' => $params['page'] ?? 1,
+                'per_page' => $params['per_page'] ?? 100,
+                'api_key_preview' => substr($apiKey, 0, 10) . '...'
+            ]);
+
             $response = Http::withOptions([
                 'verify' => false,
                 'timeout' => 15, // کاهش timeout به 15 ثانیه
                 'connect_timeout' => 5,
             ])->get($url, $params);
 
+            Log::info('پاسخ WooCommerce Variations API دریافت شد', [
+                'product_id' => $productId,
+                'status_code' => $response->status(),
+                'response_headers' => json_encode($response->headers()),
+                'response_length' => strlen($response->body()),
+                'response_type' => gettype($response->body()),
+                'response_preview' => substr($response->body(), 0, 300)
+            ]);
+
             if (!$response->successful()) {
+                Log::error('خطا در WooCommerce Variations API', [
+                    'product_id' => $productId,
+                    'status_code' => $response->status(),
+                    'response_body' => $response->body()
+                ]);
                 return [
                     'success' => false,
                     'message' => 'خطا در دریافت واریانت‌ها از WooCommerce - کد: ' . $response->status(),
@@ -1135,6 +1157,13 @@ trait WooCommerceApiTrait
 
             $variations = $response->json();
 
+            Log::info('WooCommerce Variations پردازش شد', [
+                'product_id' => $productId,
+                'variations_type' => gettype($variations),
+                'variations_count' => is_array($variations) ? count($variations) : 'NA',
+                'variations_preview' => substr(json_encode($variations), 0, 200)
+            ]);
+
             return [
                 'success' => true,
                 'data' => $variations,
@@ -1142,6 +1171,11 @@ trait WooCommerceApiTrait
             ];
 
         } catch (\Exception $e) {
+            Log::error('Exception در getWooCommerceProductVariations', [
+                'product_id' => $productId,
+                'error' => $e->getMessage(),
+                'trace' => substr($e->getTraceAsString(), 0, 500)
+            ]);
             return [
                 'success' => false,
                 'message' => 'خطا در دریافت واریانت‌ها: ' . $e->getMessage(),

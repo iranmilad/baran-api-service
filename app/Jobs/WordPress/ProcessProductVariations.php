@@ -112,21 +112,33 @@ class ProcessProductVariations implements ShouldQueue
 
                 Log::info('variations دریافت شدند', [
                     'product_id' => $productId,
-                    'variations_count' => count($variations)
+                    'variations_count' => count($variations),
+                    'variations_type' => gettype($variations),
+                    'first_variation_type' => count($variations) > 0 ? gettype($variations[0]) : 'empty'
                 ]);
 
                 foreach ($variations as $variation) {
+                    // بررسی اینکه variation یک array است
+                    if (!is_array($variation)) {
+                        Log::warning('variation یک array نیست', [
+                            'product_id' => $productId,
+                            'variation_type' => gettype($variation),
+                            'variation_sample' => substr((string)$variation, 0, 100)
+                        ]);
+                        continue;
+                    }
+
                     if (empty($variation['bim_unique_id']) && !empty($variation['sku'])) {
                         $skus[] = [
                             'sku' => $variation['sku'],
                             'product_id' => $productId,
-                            'variation_id' => $variation['id'],
+                            'variation_id' => $variation['id'] ?? null,
                             'type' => 'variation'
                         ];
 
                         Log::info('variation بدون unique_id', [
                             'product_id' => $productId,
-                            'variation_id' => $variation['id'],
+                            'variation_id' => $variation['id'] ?? 'NA',
                             'sku' => $variation['sku']
                         ]);
                     }
@@ -187,39 +199,52 @@ class ProcessProductVariations implements ShouldQueue
             }
 
             Log::info('درخواست اطلاعات محصول از WooCommerce', [
-                'product_id' => $productId
+                'product_id' => $productId,
+                'website_url' => $license->website_url,
+                'api_key' => substr($wooApiKey->api_key, 0, 10) . '...'
             ]);
 
             $result = $this->getWooCommerceProduct(
-                $license->website_url,
-                $wooApiKey->api_key,
-                $wooApiKey->api_secret,
+                $license,
                 $productId
             );
 
+            // لاگ کردن دقیق نتیجه
+            Log::info('نتیجه درخواست محصول دریافت شد', [
+                'product_id' => $productId,
+                'result_type' => gettype($result),
+                'result_is_array' => is_array($result),
+                'result_is_string' => is_string($result),
+                'result_length' => is_string($result) ? strlen($result) : (is_array($result) ? count($result) : 0),
+                'result_sample' => substr((string)$result, 0, 200)
+            ]);
+
             // اگر result یک string است (JSON)، آن را decode کنید
             if (is_string($result)) {
-                Log::info('محصول response یک JSON string است', [
+                Log::info('محصول response یک JSON string است، decode می‌شود', [
                     'product_id' => $productId,
-                    'string_length' => strlen($result)
+                    'string_length' => strlen($result),
+                    'first_100_chars' => substr($result, 0, 100)
                 ]);
                 $result = json_decode($result, true);
             }
 
             // بررسی اینکه $result یک array است
             if (!is_array($result)) {
-                Log::error('محصول response یک array نیست', [
+                Log::error('خطا: محصول response یک array نیست بعد از decode', [
                     'product_id' => $productId,
                     'result_type' => gettype($result),
-                    'result_value' => substr((string)$result, 0, 100)
+                    'result_value' => substr((string)$result, 0, 200)
                 ]);
                 return null;
             }
 
-            if (!$result['success']) {
+            if (empty($result['success']) || $result['success'] === false) {
                 Log::warning('خطا در دریافت اطلاعات محصول', [
                     'product_id' => $productId,
-                    'error' => $result['message'] ?? 'Unknown error'
+                    'success' => $result['success'] ?? null,
+                    'error' => $result['message'] ?? $result['error'] ?? 'Unknown error',
+                    'full_result' => json_encode($result)
                 ]);
                 return null;
             }
@@ -228,7 +253,8 @@ class ProcessProductVariations implements ShouldQueue
 
             if ($data === null) {
                 Log::warning('محصول داده‌ای ندارد', [
-                    'product_id' => $productId
+                    'product_id' => $productId,
+                    'result_keys' => implode(', ', array_keys($result))
                 ]);
                 return null;
             }
@@ -237,19 +263,28 @@ class ProcessProductVariations implements ShouldQueue
             if (is_string($data)) {
                 Log::info('محصول داده‌ها JSON string است، decode می‌شود', [
                     'product_id' => $productId,
-                    'data_length' => strlen($data)
+                    'data_length' => strlen($data),
+                    'first_100' => substr($data, 0, 100)
                 ]);
                 $data = json_decode($data, true);
             }
 
             // اگر هنوز array نیست، null برگردانید
             if (!is_array($data)) {
-                Log::warning('محصول داده‌های نامعتبری دارد', [
+                Log::error('خطا: محصول داده‌های نامعتبری دارد', [
                     'product_id' => $productId,
-                    'data_type' => gettype($data)
+                    'data_type' => gettype($data),
+                    'data_value' => substr((string)$data, 0, 100)
                 ]);
                 return null;
             }
+
+            Log::info('اطلاعات محصول با موفقیت دریافت شد', [
+                'product_id' => $productId,
+                'product_id_in_data' => $data['id'] ?? 'NA',
+                'product_sku' => $data['sku'] ?? 'NA',
+                'product_type' => $data['type'] ?? 'NA'
+            ]);
 
             return $data;
 
