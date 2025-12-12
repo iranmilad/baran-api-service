@@ -94,16 +94,33 @@ class ProcessSkuBatch implements ShouldQueue
                 'has_user_settings' => !is_null($license->userSetting)
             ]);
 
-            // Get unique IDs from Baran API
-            $uniqueIdMapping = $this->getUniqueIdsBySkusFromBaran($this->skus, $user, $stockId);
+            // Get unique IDs from database - hybrid approach
+            $result = $this->getUniqueIdsBySkusFromBaran($this->skus, $user, $stockId);
+            $uniqueIdMapping = $result['found'] ?? [];
+            $notFoundSkus = $result['not_found'] ?? [];
 
+            // Log detailed info about found and not found SKUs
+            Log::info('نتیجه جستجوی SKU', [
+                'license_id' => $this->licenseId,
+                'found_count' => count($uniqueIdMapping),
+                'not_found_count' => count($notFoundSkus),
+                'found_skus' => array_map(function($item) { return $item['sku']; }, $uniqueIdMapping),
+                'not_found_skus' => $notFoundSkus
+            ]);
+
+            // اگر SKU‌های یافت شده داشته باشیم، آنها را به WooCommerce ارسال کنید
             if (!empty($uniqueIdMapping)) {
                 // Update products with unique IDs using the new endpoint
                 $this->batchUpdateUniqueIds($license->website_url, $wooApiKey, $uniqueIdMapping);
-            } else {
-                Log::info('No unique ID mapping found for SKU batch', [
+            }
+
+            // اگر SKU‌های یافت نشده داشته باشیم، آنها را لاگ کنید
+            if (!empty($notFoundSkus)) {
+                Log::warning('SKU‌های یافت نشده در جدول محلی - نیازمند درج در انبار', [
                     'license_id' => $this->licenseId,
-                    'skus' => $this->skus
+                    'not_found_count' => count($notFoundSkus),
+                    'not_found_details' => $notFoundSkus,
+                    'note' => 'خیر اگر نبود نیاز نیست از باران بگیرد'
                 ]);
             }
 
@@ -128,60 +145,77 @@ class ProcessSkuBatch implements ShouldQueue
      */
     private function getUniqueIdsBySkusFromBaran($skus, $user, $stockId)
     {
-        $uniqueIdMapping = [];
+        $found = [];
+        $notFound = [];
 
         try {
-            // استخراج SKU‌ها (آرایه یا رشته‌ای)
-            $barcodes = array_map(function($item) {
-                return is_array($item) ? $item['sku'] : $item;
-            }, $skus);
-
             Log::info('جستجوی محصولات در جدول محلی', [
                 'license_id' => $this->licenseId,
-                'sku_count' => count($barcodes),
-                'stock_id' => $stockId
+                'sku_count' => count($skus),
+                'stock_id' => $stockId,
+                'skus_detail' => $skus
             ]);
 
             // جستجو در جدول products برای تمام SKU‌ها
-            // بدون توجه به انبار - فقط کافی است کد یکتا (item_id) برای هر بارکد پیدا شود
-            $foundCount = 0;
-            $notFoundCount = 0;
+            foreach ($skus as $skuItem) {
+                // Handle both array and string formats
+                $barcode = is_array($skuItem) ? $skuItem['sku'] : $skuItem;
+                $productId = is_array($skuItem) ? ($skuItem['product_id'] ?? null) : null;
+                $variationId = is_array($skuItem) ? ($skuItem['variation_id'] ?? null) : null;
+                $type = is_array($skuItem) ? ($skuItem['type'] ?? 'product') : 'product';
 
-            foreach ($barcodes as $barcode) {
                 $product = \App\Models\Product::where('license_id', $this->licenseId)
                     ->where('barcode', $barcode)
                     ->first();
 
                 if ($product && $product->item_id) {
-                    $uniqueIdMapping[] = [
+                    $mapping = [
                         'unique_id' => $product->item_id,
                         'sku' => $barcode
                     ];
 
-                    $foundCount++;
+                    // اگر واریانت است، product_id و variation_id را اضافه کنید
+                    if ($variationId && $productId) {
+                        $mapping['product_id'] = $productId;
+                        $mapping['variation_id'] = $variationId;
+                    }
+
+                    $found[] = $mapping;
 
                     Log::info('محصول در جدول محلی یافت شد', [
                         'barcode' => $barcode,
                         'item_id' => $product->item_id,
                         'stock_id' => $product->stock_id,
-                        'license_id' => $this->licenseId
+                        'license_id' => $this->licenseId,
+                        'product_id' => $productId,
+                        'variation_id' => $variationId,
+                        'type' => $type
                     ]);
                 } else {
-                    $notFoundCount++;
+                    $notFoundItem = [
+                        'sku' => $barcode,
+                        'product_id' => $productId,
+                        'variation_id' => $variationId,
+                        'type' => $type
+                    ];
+
+                    $notFound[] = $notFoundItem;
 
                     Log::warning('محصول در جدول محلی یافت نشد', [
                         'barcode' => $barcode,
-                        'license_id' => $this->licenseId
+                        'license_id' => $this->licenseId,
+                        'product_id' => $productId,
+                        'variation_id' => $variationId,
+                        'type' => $type
                     ]);
                 }
             }
 
             Log::info('نتیجه جستجو در جدول محلی', [
                 'license_id' => $this->licenseId,
-                'total_skus' => count($barcodes),
-                'found_count' => $foundCount,
-                'not_found_count' => $notFoundCount,
-                'mapping_count' => count($uniqueIdMapping)
+                'total_skus' => count($skus),
+                'found_count' => count($found),
+                'not_found_count' => count($notFound)
             ]);
 
         } catch (\Exception $e) {
@@ -192,7 +226,10 @@ class ProcessSkuBatch implements ShouldQueue
             ]);
         }
 
-        return $uniqueIdMapping;
+        return [
+            'found' => $found,
+            'not_found' => $notFound
+        ];
     }
 
     /**
@@ -202,24 +239,64 @@ class ProcessSkuBatch implements ShouldQueue
     {
         try {
             if (empty($uniqueIdMapping)) {
+                Log::info('No unique IDs to update', [
+                    'license_id' => $this->licenseId
+                ]);
                 return;
             }
 
-            Log::info('Starting batch update of bim_unique_id', [
-                'mapping_count' => count($uniqueIdMapping)
-            ]);
+            // Separate simple products and variations
+            $simpleProducts = [];
+            $variations = [];
 
-            // آماده‌سازی داده‌های batch update
-            $batchData = [
-                'products' => $uniqueIdMapping
-            ];
+            foreach ($uniqueIdMapping as $item) {
+                if (isset($item['variation_id']) && isset($item['product_id'])) {
+                    $variations[] = $item;
+                } else {
+                    $simpleProducts[] = $item;
+                }
+            }
 
-            Log::info('تهیه داده‌های batch update برای ارسال به WooCommerce', [
+            Log::info('آماده‌سازی برای batch update', [
                 'license_id' => $this->licenseId,
-                'website_url' => $websiteUrl,
-                'products_count' => count($uniqueIdMapping),
-                'batch_data' => $batchData
+                'total_items' => count($uniqueIdMapping),
+                'simple_products' => count($simpleProducts),
+                'variations' => count($variations)
             ]);
+
+            // Update simple products using batch endpoint
+            if (!empty($simpleProducts)) {
+                $this->batchUpdateSimpleProducts($websiteUrl, $wooApiKey, $simpleProducts);
+            }
+
+            // Update variations using individual endpoints
+            if (!empty($variations)) {
+                $this->batchUpdateVariations($websiteUrl, $wooApiKey, $variations);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error in batch update bim_unique_id', [
+                'error' => $e->getMessage(),
+                'license_id' => $this->licenseId,
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Update simple products
+     */
+    private function batchUpdateSimpleProducts($websiteUrl, $wooApiKey, $simpleProducts)
+    {
+        try {
+            Log::info('شروع آپدیت محصولات ساده', [
+                'license_id' => $this->licenseId,
+                'count' => count($simpleProducts)
+            ]);
+
+            $batchData = [
+                'products' => $simpleProducts
+            ];
 
             // استفاده از trait برای batch update unique IDs
             $result = $this->batchUpdateWooCommerceUniqueIdsBySku(
@@ -229,56 +306,90 @@ class ProcessSkuBatch implements ShouldQueue
                 $batchData
             );
 
-            Log::info('نتیجه batch update از WooCommerce', [
+            Log::info('نتیجه آپدیت محصولات ساده', [
                 'license_id' => $this->licenseId,
                 'success' => $result['success'],
-                'message' => $result['message'] ?? 'بدون پیام',
-                'status_code' => $result['status_code'] ?? 'N/A',
-                'full_result' => $result
+                'message' => $result['message'] ?? 'بدون پیام'
             ]);
 
-            if ($result['success']) {
-                $responseData = $result['data'];
+        } catch (\Exception $e) {
+            Log::error('خطا در آپدیت محصولات ساده', [
+                'error' => $e->getMessage(),
+                'license_id' => $this->licenseId
+            ]);
+        }
+    }
 
-                Log::info('Batch bim_unique_id update completed', [
-                    'updated_count' => $responseData['updated_count'] ?? 0,
-                    'failed_count' => $responseData['failed_count'] ?? 0,
-                    'total_sent' => count($uniqueIdMapping)
-                ]);
+    /**
+     * Update variations individually
+     */
+    private function batchUpdateVariations($websiteUrl, $wooApiKey, $variations)
+    {
+        try {
+            Log::info('شروع آپدیت واریانت‌ها', [
+                'license_id' => $this->licenseId,
+                'count' => count($variations)
+            ]);
 
-                // Log successful updates
-                if (isset($responseData['results']['success'])) {
-                    foreach ($responseData['results']['success'] as $success) {
-                        Log::info('Product bim_unique_id updated successfully', [
-                            'product_id' => $success['product_id'],
-                            'variation_id' => $success['variation_id'] ?? null,
-                            'sku' => $success['sku'],
-                            'unique_id' => $success['unique_id'] ?? null
+            foreach ($variations as $variation) {
+                try {
+                    $productId = $variation['product_id'];
+                    $variationId = $variation['variation_id'];
+                    $uniqueId = $variation['unique_id'];
+                    $sku = $variation['sku'];
+
+                    Log::info('آپدیت واریانت', [
+                        'product_id' => $productId,
+                        'variation_id' => $variationId,
+                        'sku' => $sku,
+                        'unique_id' => $uniqueId
+                    ]);
+
+                    // اگر endpoint batch-update-sku موجود است، از آن استفاده کنید
+                    // در غیر این صورت، از endpoint جداگانه variation استفاده کنید
+                    $batchData = [
+                        'products' => [$variation]
+                    ];
+
+                    $result = $this->batchUpdateWooCommerceUniqueIdsBySku(
+                        $websiteUrl,
+                        $wooApiKey->api_key,
+                        $wooApiKey->api_secret,
+                        $batchData
+                    );
+
+                    if ($result['success']) {
+                        Log::info('واریانت با موفقیت آپدیت شد', [
+                            'product_id' => $productId,
+                            'variation_id' => $variationId,
+                            'sku' => $sku
+                        ]);
+                    } else {
+                        Log::warning('خطا در آپدیت واریانت', [
+                            'product_id' => $productId,
+                            'variation_id' => $variationId,
+                            'sku' => $sku,
+                            'error' => $result['message']
                         ]);
                     }
-                }
 
-                // Log failed updates
-                if (isset($responseData['results']['failed'])) {
-                    foreach ($responseData['results']['failed'] as $failed) {
-                        Log::warning('Product bim_unique_id update failed', [
-                            'sku' => $failed['sku'] ?? null,
-                            'unique_id' => $failed['unique_id'] ?? null,
-                            'error' => $failed['message'] ?? 'Unknown error'
-                        ]);
-                    }
+                } catch (\Exception $e) {
+                    Log::error('خطا در آپدیت واریانت منفرد', [
+                        'error' => $e->getMessage(),
+                        'variation' => $variation
+                    ]);
                 }
-            } else {
-                Log::error('Failed to batch update bim_unique_id', [
-                    'error' => $result['message'],
-                    'sent_data' => $uniqueIdMapping
-                ]);
             }
 
+            Log::info('تکمیل آپدیت تمام واریانت‌ها', [
+                'license_id' => $this->licenseId,
+                'count' => count($variations)
+            ]);
+
         } catch (\Exception $e) {
-            Log::error('Error in batch update bim_unique_id', [
+            Log::error('خطا در بخش آپدیت واریانت‌ها', [
                 'error' => $e->getMessage(),
-                'unique_id_mapping' => $uniqueIdMapping
+                'license_id' => $this->licenseId
             ]);
         }
     }
