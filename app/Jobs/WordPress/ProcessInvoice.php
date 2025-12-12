@@ -290,13 +290,18 @@ class ProcessInvoice implements ShouldQueue
                 }
             }
 
+            // محاسبه price از total و quantity در صورت عدم وجود
+            $quantity = max(1, (int)($lineItem['quantity'] ?? 1));
+            $total = (float)($lineItem['total'] ?? 0);
+            $price = isset($lineItem['price']) ? (float)$lineItem['price'] : ($total / $quantity);
+
             $items[] = [
                 'unique_id' => $uniqueId,
                 'sku' => $lineItem['sku'] ?? '',
-                'quantity' => $lineItem['quantity'] ?? 1,
-                'price' => (float)$lineItem['price'] ?? 0,
+                'quantity' => $quantity,
+                'price' => $price,
                 'name' => $lineItem['name'] ?? '',
-                'total' => (float)$lineItem['total'] ?? 0,
+                'total' => $total,
                 'product_id' => $lineItem['product_id'] ?? 0,
                 'variation_id' => $lineItem['variation_id'] ?? 0
             ];
@@ -842,6 +847,17 @@ class ProcessInvoice implements ShouldQueue
                 $itemQuantity = (int)$item['quantity'];
                 $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
 
+                // لاگ محاسبه آیتم
+                Log::info('محاسبه مبلغ آیتم فاکتور', [
+                    'invoice_id' => $this->invoice->id,
+                    'item_index' => $index,
+                    'item_id' => $itemId,
+                    'item_price' => $itemPrice,
+                    'item_quantity' => $itemQuantity,
+                    'calculated_total' => $total,
+                    'has_total_in_data' => isset($item['total'])
+                ]);
+
                 // تعیین StockId بر اساس تنظیمات انبار
                 $stockId = null;
 
@@ -1003,6 +1019,24 @@ class ProcessInvoice implements ShouldQueue
                 'useCredit' => false
             ];
 
+            // لاگ جزئیات ارسالی به RainSale
+            Log::info('آماده‌سازی درخواست ثبت فاکتور در RainSale', [
+                'invoice_id' => $this->invoice->id,
+                'order_id' => $this->invoice->woocommerce_order_id,
+                'items_count' => count($items),
+                'items_details' => array_map(function($item) {
+                    return [
+                        'ItemId' => $item['ItemId'],
+                        'Quantity' => $item['Quantity'],
+                        'Price' => $item['Price'],
+                        'NetAmount' => $item['NetAmount'],
+                        'StockId' => $item['StockId']
+                    ];
+                }, $items),
+                'payment_amount' => $totalAmount,
+                'delivery_cost' => $deliveryCost,
+                'customer_id' => $customerResult['CustomerID']
+            ]);
 
             // ارسال فاکتور به RainSale
             $response = Http::withOptions([
