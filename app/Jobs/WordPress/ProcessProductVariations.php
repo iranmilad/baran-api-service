@@ -120,10 +120,11 @@ class ProcessProductVariations implements ShouldQueue
                 foreach ($variations as $variation) {
                     // بررسی اینکه variation یک array است
                     if (!is_array($variation)) {
+                        $varSample = is_string($variation) ? substr($variation, 0, 100) : json_encode($variation, JSON_PARTIAL_OUTPUT_ON_ERROR);
                         Log::warning('variation یک array نیست', [
                             'product_id' => $productId,
                             'variation_type' => gettype($variation),
-                            'variation_sample' => substr((string)$variation, 0, 100)
+                            'variation_sample' => $varSample
                         ]);
                         continue;
                     }
@@ -210,13 +211,14 @@ class ProcessProductVariations implements ShouldQueue
             );
 
             // لاگ کردن دقیق نتیجه
+            $resultSample = is_string($result) ? substr($result, 0, 200) : (is_array($result) ? json_encode($result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) : (string)$result);
             Log::info('نتیجه درخواست محصول دریافت شد', [
                 'product_id' => $productId,
                 'result_type' => gettype($result),
                 'result_is_array' => is_array($result),
                 'result_is_string' => is_string($result),
                 'result_length' => is_string($result) ? strlen($result) : (is_array($result) ? count($result) : 0),
-                'result_sample' => substr((string)$result, 0, 200)
+                'result_sample' => substr((string)$resultSample, 0, 200)
             ]);
 
             // اگر result یک string است (JSON)، آن را decode کنید
@@ -231,10 +233,11 @@ class ProcessProductVariations implements ShouldQueue
 
             // بررسی اینکه $result یک array است
             if (!is_array($result)) {
+                $resultVal = is_string($result) ? substr($result, 0, 200) : json_encode($result, JSON_PARTIAL_OUTPUT_ON_ERROR);
                 Log::error('خطا: محصول response یک array نیست بعد از decode', [
                     'product_id' => $productId,
                     'result_type' => gettype($result),
-                    'result_value' => substr((string)$result, 0, 200)
+                    'result_value' => $resultVal
                 ]);
                 return null;
             }
@@ -254,7 +257,7 @@ class ProcessProductVariations implements ShouldQueue
             if ($data === null) {
                 Log::warning('محصول داده‌ای ندارد', [
                     'product_id' => $productId,
-                    'result_keys' => implode(', ', array_keys($result))
+                    'result_keys' => is_array($result) ? implode(', ', array_keys($result)) : 'N/A'
                 ]);
                 return null;
             }
@@ -271,10 +274,11 @@ class ProcessProductVariations implements ShouldQueue
 
             // اگر هنوز array نیست، null برگردانید
             if (!is_array($data)) {
+                $dataVal = is_string($data) ? substr($data, 0, 100) : json_encode($data, JSON_PARTIAL_OUTPUT_ON_ERROR);
                 Log::error('خطا: محصول داده‌های نامعتبری دارد', [
                     'product_id' => $productId,
                     'data_type' => gettype($data),
-                    'data_value' => substr((string)$data, 0, 100)
+                    'data_value' => $dataVal
                 ]);
                 return null;
             }
@@ -347,7 +351,8 @@ class ProcessProductVariations implements ShouldQueue
                     Log::error('variations response یک array نیست', [
                         'product_id' => $productId,
                         'page' => $page,
-                        'result_type' => gettype($result)
+                        'result_type' => gettype($result),
+                        'result_preview' => is_string($result) ? substr($result, 0, 200) : 'Non-string/array type'
                     ]);
                     break;
                 }
