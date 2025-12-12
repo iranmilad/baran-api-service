@@ -142,52 +142,15 @@ class ProcessSkuBatch implements ShouldQueue
                 'stock_id' => $stockId
             ]);
 
-            // تجزیه warehouse code برای استفاده در جستجو
-            $warehouseCodes = [];
-            if (!empty($stockId)) {
-                if (is_string($stockId)) {
-                    if (substr(trim($stockId), 0, 1) === '[') {
-                        $decoded = json_decode($stockId, true);
-                        if (is_array($decoded)) {
-                            $warehouseCodes = array_filter(array_map(function($code) {
-                                return strtolower(trim(stripslashes((string)$code)));
-                            }, $decoded));
-                        }
-                    } else {
-                        $warehouseCodes = array_filter(array_map(function($code) {
-                            return strtolower(trim($code));
-                        }, preg_split('/[,;]/', $stockId)));
-                    }
-                }
-            }
-
-            Log::info('کدهای انبار برای جستجو', [
-                'license_id' => $this->licenseId,
-                'warehouse_codes_count' => count($warehouseCodes),
-                'warehouse_codes' => $warehouseCodes
-            ]);
-
             // جستجو در جدول products برای تمام SKU‌ها
+            // بدون توجه به انبار - فقط کافی است کد یکتا (item_id) برای هر بارکد پیدا شود
             $foundCount = 0;
             $notFoundCount = 0;
 
             foreach ($barcodes as $barcode) {
-                $product = null;
-
-                if (!empty($warehouseCodes)) {
-                    // اگر warehouse codes موجود است، فقط برای اولین انبار جستجو کنید
-                    $firstWarehouseCode = reset($warehouseCodes);
-
-                    $product = \App\Models\Product::where('license_id', $this->licenseId)
-                        ->where('barcode', $barcode)
-                        ->where('stock_id', $firstWarehouseCode)
-                        ->first();
-                } else {
-                    // اگر warehouse code تعریف نشده، برای هر انبار جستجو کنید
-                    $product = \App\Models\Product::where('license_id', $this->licenseId)
-                        ->where('barcode', $barcode)
-                        ->first();
-                }
+                $product = \App\Models\Product::where('license_id', $this->licenseId)
+                    ->where('barcode', $barcode)
+                    ->first();
 
                 if ($product && $product->item_id) {
                     $uniqueIdMapping[] = [
@@ -208,8 +171,7 @@ class ProcessSkuBatch implements ShouldQueue
 
                     Log::warning('محصول در جدول محلی یافت نشد', [
                         'barcode' => $barcode,
-                        'license_id' => $this->licenseId,
-                        'warehouse_codes' => $warehouseCodes
+                        'license_id' => $this->licenseId
                     ]);
                 }
             }
