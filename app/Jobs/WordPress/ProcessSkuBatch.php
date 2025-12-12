@@ -124,12 +124,11 @@ class ProcessSkuBatch implements ShouldQueue
     }
 
     /**
-     * Get unique IDs by SKUs - check local database first, then fetch from Baran API if needed
+     * Get unique IDs by SKUs - check local database only
      */
     private function getUniqueIdsBySkusFromBaran($skus, $user, $stockId)
     {
         $uniqueIdMapping = [];
-        $notFoundBarcodes = [];
 
         try {
             // استخراج SKU‌ها (آرایه یا رشته‌ای)
@@ -146,6 +145,7 @@ class ProcessSkuBatch implements ShouldQueue
             // جستجو در جدول products برای تمام SKU‌ها
             // بدون توجه به انبار - فقط کافی است کد یکتا (item_id) برای هر بارکد پیدا شود
             $foundCount = 0;
+            $notFoundCount = 0;
 
             foreach ($barcodes as $barcode) {
                 $product = \App\Models\Product::where('license_id', $this->licenseId)
@@ -167,7 +167,7 @@ class ProcessSkuBatch implements ShouldQueue
                         'license_id' => $this->licenseId
                     ]);
                 } else {
-                    $notFoundBarcodes[] = $barcode;
+                    $notFoundCount++;
 
                     Log::warning('محصول در جدول محلی یافت نشد', [
                         'barcode' => $barcode,
@@ -180,69 +180,8 @@ class ProcessSkuBatch implements ShouldQueue
                 'license_id' => $this->licenseId,
                 'total_skus' => count($barcodes),
                 'found_count' => $foundCount,
-                'not_found_count' => count($notFoundBarcodes),
+                'not_found_count' => $notFoundCount,
                 'mapping_count' => count($uniqueIdMapping)
-            ]);
-
-            // اگر برخی SKU‌ها در جدول محلی یافت نشدند، از Baran API درخواست کنید
-            if (!empty($notFoundBarcodes)) {
-                Log::info('درخواست اطلاعات از Baran API برای SKU‌های یافت نشده', [
-                    'license_id' => $this->licenseId,
-                    'not_found_count' => count($notFoundBarcodes)
-                ]);
-
-                $requestBody = ['barcodes' => $notFoundBarcodes];
-
-                $response = Http::withOptions([
-                    'verify' => false,
-                    'timeout' => 180,
-                    'connect_timeout' => 60
-                ])->withHeaders([
-                    'Content-Type' => 'application/json',
-                    'Authorization' => 'Basic ' . base64_encode($user->api_username . ':' . $user->api_password)
-                ])->post($user->api_webservice . '/RainSaleService.svc/GetItemInfos', $requestBody);
-
-                if ($response->successful()) {
-                    $body = $response->json();
-                    $results = $body['GetItemInfosResult'] ?? [];
-
-                    foreach ($results as $item) {
-                        $barcode = $item['Barcode'] ?? null;
-                        $itemId = $item['ItemID'] ?? null;
-
-                        if ($barcode && $itemId && $itemId !== '00000000-0000-0000-0000-000000000000') {
-                            $uniqueIdMapping[] = [
-                                'unique_id' => $itemId,
-                                'sku' => $barcode
-                            ];
-
-                            Log::info('کد یکتا از Baran API دریافت شد', [
-                                'barcode' => $barcode,
-                                'item_id' => $itemId,
-                                'license_id' => $this->licenseId
-                            ]);
-                        }
-                    }
-
-                    Log::info('با موفقیت اطلاعات از Baran API دریافت شد', [
-                        'license_id' => $this->licenseId,
-                        'api_results_count' => count($results),
-                        'mapping_added' => count($uniqueIdMapping) - $foundCount
-                    ]);
-                } else {
-                    Log::error('درخواست Baran API ناموفق', [
-                        'license_id' => $this->licenseId,
-                        'status' => $response->status(),
-                        'skus' => $notFoundBarcodes
-                    ]);
-                }
-            }
-
-            Log::info('نتیجه نهایی جستجوی SKU', [
-                'license_id' => $this->licenseId,
-                'total_mapping_count' => count($uniqueIdMapping),
-                'from_database' => $foundCount,
-                'from_baran_api' => count($uniqueIdMapping) - $foundCount
             ]);
 
         } catch (\Exception $e) {
