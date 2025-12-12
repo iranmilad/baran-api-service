@@ -197,18 +197,39 @@ class ProcessProductVariations implements ShouldQueue
                 $productId
             );
 
+            // بررسی اینکه $result یک array است
+            if (!is_array($result)) {
+                Log::error('محصول response یک array نیست', [
+                    'product_id' => $productId,
+                    'result_type' => gettype($result),
+                    'result_value' => substr((string)$result, 0, 100)
+                ]);
+                return null;
+            }
+
             if (!$result['success']) {
                 Log::warning('خطا در دریافت اطلاعات محصول', [
                     'product_id' => $productId,
-                    'error' => $result['message']
+                    'error' => $result['message'] ?? 'Unknown error'
                 ]);
                 return null;
             }
 
             $data = $result['data'] ?? null;
 
+            if ($data === null) {
+                Log::warning('محصول داده‌ای ندارد', [
+                    'product_id' => $productId
+                ]);
+                return null;
+            }
+
             // اگر data یک string است (JSON)، آن را decode کنید
             if (is_string($data)) {
+                Log::info('محصول داده‌ها JSON string است، decode می‌شود', [
+                    'product_id' => $productId,
+                    'data_length' => strlen($data)
+                ]);
                 $data = json_decode($data, true);
             }
 
@@ -227,7 +248,8 @@ class ProcessProductVariations implements ShouldQueue
             Log::error('خطا در دریافت اطلاعات محصول', [
                 'license_id' => $this->licenseId,
                 'product_id' => $productId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => substr($e->getTraceAsString(), 0, 500)
             ]);
             return null;
         }
@@ -266,11 +288,21 @@ class ProcessProductVariations implements ShouldQueue
                     $params
                 );
 
+                // بررسی اینکه $result یک array است
+                if (!is_array($result)) {
+                    Log::error('variations response یک array نیست', [
+                        'product_id' => $productId,
+                        'page' => $page,
+                        'result_type' => gettype($result)
+                    ]);
+                    break;
+                }
+
                 if (!$result['success']) {
                     Log::warning('خطا در دریافت variations', [
                         'product_id' => $productId,
                         'page' => $page,
-                        'error' => $result['message']
+                        'error' => $result['message'] ?? 'Unknown error'
                     ]);
                     break;
                 }
@@ -279,6 +311,11 @@ class ProcessProductVariations implements ShouldQueue
 
                 // اگر variations یک string است (JSON)، آن را decode کنید
                 if (is_string($variations)) {
+                    Log::info('variations داده‌ها JSON string است، decode می‌شود', [
+                        'product_id' => $productId,
+                        'page' => $page,
+                        'data_length' => strlen($variations)
+                    ]);
                     $variations = json_decode($variations, true);
                     if (!is_array($variations)) {
                         $variations = [];
@@ -316,7 +353,8 @@ class ProcessProductVariations implements ShouldQueue
             Log::error('خطا در دریافت variations', [
                 'license_id' => $this->licenseId,
                 'product_id' => $productId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => substr($e->getTraceAsString(), 0, 500)
             ]);
             return [];
         }
