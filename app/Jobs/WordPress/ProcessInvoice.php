@@ -1004,7 +1004,7 @@ class ProcessInvoice implements ShouldQueue
 
             // آماده‌سازی داده‌های فاکتور
             $invoiceRequestData = [
-                'allowToMakeInvoice' => true,
+                'allowToMakeInvoice' => false,
                 'calcPromotion' => false,
                 'calcTax' => false,
                 'order' => [
