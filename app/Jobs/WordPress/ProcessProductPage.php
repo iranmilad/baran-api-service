@@ -10,7 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use App\Models\License;
-use App\Jobs\WordPress\ProcessSkuBatch;
+use App\Jobs\WordPress\ProcessProductVariations;
 use App\Traits\WordPress\WordPressMasterTrait;
 use Exception;
 
@@ -77,88 +77,26 @@ class ProcessProductPage implements ShouldQueue
                 return;
             }
 
-            // استخراج SKU‌های بدون unique_id
-            $skus = [];
-            $variableProductCount = 0;
+            // ارسال هر محصول برای پردازش مستقل
+            // این کار اجازه می‌دهد محصولات به صورت parallel پردازش شوند
+            foreach ($products as $index => $product) {
+                ProcessProductVariations::dispatch($this->licenseId, $product)
+                    ->onQueue('empty-unique-ids')
+                    ->delay(now()->addSeconds($index * 0.5));
 
-            foreach ($products as $product) {
-                // محصولات ساده بدون unique_id
-                if ($product['type'] !== 'variable' && empty($product['bim_unique_id']) && !empty($product['sku'])) {
-                    $skus[] = [
-                        'sku' => $product['sku'],
-                        'product_id' => $product['id'],
-                        'type' => 'product'
-                    ];
-
-                    Log::info('محصول ساده بدون unique_id یافت شد', [
-                        'product_id' => $product['id'],
-                        'sku' => $product['sku']
-                    ]);
-                }
-
-                // تمام محصولات variable - فقط بررسی variations بدون فیلتر
-                if ($product['type'] === 'variable') {
-                    $variableProductCount++;
-
-                    // بررسی تنها variations اول (صفحه اول)
-                    // برای کاهش تعداد API requests
-                    $variations = $this->getVariationSkus($license, $product['id']);
-
-                    foreach ($variations as $variation) {
-                        if (empty($variation['bim_unique_id']) && !empty($variation['sku'])) {
-                            $skus[] = [
-                                'sku' => $variation['sku'],
-                                'product_id' => $product['id'],
-                                'variation_id' => $variation['id'],
-                                'type' => 'variation'
-                            ];
-
-                            Log::info('variation بدون unique_id یافت شد', [
-                                'product_id' => $product['id'],
-                                'variation_id' => $variation['id'],
-                                'sku' => $variation['sku'],
-                                'parent_has_unique_id' => !empty($product['bim_unique_id'])
-                            ]);
-                        }
-                    }
-
-                    Log::info('تکمیل variations برای محصول variable', [
-                        'product_id' => $product['id'],
-                        'total_variations' => count($variations)
-                    ]);
-                }
-            }
-
-            Log::info('خلاصه صفحه پردازش شد', [
-                'license_id' => $this->licenseId,
-                'page' => $this->page,
-                'total_products' => count($products),
-                'variable_products_count' => $variableProductCount,
-                'skus_found' => count($skus)
-            ]);
-
-            // ارسال SKU‌ها برای batch processing
-            if (!empty($skus)) {
-                $skuBatches = array_chunk($skus, 50);
-
-                foreach ($skuBatches as $batchIndex => $skuBatch) {
-                    ProcessSkuBatch::dispatch($this->licenseId, $skuBatch)
-                        ->onQueue('empty-unique-ids')
-                        ->delay(now()->addSeconds($batchIndex * 2));
-
-                    Log::info('Batch SKU برای پردازش ارسال شد', [
-                        'license_id' => $this->licenseId,
-                        'batch_index' => $batchIndex,
-                        'batch_size' => count($skuBatch)
-                    ]);
-                }
-            } else {
-                Log::info('هیچ محصولی بدون unique_id در این صفحه نیافت شد', [
+                Log::info('محصول برای پردازش مستقل ارسال شد', [
                     'license_id' => $this->licenseId,
-                    'page' => $this->page,
-                    'total_products' => count($products)
+                    'product_id' => $product['id'],
+                    'product_type' => $product['type'],
+                    'delay_seconds' => $index * 0.5
                 ]);
             }
+
+            Log::info('خلاصه صفحه پردازش شد - تمام محصولات برای processing ارسال شدند', [
+                'license_id' => $this->licenseId,
+                'page' => $this->page,
+                'total_products' => count($products)
+            ]);
 
             // اگر تعداد محصولات = 100 است، صفحه بعدی وجود دارد
             if (count($products) === 100) {
@@ -170,23 +108,20 @@ class ProcessProductPage implements ShouldQueue
                     'license_id' => $this->licenseId,
                     'current_page' => $this->page,
                     'next_page' => $this->page + 1,
-                    'products_in_current_page' => count($products),
-                    'skus_found_in_current_page' => count($skus)
+                    'products_in_current_page' => count($products)
                 ]);
             } else {
                 Log::info('پایان پردازش - تمام صفحات تکمیل شد (آخرین صفحه)', [
                     'license_id' => $this->licenseId,
                     'last_page' => $this->page,
-                    'products_in_this_page' => count($products),
-                    'total_skus_without_unique_id_in_this_page' => count($skus)
+                    'products_in_this_page' => count($products)
                 ]);
             }
 
             Log::info('پایان پردازش صفحه محصولات', [
                 'license_id' => $this->licenseId,
                 'page' => $this->page,
-                'total_products_in_page' => count($products),
-                'skus_needing_unique_id_in_this_page' => count($skus)
+                'total_products_in_page' => count($products)
             ]);
 
         } catch (\Exception $e) {
@@ -261,65 +196,5 @@ class ProcessProductPage implements ShouldQueue
         }
     }
 
-    /**
-     * Get variations that need unique ID from a variable product
-     * فقط صفحه اول را دریافت کنید برای کاهش زمان پردازش
-     */
-    private function getVariationSkus($license, $productId)
-    {
-        $variations = [];
 
-        try {
-            $wooApiKey = $license->woocommerceApiKey;
-            if (!$wooApiKey) {
-                return $variations;
-            }
-
-            // فقط صفحه اول واریانت‌ها (100 تا اول)
-            $params = [
-                'page' => 1,
-                'per_page' => 100
-            ];
-
-            Log::info('درخواست واریانت‌های محصول (صفحه اول)', [
-                'product_id' => $productId,
-                'per_page' => 100
-            ]);
-
-            // استفاده از trait برای دریافت واریانت‌ها
-            $result = $this->getWooCommerceProductVariations(
-                $license->website_url,
-                $wooApiKey->api_key,
-                $wooApiKey->api_secret,
-                $productId,
-                $params
-            );
-
-            if (!$result['success']) {
-                Log::warning('Failed to fetch variations', [
-                    'license_id' => $license->id,
-                    'product_id' => $productId,
-                    'error' => $result['message']
-                ]);
-                return $variations;
-            }
-
-            $variations = $result['data'] ?? [];
-
-            Log::info('واریانت‌های محصول دریافت شد (صفحه اول)', [
-                'product_id' => $productId,
-                'total_variations' => count($variations),
-                'note' => 'فقط 100 واریانت اول'
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error fetching variations', [
-                'license_id' => $license->id,
-                'error' => $e->getMessage(),
-                'product_id' => $productId
-            ]);
-        }
-
-        return $variations;
-    }
 }
