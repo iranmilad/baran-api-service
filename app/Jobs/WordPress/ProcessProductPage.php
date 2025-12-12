@@ -55,9 +55,6 @@ class ProcessProductPage implements ShouldQueue
      */
     public function handle(): void
     {
-        $startTime = microtime(true);
-        $maxExecutionTime = 45; // 45 ثانیه
-
         try {
             Log::info('شروع پردازش صفحه محصولات', [
                 'license_id' => $this->licenseId,
@@ -69,7 +66,7 @@ class ProcessProductPage implements ShouldQueue
                 return;
             }
 
-            // Get products for this specific page
+            // دریافت محصولات این صفحه (100 تا 100)
             $products = $this->getProductsPage($license, $this->page);
 
             if (empty($products)) {
@@ -80,58 +77,30 @@ class ProcessProductPage implements ShouldQueue
                 return;
             }
 
-            // Extract SKUs from products that need unique ID
+            // استخراج SKU‌های بدون unique_id
             $skus = [];
-            $productsProcessed = 0;
 
             foreach ($products as $product) {
-                // بررسی زمان اجرا
-                $currentTime = microtime(true);
-                $elapsedTime = $currentTime - $startTime;
-
-                if ($elapsedTime > $maxExecutionTime) {
-                    // ارسال job جدید برای ادامه کار از همان صفحه
-                    ProcessProductPage::dispatch($this->licenseId, $this->page)
-                        ->onQueue('empty-unique-ids')
-                        ->delay(now()->addSeconds(5));
-
-                    Log::info('زمان اجرا تمام شد - صفحه جدید ارسال شد', [
-                        'license_id' => $this->licenseId,
-                        'page' => $this->page,
-                        'elapsed_time' => $elapsedTime
-                    ]);
-
-                    break;
-                }
-
-                // بررسی اینکه آیا محصول نیاز به unique_id دارد
-                $needsUniqueId = empty($product['bim_unique_id']);
-
-                if ($needsUniqueId && !empty($product['sku'])) {
-                    // تنها محصولات ساده را اضافه کنید
-                    // محصولات متغیر از طریق واریانت‌های آنها پردازش می‌شوند
-                    if ($product['type'] !== 'variable') {
-                        $skus[] = [
-                            'sku' => $product['sku'],
-                            'product_id' => $product['id'],
-                            'type' => 'product'
-                        ];
-
-                        Log::info('محصول بدون unique_id یافت شد', [
-                            'product_id' => $product['id'],
-                            'sku' => $product['sku'],
-                            'type' => $product['type']
-                        ]);
-                    }
-                }
-
-                // Handle variations for variable products
-                // حتی اگر محصول مادر unique_id داشته باشد
-                if ($product['type'] === 'variable' && $elapsedTime < ($maxExecutionTime - 10)) {
-                    Log::info('شروع دریافت variations برای محصول variable', [
+                // محصولات ساده بدون unique_id
+                if ($product['type'] !== 'variable' && empty($product['bim_unique_id']) && !empty($product['sku'])) {
+                    $skus[] = [
+                        'sku' => $product['sku'],
                         'product_id' => $product['id'],
-                        'parent_unique_id' => $product['bim_unique_id'] ?? 'empty',
-                        'note' => 'دریافت تمام variations بدون توجه به unique_id محصول مادر'
+                        'type' => 'product'
+                    ];
+
+                    Log::info('محصول ساده بدون unique_id یافت شد', [
+                        'product_id' => $product['id'],
+                        'sku' => $product['sku']
+                    ]);
+                }
+
+                // تمام محصولات variable (برای بررسی variations آنها)
+                // حتی اگر محصول مادر unique_id داشته باشد
+                if ($product['type'] === 'variable') {
+                    Log::info('دریافت variations برای محصول variable', [
+                        'product_id' => $product['id'],
+                        'parent_unique_id' => $product['bim_unique_id'] ?? 'empty'
                     ]);
 
                     $variations = $this->getVariationSkus($license, $product['id']);
@@ -145,30 +114,24 @@ class ProcessProductPage implements ShouldQueue
                                 'type' => 'variation'
                             ];
 
-                            Log::info('واریانت بدون unique_id (محصول مادر ممکن است unique_id نداشته باشد)', [
+                            Log::info('variation بدون unique_id یافت شد', [
                                 'product_id' => $product['id'],
                                 'variation_id' => $variation['id'],
                                 'sku' => $variation['sku'],
-                                'parent_has_unique_id' => !empty($product['bim_unique_id']),
-                                'parent_unique_id' => $product['bim_unique_id'] ?? 'empty'
+                                'parent_has_unique_id' => !empty($product['bim_unique_id'])
                             ]);
                         }
                     }
 
-                    Log::info('تکمیل دریافت variations برای محصول variable', [
+                    Log::info('تکمیل variations برای محصول variable', [
                         'product_id' => $product['id'],
-                        'total_variations' => count($variations),
-                        'variations_without_unique_id' => count(array_filter($variations, function($v) {
-                            return empty($v['bim_unique_id']) && !empty($v['sku']);
-                        }))
+                        'total_variations' => count($variations)
                     ]);
                 }
-
-                $productsProcessed++;
             }
 
+            // ارسال SKU‌ها برای batch processing
             if (!empty($skus)) {
-                // Process SKUs in batches of 50
                 $skuBatches = array_chunk($skus, 50);
 
                 foreach ($skuBatches as $batchIndex => $skuBatch) {
@@ -190,47 +153,34 @@ class ProcessProductPage implements ShouldQueue
                 ]);
             }
 
-            // بررسی نهایی زمان
-            $finalElapsedTime = microtime(true) - $startTime;
-
-            // فقط اگر همه محصولات پردازش شدند و تعداد برابر 100 بود، صفحه بعد را پردازش کن
-            if (count($products) === 100 && $finalElapsedTime < $maxExecutionTime) {
+            // اگر تعداد محصولات = 100 است، صفحه بعدی وجود دارد
+            // اگر تعداد محصولات < 100 است، این آخرین صفحه است
+            if (count($products) === 100) {
                 ProcessProductPage::dispatch($this->licenseId, $this->page + 1)
                     ->onQueue('empty-unique-ids')
-                    ->delay(now()->addSeconds(10));
+                    ->delay(now()->addSeconds(5));
 
                 Log::info('ارسال صفحه بعد برای پردازش', [
                     'license_id' => $this->licenseId,
                     'current_page' => $this->page,
                     'next_page' => $this->page + 1,
-                    'elapsed_time' => $finalElapsedTime,
-                    'products_processed' => $productsProcessed,
-                    'skus_found' => count($skus)
-                ]);
-            } elseif (count($products) < 100) {
-                Log::info('پایان پردازش - تمام صفحات تکمیل شد', [
-                    'license_id' => $this->licenseId,
-                    'current_page' => $this->page,
-                    'products_in_this_page' => count($products),
-                    'total_skus_without_unique_id' => count($skus),
-                    'elapsed_time' => $finalElapsedTime
+                    'products_in_current_page' => count($products),
+                    'skus_found_in_current_page' => count($skus)
                 ]);
             } else {
-                Log::warning('صفحه بعد ارسال نشد - زمان اجرا بیش از حد مجاز است', [
+                Log::info('پایان پردازش - تمام صفحات تکمیل شد (آخرین صفحه)', [
                     'license_id' => $this->licenseId,
-                    'current_page' => $this->page,
-                    'elapsed_time' => $finalElapsedTime,
-                    'max_time' => $maxExecutionTime,
-                    'skus_found' => count($skus)
+                    'last_page' => $this->page,
+                    'products_in_this_page' => count($products),
+                    'total_skus_without_unique_id_in_this_page' => count($skus)
                 ]);
             }
 
             Log::info('پایان پردازش صفحه محصولات', [
                 'license_id' => $this->licenseId,
                 'page' => $this->page,
-                'products_processed' => $productsProcessed,
                 'total_products_in_page' => count($products),
-                'skus_needing_unique_id' => count($skus)
+                'skus_needing_unique_id_in_this_page' => count($skus)
             ]);
 
         } catch (\Exception $e) {
