@@ -80,7 +80,7 @@ class ProcessProductPage implements ShouldQueue
             // ارسال هر محصول برای پردازش مستقل
             // این کار اجازه می‌دهد محصولات به صورت parallel پردازش شوند
             foreach ($products as $index => $product) {
-                ProcessProductVariations::dispatch($this->licenseId, $product)
+                ProcessProductVariations::dispatch($this->licenseId, $product['id'])
                     ->onQueue('empty-unique-ids')
                     ->delay(now()->addSeconds($index * 0.5));
 

@@ -18,7 +18,7 @@ class ProcessProductVariations implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait;
 
     protected $licenseId;
-    protected $product;
+    protected $productId;
 
     /**
      * The number of times the job may be attempted.
@@ -43,10 +43,10 @@ class ProcessProductVariations implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct($licenseId, $product)
+    public function __construct($licenseId, $productId)
     {
         $this->licenseId = $licenseId;
-        $this->product = $product;
+        $this->productId = $productId;
     }
 
     /**
@@ -56,13 +56,11 @@ class ProcessProductVariations implements ShouldQueue
     public function handle(): void
     {
         try {
-            $productId = $this->product['id'] ?? null;
-            $productType = $this->product['type'] ?? null;
+            $productId = $this->productId;
 
             Log::info('شروع پردازش محصول', [
                 'license_id' => $this->licenseId,
-                'product_id' => $productId,
-                'product_type' => $productType
+                'product_id' => $productId
             ]);
 
             $license = License::find($this->licenseId);
@@ -71,19 +69,36 @@ class ProcessProductVariations implements ShouldQueue
                 return;
             }
 
+            // دریافت اطلاعات محصول
+            $productData = $this->getProductData($license, $productId);
+            if (!$productData) {
+                Log::warning('محصول یافت نشد', [
+                    'license_id' => $this->licenseId,
+                    'product_id' => $productId
+                ]);
+                return;
+            }
+
+            $productType = $productData['type'] ?? null;
+
+            Log::info('اطلاعات محصول دریافت شد', [
+                'product_id' => $productId,
+                'product_type' => $productType
+            ]);
+
             $skus = [];
 
             // محصول ساده بدون unique_id
-            if ($productType !== 'variable' && empty($this->product['bim_unique_id']) && !empty($this->product['sku'])) {
+            if ($productType !== 'variable' && empty($productData['bim_unique_id']) && !empty($productData['sku'])) {
                 $skus[] = [
-                    'sku' => $this->product['sku'],
+                    'sku' => $productData['sku'],
                     'product_id' => $productId,
                     'type' => 'product'
                 ];
 
                 Log::info('محصول ساده بدون unique_id', [
                     'product_id' => $productId,
-                    'sku' => $this->product['sku']
+                    'sku' => $productData['sku']
                 ]);
             }
 
@@ -152,11 +167,53 @@ class ProcessProductVariations implements ShouldQueue
         } catch (\Exception $e) {
             Log::error('خطا در پردازش محصول', [
                 'license_id' => $this->licenseId,
-                'product_id' => $this->product['id'] ?? null,
+                'product_id' => $this->productId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * دریافت اطلاعات محصول از WooCommerce
+     */
+    private function getProductData($license, $productId)
+    {
+        try {
+            $wooApiKey = $license->woocommerceApiKey;
+            if (!$wooApiKey) {
+                return null;
+            }
+
+            Log::info('درخواست اطلاعات محصول از WooCommerce', [
+                'product_id' => $productId
+            ]);
+
+            $result = $this->getWooCommerceProduct(
+                $license->website_url,
+                $wooApiKey->api_key,
+                $wooApiKey->api_secret,
+                $productId
+            );
+
+            if (!$result['success']) {
+                Log::warning('خطا در دریافت اطلاعات محصول', [
+                    'product_id' => $productId,
+                    'error' => $result['message']
+                ]);
+                return null;
+            }
+
+            return $result['data'] ?? null;
+
+        } catch (Exception $e) {
+            Log::error('خطا در دریافت اطلاعات محصول', [
+                'license_id' => $this->licenseId,
+                'product_id' => $productId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
         }
     }
 
