@@ -108,17 +108,21 @@ class ProcessProductPage implements ShouldQueue
                 $needsUniqueId = empty($product['bim_unique_id']);
 
                 if ($needsUniqueId && !empty($product['sku'])) {
-                    $skus[] = [
-                        'sku' => $product['sku'],
-                        'product_id' => $product['id'],
-                        'type' => 'product'
-                    ];
+                    // تنها محصولات ساده را اضافه کنید
+                    // محصولات متغیر از طریق واریانت‌های آنها پردازش می‌شوند
+                    if ($product['type'] !== 'variable') {
+                        $skus[] = [
+                            'sku' => $product['sku'],
+                            'product_id' => $product['id'],
+                            'type' => 'product'
+                        ];
 
-                    Log::info('محصول بدون unique_id یافت شد', [
-                        'product_id' => $product['id'],
-                        'sku' => $product['sku'],
-                        'type' => $product['type']
-                    ]);
+                        Log::info('محصول بدون unique_id یافت شد', [
+                            'product_id' => $product['id'],
+                            'sku' => $product['sku'],
+                            'type' => $product['type']
+                        ]);
+                    }
                 }
 
                 // Handle variations for variable products
