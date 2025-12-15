@@ -1118,35 +1118,13 @@ trait WooCommerceApiTrait
             $params['consumer_key'] = $apiKey;
             $params['consumer_secret'] = $apiSecret;
 
-            Log::info('درخواست WooCommerce Variations API', [
-                'url' => $url,
-                'product_id' => $productId,
-                'page' => $params['page'] ?? 1,
-                'per_page' => $params['per_page'] ?? 100,
-                'api_key_preview' => substr($apiKey, 0, 10) . '...'
-            ]);
-
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 15, // کاهش timeout به 15 ثانیه
-                'connect_timeout' => 5,
+                'timeout' => 30, // کاهش timeout
+                'connect_timeout' => 10,
             ])->get($url, $params);
 
-            Log::info('پاسخ WooCommerce Variations API دریافت شد', [
-                'product_id' => $productId,
-                'status_code' => $response->status(),
-                'response_headers' => json_encode($response->headers()),
-                'response_length' => strlen($response->body()),
-                'response_type' => gettype($response->body()),
-                'response_preview' => substr($response->body(), 0, 300)
-            ]);
-
             if (!$response->successful()) {
-                Log::error('خطا در WooCommerce Variations API', [
-                    'product_id' => $productId,
-                    'status_code' => $response->status(),
-                    'response_body' => $response->body()
-                ]);
                 return [
                     'success' => false,
                     'message' => 'خطا در دریافت واریانت‌ها از WooCommerce - کد: ' . $response->status(),
@@ -1157,13 +1135,6 @@ trait WooCommerceApiTrait
 
             $variations = $response->json();
 
-            Log::info('WooCommerce Variations پردازش شد', [
-                'product_id' => $productId,
-                'variations_type' => gettype($variations),
-                'variations_count' => is_array($variations) ? count($variations) : 'NA',
-                'variations_preview' => substr(json_encode($variations), 0, 200)
-            ]);
-
             return [
                 'success' => true,
                 'data' => $variations,
@@ -1171,11 +1142,6 @@ trait WooCommerceApiTrait
             ];
 
         } catch (\Exception $e) {
-            Log::error('Exception در getWooCommerceProductVariations', [
-                'product_id' => $productId,
-                'error' => $e->getMessage(),
-                'trace' => substr($e->getTraceAsString(), 0, 500)
-            ]);
             return [
                 'success' => false,
                 'message' => 'خطا در دریافت واریانت‌ها: ' . $e->getMessage(),
@@ -1252,90 +1218,17 @@ trait WooCommerceApiTrait
             $websiteUrl = rtrim($websiteUrl, '/');
             $url = $websiteUrl . '/wp-json/wc/v3/products/unique/batch-update-sku';
 
-            // تحضیر headers
-            $headers = [
+            $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($apiKey . ':' . $apiSecret)
-            ];
-
-            // لاگ تفصیلی درخواست (Header + Body)
-            Log::info('تهیه درخواست batch update unique IDs برای WooCommerce', [
-                'url' => $url,
-                'method' => 'POST',
-                'headers' => $headers,
-                'products_count' => count($batchData['products'] ?? []),
-                'request_body' => $batchData,
-                'products_detail' => array_map(function($p) {
-                    return [
-                        'sku' => $p['sku'] ?? null,
-                        'unique_id' => $p['unique_id'] ?? null,
-                        'product_id' => $p['product_id'] ?? null,
-                        'variation_id' => $p['variation_id'] ?? null,
-                    ];
-                }, $batchData['products'] ?? [])
-            ]);
-
-            $response = Http::withHeaders($headers)->withOptions([
+            ])->withOptions([
                 'verify' => false,
                 'timeout' => 180,
                 'connect_timeout' => 60,
                 'http_errors' => false
             ])->post($url, $batchData);
 
-            // لاگ تفصیلی پاسخ (Status + Headers + Body)
-            Log::info('دریافت پاسخ از WooCommerce برای batch update unique IDs', [
-                'url' => $url,
-                'status_code' => $response->status(),
-                'status_text' => $response->status() >= 200 && $response->status() < 300 ? 'Success' : 'Error',
-                'response_headers' => $response->headers(),
-                'response_body' => $response->body(),
-                'response_json' => $response->successful() ? $response->json() : null,
-                'successful' => $response->successful(),
-                'products_count' => count($batchData['products'] ?? [])
-            ]);
-
             if (!$response->successful()) {
-                // اگر endpoint پیدا نشد یا error داد، سعی کنید variations را به طور جداگانه آپدیت کنید
-                if ($response->status() === 404 || $response->status() === 405) {
-                    Log::warning('batch-update-sku endpoint not found, trying individual variation updates', [
-                        'status_code' => $response->status(),
-                        'url' => $url,
-                        'response_body' => substr($response->body(), 0, 500)
-                    ]);
-
-                    // Check if we have variations to update
-                    $hasVariations = false;
-                    foreach ($batchData['products'] ?? [] as $product) {
-                        if (!empty($product['variation_id']) && !empty($product['product_id'])) {
-                            $hasVariations = true;
-                            break;
-                        }
-                    }
-
-                    if ($hasVariations) {
-                        Log::info('درخواست دستی برای variations شروع شد');
-                        // Will handle individual variation updates in PHP code
-                        return [
-                            'success' => false,
-                            'message' => 'Batch endpoint not available, using individual updates',
-                            'status_code' => $response->status(),
-                            'needs_individual_update' => true,
-                            'response_body' => substr($response->body(), 0, 500)
-                        ];
-                    }
-                }
-
-                Log::error('خطا در batch update unique IDs - پاسخ ناموفق', [
-                    'status_code' => $response->status(),
-                    'status_text' => 'Error',
-                    'url' => $url,
-                    'products_count' => count($batchData['products'] ?? []),
-                    'response_headers' => $response->headers(),
-                    'response_body' => substr($response->body(), 0, 1500),
-                    'response_json' => $response->json(),
-                    'request_body' => $batchData
-                ]);
-
                 return [
                     'success' => false,
                     'message' => 'خطا در batch update unique IDs - کد: ' . $response->status(),
@@ -1346,24 +1239,6 @@ trait WooCommerceApiTrait
 
             $responseData = $response->json();
 
-            Log::info('✅ batch update unique IDs با موفقیت انجام شد', [
-                'url' => $url,
-                'status_code' => $response->status(),
-                'status_text' => 'Success',
-                'products_count' => count($batchData['products'] ?? []),
-                'response_headers' => $response->headers(),
-                'response_body' => $response->body(),
-                'response_data' => $responseData,
-                'request_products' => array_map(function($p) {
-                    return [
-                        'sku' => $p['sku'] ?? null,
-                        'unique_id' => $p['unique_id'] ?? null,
-                        'product_id' => $p['product_id'] ?? null,
-                        'variation_id' => $p['variation_id'] ?? null,
-                    ];
-                }, $batchData['products'] ?? [])
-            ]);
-
             return [
                 'success' => true,
                 'data' => $responseData,
@@ -1371,91 +1246,9 @@ trait WooCommerceApiTrait
             ];
 
         } catch (\Exception $e) {
-            Log::error('استثنا در batch update unique IDs', [
-                'url' => $url,
-                'error_message' => $e->getMessage(),
-                'error_code' => $e->getCode(),
-                'trace' => $e->getTraceAsString(),
-                'request_body' => $batchData,
-                'products_count' => count($batchData['products'] ?? [])
-            ]);
-
             return [
                 'success' => false,
                 'message' => 'خطا در batch update unique IDs: ' . $e->getMessage(),
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * آپدیت direct variation unique_id
-     */
-    protected function updateWooCommerceVariationUniqueId($websiteUrl, $apiKey, $apiSecret, $productId, $variationId, $uniqueId)
-    {
-        try {
-            $websiteUrl = rtrim($websiteUrl, '/');
-            $url = $websiteUrl . "/wp-json/wc/v3/products/{$productId}/variations/{$variationId}";
-
-            Log::info('درخواست آپدیت variation unique_id مستقیم', [
-                'url' => $url,
-                'product_id' => $productId,
-                'variation_id' => $variationId,
-                'unique_id' => $uniqueId
-            ]);
-
-            $response = Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($apiKey . ':' . $apiSecret)
-            ])->withOptions([
-                'verify' => false,
-                'timeout' => 30,
-                'connect_timeout' => 10,
-                'http_errors' => false
-            ])->put($url, [
-                'meta_data' => [
-                    [
-                        'key' => '_bim_unique_id',
-                        'value' => $uniqueId
-                    ]
-                ]
-            ]);
-
-            if ($response->successful()) {
-                Log::info('variation unique_id با موفقیت آپدیت شد', [
-                    'product_id' => $productId,
-                    'variation_id' => $variationId,
-                    'unique_id' => $uniqueId
-                ]);
-
-                return [
-                    'success' => true,
-                    'data' => $response->json()
-                ];
-            } else {
-                Log::error('خطا در آپدیت variation unique_id', [
-                    'status_code' => $response->status(),
-                    'response_body' => substr($response->body(), 0, 500),
-                    'product_id' => $productId,
-                    'variation_id' => $variationId
-                ]);
-
-                return [
-                    'success' => false,
-                    'status_code' => $response->status(),
-                    'error' => $response->body()
-                ];
-            }
-
-        } catch (\Exception $e) {
-            Log::error('استثنا در آپدیت variation unique_id', [
-                'error' => $e->getMessage(),
-                'product_id' => $productId,
-                'variation_id' => $variationId
-            ]);
-
-            return [
-                'success' => false,
                 'error' => $e->getMessage()
             ];
         }
@@ -1580,6 +1373,55 @@ trait WooCommerceApiTrait
     }
 
     /**
+     * دریافت اطلاعات محصول از WooCommerce با ID
+     *
+     * @param string $websiteUrl آدرس وب‌سایت
+     * @param string $apiKey کلید API
+     * @param string $apiSecret رمز API
+     * @param int $productId شناسه محصول
+     * @return array نتیجه درخواست
+     */
+    protected function getWooCommerceProductById($websiteUrl, $apiKey, $apiSecret, $productId)
+    {
+        try {
+            $websiteUrl = rtrim($websiteUrl, '/');
+            $url = $websiteUrl . '/wp-json/wc/v3/products/' . $productId;
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 30,
+                'connect_timeout' => 10
+            ])->withHeaders([
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey, $apiSecret)->get($url);
+
+            if (!$response->successful()) {
+                return [
+                    'success' => false,
+                    'message' => 'خطا در دریافت محصول - کد: ' . $response->status(),
+                    'status_code' => $response->status()
+                ];
+            }
+
+            $responseData = $response->json();
+
+            return [
+                'success' => true,
+                'data' => $responseData,
+                'message' => 'محصول با موفقیت دریافت شد'
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'خطا در دریافت محصول: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
      * به‌روزرسانی محصول WooCommerce
      *
      * @param string $websiteUrl آدرس وب‌سایت
@@ -1628,6 +1470,109 @@ trait WooCommerceApiTrait
                 'error' => $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * چک کردن و به‌روزرسانی attributes محصول مادر در WooCommerce
+     * اگر property جدیدی در گونه وجود دارد که در parent نیست، آن را اضافه می‌کند
+     *
+     * @param string $websiteUrl آدرس وب‌سایت
+     * @param string $apiKey کلید API
+     * @param string $apiSecret رمز API
+     * @param int $wcParentProductId شناسه محصول مادر در WooCommerce
+     * @param string $parentUniqueId شناسه یکتای محصول مادر
+     * @param array $variantItemInfo اطلاعات گونه جدید از Baran
+     * @param array $attributesMap نقشه attributes و properties از دیتابیس
+     * @return bool آیا parent به‌روزرسانی شد یا نه
+     */
+    protected function checkAndUpdateParentAttributesInWooCommerce($websiteUrl, $apiKey, $apiSecret, $wcParentProductId, $parentUniqueId, $variantItemInfo, $attributesMap)
+    {
+        // دریافت اطلاعات فعلی محصول مادر از WooCommerce
+        $parentDataResult = $this->getWooCommerceProductById($websiteUrl, $apiKey, $apiSecret, $wcParentProductId);
+
+        if (!$parentDataResult['success']) {
+            Log::warning('Could not fetch parent product from WooCommerce', [
+                'parent_product_id' => $wcParentProductId
+            ]);
+            return false;
+        }
+
+        $wcParentData = $parentDataResult['data'];
+        $wcAttributes = $wcParentData['attributes'] ?? [];
+
+        Log::info('Current parent attributes from WooCommerce', [
+            'parent_product_id' => $wcParentProductId,
+            'attributes_count' => count($wcAttributes)
+        ]);
+
+        // بررسی هر attribute در variant جدید
+        $needsUpdate = false;
+        $updatedAttributes = [];
+
+        foreach ($wcAttributes as $wcAttr) {
+            $attributeName = $wcAttr['name'];
+            $currentOptions = $wcAttr['options'] ?? [];
+
+            // اگر این attribute در variant جدید هم هست
+            if (isset($attributesMap[$attributeName])) {
+                $newOptions = $currentOptions;
+
+                // بررسی properties گونه جدید
+                foreach ($variantItemInfo['attributes'] as $attr) {
+                    if ($attr['name'] === $attributeName) {
+                        $attributeValue = $attr['value'];
+
+                        // پیدا کردن property از attributesMap
+                        if (isset($attributesMap[$attributeName]['properties'][$attributeValue])) {
+                            $property = $attributesMap[$attributeName]['properties'][$attributeValue];
+                            $propertyName = $property->name;
+
+                            // چک کردن آیا این property در options موجود است
+                            if (!in_array($propertyName, $currentOptions)) {
+                                $newOptions[] = $propertyName;
+                                $needsUpdate = true;
+
+                                Log::info('New property found for parent attribute', [
+                                    'attribute_name' => $attributeName,
+                                    'property_name' => $propertyName
+                                ]);
+                            }
+                        }
+                    }
+                }
+
+                $updatedAttributes[] = array_merge($wcAttr, ['options' => $newOptions]);
+            } else {
+                $updatedAttributes[] = $wcAttr;
+            }
+        }
+
+        // اگر نیاز به update نیست، return کن
+        if (!$needsUpdate) {
+            Log::info('No new properties to add to parent attributes');
+            return false;
+        }
+
+        // ارسال درخواست update به WooCommerce
+        Log::info('Updating parent product attributes in WooCommerce', [
+            'parent_unique_id' => $parentUniqueId,
+            'parent_product_id' => $wcParentProductId,
+            'updated_attributes' => $updatedAttributes
+        ]);
+
+        $updateResult = $this->updateWooCommerceProduct($websiteUrl, $apiKey, $apiSecret, $wcParentProductId, [
+            'attributes' => $updatedAttributes
+        ]);
+
+        if (!$updateResult['success']) {
+            Log::error('Failed to update parent product attributes', [
+                'error' => $updateResult['message'] ?? 'Unknown error'
+            ]);
+            return false;
+        }
+
+        Log::info('Parent product attributes updated successfully');
+        return true;
     }
 
     /**
@@ -2538,11 +2483,44 @@ trait WooCommerceApiTrait
                     }
 
                     if ($existingAttribute) {
+                        $existingSlug = $existingAttribute['slug'] ?? '';
+                        $desiredSlug = $attributeData['slug'] ?? '';
+
                         Log::info('Retrieved existing attribute', [
                             'attribute_name' => $existingAttribute['name'] ?? 'unknown',
                             'attribute_id' => $existingAttribute['id'] ?? 'unknown',
-                            'attribute_slug' => $existingAttribute['slug'] ?? 'unknown'
+                            'existing_slug' => $existingSlug,
+                            'desired_slug' => $desiredSlug
                         ]);
+
+                        // بررسی اینکه آیا slug متفاوت است
+                        if ($existingSlug !== $desiredSlug && !empty($desiredSlug)) {
+                            Log::info('Attribute slug differs, updating to database slug', [
+                                'attribute_id' => $existingAttribute['id'],
+                                'old_slug' => $existingSlug,
+                                'new_slug' => $desiredSlug
+                            ]);
+
+                            // به‌روزرسانی slug
+                            $updateResult = $this->updateWooCommerceAttribute($license, $existingAttribute['id'], [
+                                'slug' => $desiredSlug
+                            ]);
+
+                            if ($updateResult['success']) {
+                                Log::info('Attribute slug updated successfully', [
+                                    'attribute_id' => $existingAttribute['id'],
+                                    'new_slug' => $desiredSlug
+                                ]);
+
+                                $existingAttribute = $updateResult['data'];
+                            } else {
+                                Log::warning('Failed to update attribute slug', [
+                                    'attribute_id' => $existingAttribute['id'],
+                                    'error' => $updateResult['message']
+                                ]);
+                            }
+                        }
+
                         return [
                             'success' => true,
                             'data' => $existingAttribute,
@@ -2574,6 +2552,85 @@ trait WooCommerceApiTrait
             return [
                 'success' => false,
                 'message' => 'خطا در ایجاد attribute: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * به‌روزرسانی attribute در WooCommerce
+     *
+     * @param object $license لایسنس
+     * @param int $attributeId شناسه attribute
+     * @param array $updateData داده‌های به‌روزرسانی
+     * @return array نتیجه
+     */
+    protected function updateWooCommerceAttribute($license, $attributeId, $updateData)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                return [
+                    'success' => false,
+                    'message' => 'کلیدهای API WooCommerce تنظیم نشده است.'
+                ];
+            }
+
+            $url = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes/' . $attributeId;
+
+            Log::info('درخواست به‌روزرسانی attribute در WooCommerce', [
+                'url' => $url,
+                'attribute_id' => $attributeId,
+                'update_data' => $updateData,
+                'license_id' => $license->id
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 120,
+                'connect_timeout' => 30
+            ])->withHeaders([
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->put($url, $updateData);
+
+            Log::info('پاسخ به‌روزرسانی attribute از WooCommerce', [
+                'status' => $response->status(),
+                'successful' => $response->successful(),
+                'attribute_id' => $attributeId
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'data' => $response->json(),
+                    'message' => 'Attribute با موفقیت به‌روزرسانی شد'
+                ];
+            }
+
+            Log::error('WooCommerce Update Attribute Error', [
+                'attribute_id' => $attributeId,
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در به‌روزرسانی attribute - کد: ' . $response->status(),
+                'status_code' => $response->status()
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('خطا در به‌روزرسانی attribute در WooCommerce', [
+                'error' => $e->getMessage(),
+                'attribute_id' => $attributeId,
+                'license_id' => $license->id
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'خطا در به‌روزرسانی attribute: ' . $e->getMessage(),
                 'error' => $e->getMessage()
             ];
         }
@@ -2679,6 +2736,94 @@ trait WooCommerceApiTrait
                     'data' => $response->json(),
                     'message' => 'Term با موفقیت ایجاد شد'
                 ];
+            }
+
+            // بررسی اگر term قبلا وجود داشته باشد (خطای term_exists)
+            if ($response->status() === 400) {
+                $errorBody = $response->json();
+                if (isset($errorBody['code']) && $errorBody['code'] === 'term_exists') {
+                    Log::info('Term already exists, attempting to retrieve it', [
+                        'attribute_id' => $attributeId,
+                        'term_name' => $termData['name'] ?? 'unknown',
+                        'term_slug' => $termData['slug'] ?? 'unknown',
+                        'resource_id' => $errorBody['data']['resource_id'] ?? 'unknown'
+                    ]);
+
+                    // اگر resource_id در response وجود داشت، term موجود را برگردان
+                    if (isset($errorBody['data']['resource_id'])) {
+                        // دریافت اطلاعات کامل term
+                        $getTermUrl = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes/' . $attributeId . '/terms/' . $errorBody['data']['resource_id'];
+
+                        $getResponse = Http::withOptions([
+                            'verify' => false,
+                            'timeout' => 120
+                        ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                            ->get($getTermUrl);
+
+                        if ($getResponse->successful()) {
+                            $existingTerm = $getResponse->json();
+                            $existingSlug = $existingTerm['slug'] ?? '';
+                            $desiredSlug = $termData['slug'] ?? '';
+
+                            Log::info('Retrieved existing term', [
+                                'term_name' => $termData['name'] ?? 'unknown',
+                                'term_id' => $errorBody['data']['resource_id'],
+                                'existing_slug' => $existingSlug,
+                                'desired_slug' => $desiredSlug
+                            ]);
+
+                            // بررسی اینکه آیا slug متفاوت است
+                            if ($existingSlug !== $desiredSlug && !empty($desiredSlug)) {
+                                Log::info('Term slug differs, updating to database slug', [
+                                    'term_id' => $errorBody['data']['resource_id'],
+                                    'old_slug' => $existingSlug,
+                                    'new_slug' => $desiredSlug
+                                ]);
+
+                                // به‌روزرسانی slug
+                                $updateSlugUrl = rtrim($license->website_url, '/') . '/wp-json/wc/v3/products/attributes/' . $attributeId . '/terms/' . $errorBody['data']['resource_id'];
+
+                                $updateResponse = Http::withOptions([
+                                    'verify' => false,
+                                    'timeout' => 120
+                                ])->withHeaders([
+                                    'Content-Type' => 'application/json; charset=utf-8',
+                                    'Accept' => 'application/json'
+                                ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                                    ->put($updateSlugUrl, ['slug' => $desiredSlug]);
+
+                                if ($updateResponse->successful()) {
+                                    Log::info('Term slug updated successfully', [
+                                        'term_id' => $errorBody['data']['resource_id'],
+                                        'new_slug' => $desiredSlug
+                                    ]);
+
+                                    $existingTerm = $updateResponse->json();
+                                } else {
+                                    Log::warning('Failed to update term slug', [
+                                        'term_id' => $errorBody['data']['resource_id'],
+                                        'status' => $updateResponse->status(),
+                                        'body' => $updateResponse->body()
+                                    ]);
+                                }
+                            }
+
+                            return [
+                                'success' => true,
+                                'data' => $existingTerm,
+                                'message' => 'Term قبلا وجود داشت و دریافت شد'
+                            ];
+                        }
+                    }
+
+                    // اگر نتوانستیم term را دریافت کنیم، پیام خطا را برگردان
+                    return [
+                        'success' => false,
+                        'message' => $errorBody['message'] ?? 'Term قبلا وجود دارد',
+                        'status_code' => 400,
+                        'error_code' => 'term_exists'
+                    ];
+                }
             }
 
             Log::error('WooCommerce Create Term Error', [
@@ -3012,6 +3157,134 @@ trait WooCommerceApiTrait
                 'success' => false,
                 'message' => 'خطا در دریافت محصولات: ' . $e->getMessage(),
                 'data' => []
+            ];
+        }
+    }
+
+    /**
+     * بررسی وجود محصول با unique_id از طریق endpoint سفارشی
+     * استفاده از GET /wp-json/wc/v3/products/unique/{unique_id}
+     *
+     * Response format:
+     * {
+     *   "id": "2415",
+     *   "unique_id": "d5cc1cae-763b-4373-b913-9d5e3a1c0daf",
+     *   "product_id": "3460",
+     *   "variation_id": "3490",
+     *   "barcode": "104211005010985",
+     *   "created_at": "2025-11-11 18:49:34",
+     *   "updated_at": "2025-11-11 18:49:34"
+     * }
+     *
+     * @param object $license
+     * @param string $uniqueId
+     * @return array ['exists' => bool, 'product_id' => int|null, 'variation_id' => int|null, 'data' => array]
+     */
+    protected function checkProductExistsByUniqueIdCustom($license, $uniqueId)
+    {
+        try {
+            $apiKey = $license->woocommerceApiKey;
+            if (!$apiKey || !$apiKey->api_key || !$apiKey->api_secret) {
+                Log::warning('WooCommerce API key not found for license', ['license_id' => $license->id]);
+                return [
+                    'exists' => false,
+                    'product_id' => null,
+                    'variation_id' => null,
+                    'data' => null
+                ];
+            }
+
+            $websiteUrl = rtrim($license->website_url, '/');
+            // استفاده از lowercase برای unique_id
+            $url = $websiteUrl . '/wp-json/wc/v3/products/unique/' . strtolower($uniqueId);
+
+            Log::info('Checking product existence via custom endpoint', [
+                'url' => $url,
+                'unique_id' => $uniqueId
+            ]);
+
+            $response = Http::withOptions([
+                'verify' => false,
+                'timeout' => 20,
+                'connect_timeout' => 10
+            ])->withHeaders([
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ])->withBasicAuth($apiKey->api_key, $apiKey->api_secret)
+                ->get($url);
+
+            // چک کردن status code
+            if ($response->status() === 404) {
+                Log::info('Product not found in WooCommerce (404)', ['unique_id' => $uniqueId]);
+                return [
+                    'exists' => false,
+                    'product_id' => null,
+                    'variation_id' => null,
+                    'data' => null
+                ];
+            }
+
+            if ($response->successful()) {
+                $data = $response->json();
+
+                // چک کردن اگر response خطای not_found دارد
+                if (isset($data['code']) && $data['code'] === 'not_found') {
+                    Log::info('Product not found in WooCommerce (not_found code)', [
+                        'unique_id' => $uniqueId,
+                        'message' => $data['message'] ?? null
+                    ]);
+                    return [
+                        'exists' => false,
+                        'product_id' => null,
+                        'variation_id' => null,
+                        'data' => null
+                    ];
+                }
+
+                // چک کردن ساختار response معتبر
+                if (isset($data['unique_id']) && isset($data['product_id'])) {
+                    $productId = isset($data['product_id']) ? (int)$data['product_id'] : null;
+                    $variationId = isset($data['variation_id']) ? (int)$data['variation_id'] : null;
+
+                    Log::info('Product found in WooCommerce', [
+                        'unique_id' => $uniqueId,
+                        'product_id' => $productId,
+                        'variation_id' => $variationId,
+                        'is_parent' => $variationId === null || $variationId === 0
+                    ]);
+
+                    return [
+                        'exists' => true,
+                        'product_id' => $productId,
+                        'variation_id' => $variationId,
+                        'data' => $data
+                    ];
+                }
+            }
+
+            Log::warning('Unexpected response when checking product existence', [
+                'unique_id' => $uniqueId,
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
+            return [
+                'exists' => false,
+                'product_id' => null,
+                'variation_id' => null,
+                'data' => null
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error checking product existence by unique_id', [
+                'error' => $e->getMessage(),
+                'unique_id' => $uniqueId
+            ]);
+            return [
+                'exists' => false,
+                'product_id' => null,
+                'variation_id' => null,
+                'data' => null
             ];
         }
     }

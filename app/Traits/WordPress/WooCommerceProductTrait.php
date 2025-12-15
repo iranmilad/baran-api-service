@@ -302,13 +302,6 @@ trait WooCommerceProductTrait
 
             $url = $this->buildWooCommerceUrl($license->website_url, "products/{$productId}");
 
-            Log::info('درخواست WooCommerce Product API', [
-                'url' => $url,
-                'product_id' => $productId,
-                'license_id' => $license->id,
-                'api_key_preview' => substr($wooApiKey->api_key, 0, 10) . '...'
-            ]);
-
             $response = Http::withOptions([
                 'verify' => false,
                 'timeout' => 30
@@ -316,35 +309,14 @@ trait WooCommerceProductTrait
                 $this->prepareWooCommerceHeaders($wooApiKey)
             )->get($url);
 
-            Log::info('پاسخ WooCommerce Product API دریافت شد', [
-                'product_id' => $productId,
-                'status_code' => $response->status(),
-                'response_headers' => json_encode($response->headers()),
-                'response_length' => strlen($response->body()),
-                'response_type' => gettype($response->body()),
-                'response_preview' => substr($response->body(), 0, 300)
-            ]);
-
             if ($response->successful()) {
                 $product = $response->json();
-
-                Log::info('WooCommerce Product پردازش شد', [
-                    'product_id' => $productId,
-                    'product_type' => gettype($product),
-                    'product_sku' => is_array($product) ? ($product['sku'] ?? 'NA') : 'NA',
-                    'product_preview' => substr(json_encode($product), 0, 200)
-                ]);
 
                 return [
                     'success' => true,
                     'data' => $product
                 ];
             } else {
-                Log::error('خطا در WooCommerce Product API', [
-                    'product_id' => $productId,
-                    'status_code' => $response->status(),
-                    'response_body' => $response->body()
-                ]);
                 return $this->handleWooCommerceError($response, 'دریافت محصول', [
                     'license_id' => $license->id,
                     'product_id' => $productId
@@ -352,11 +324,10 @@ trait WooCommerceProductTrait
             }
 
         } catch (\Exception $e) {
-            Log::error('Exception در getWooCommerceProduct', [
+            Log::error('خطا در دریافت محصول WooCommerce', [
                 'license_id' => $license->id,
                 'product_id' => $productId,
-                'error' => $e->getMessage(),
-                'trace' => substr($e->getTraceAsString(), 0, 500)
+                'error' => $e->getMessage()
             ]);
 
             return [

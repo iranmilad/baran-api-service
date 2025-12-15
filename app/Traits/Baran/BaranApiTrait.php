@@ -55,13 +55,13 @@ trait BaranApiTrait
                 Log::info('Items Count: ' . (is_array($responseData) ? count($responseData) : 0));
 
                 // تبدیل پاسخ به فرمت استاندارد با Attributes
-                if (is_array($responseData)) {
-                    $responseData = $this->remapBaranResponse($responseData);
-                }
+                // if (is_array($responseData)) {
+                //     $responseData = $this->remapBaranResponse($responseData);
+                // }
 
-                Log::info('Response Data (JSON) After Remap:', [
-                    'json' => json_encode($responseData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-                ]);
+                // Log::info('Response Data (JSON) After Remap:', [
+                //     'json' => json_encode($responseData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                // ]);
 
                 // نمایش اطلاعات اولین آیتم برای دیباگ
                 if (is_array($responseData) && count($responseData) > 0) {
@@ -137,7 +137,7 @@ trait BaranApiTrait
             }
 
             // اضافه کردن Attributes به آیتم
-            $item['Attributes'] = $attributes;
+            $item['attributes'] = $attributes;
 
             $remappedItems[] = $item;
         }
@@ -154,10 +154,10 @@ trait BaranApiTrait
 
         foreach ($baranAttributes as $attr) {
             $attributes[] = [
-                'name' => $attr['Attribute'] ?? '',
-                'code' => $attr['Code'] ?? '',
-                'value' => $attr['Value'] ?? '',
-                'item_id' => $attr['ItemID'] ?? ''
+                'name' => $attr['attribute'] ?? ($attr['Attribute'] ?? ''),
+                'code' => $attr['code'] ?? ($attr['Code'] ?? ''),
+                'value' => $attr['value'] ?? ($attr['Value'] ?? ''),
+                'item_id' => $attr['itemID'] ?? ($attr['ItemID'] ?? '')
             ];
         }
 
@@ -166,6 +166,7 @@ trait BaranApiTrait
 
     /**
      * استخراج اطلاعات محصول از پاسخ Baran
+     * این متد یک آیتم واحد را می‌پذیرد (معمولاً اولین مورد یا مورد فیلتر شده)
      */
     protected function extractBaranProductInfo($baranItem)
     {
@@ -173,9 +174,9 @@ trait BaranApiTrait
             'item_id' => $baranItem['itemID'] ?? null,
             'parent_id' => $baranItem['parentID'] ?? null,
             'item_name' => $baranItem['itemName'] ?? '',
-            'attributes' => $this->parseBaranAttributes($baranItem['Attributes'] ?? []),
-            'price' => $baranItem['price'] ?? ($baranItem['salePrice'] ?? 0),
-            'sale_price' => $baranItem['salePrice'] ?? 0,
+            'attributes' => $this->parseBaranAttributes($baranItem['attributes'] ?? []),
+            'price' => $baranItem['salePrice'] ?? 0,
+            'sale_price' => $baranItem['PriceAfterDiscount'] ?? 0,
             'current_discount' => $baranItem['currentDiscount'] ?? 0,
             'barcode' => $baranItem['barcode'] ?? '',
             'stock_name' => $baranItem['stockName'] ?? '',
@@ -186,5 +187,188 @@ trait BaranApiTrait
             'description' => $baranItem['description'] ?? '',
             'short_description' => $baranItem['shortDescription'] ?? ($baranItem['itemName'] ?? '')
         ];
+    }
+
+    /**
+     * فیلتر و محاسبه موجودی بر اساس تنظیمات انبار
+     *
+     * @param array $itemStocks لیست موجودی‌های یک آیتم در انبارهای مختلف
+     * @param string|array|null $defaultWarehouseCode کد انبار(های) پیش‌فرض
+     * @return array اطلاعات آیتم با موجودی محاسبه شده
+     */
+    protected function filterAndCalculateStock($itemStocks, $defaultWarehouseCode = null)
+    {
+        if (empty($itemStocks)) {
+            return null;
+        }
+
+        // اگر فقط یک مورد باشد و کد انبار خالی باشد، همان را برگردان
+        if (count($itemStocks) === 1 && empty($defaultWarehouseCode)) {
+            return $itemStocks[0];
+        }
+
+        // اگر کد انبار پیش‌فرض تنظیم شده باشد
+        if (!empty($defaultWarehouseCode)) {
+            $allowedWarehouses = is_array($defaultWarehouseCode) ? $defaultWarehouseCode : [$defaultWarehouseCode];
+
+            // فیلتر کردن موجودی‌های انبارهای مجاز
+            $filteredStocks = array_filter($itemStocks, function($stock) use ($allowedWarehouses) {
+                return in_array($stock['stockID'] ?? '', $allowedWarehouses);
+            });
+
+            if (empty($filteredStocks)) {
+                Log::warning('هیچ موجودی در انبار(های) مجاز یافت نشد', [
+                    'item_id' => $itemStocks[0]['itemID'] ?? 'unknown',
+                    'allowed_warehouses' => $allowedWarehouses,
+                    'available_warehouses' => array_column($itemStocks, 'stockID')
+                ]);
+
+                // اگر هیچ انباری مطابقت نداشت، از اولین مورد استفاده کن با موجودی صفر
+                $result = $itemStocks[0];
+                $result['stockQuantity'] = 0;
+                $result['stockName'] = 'انبار مجاز یافت نشد';
+                return $result;
+            }
+
+            // محاسبه مجموع موجودی انبارهای فیلتر شده
+            $totalQuantity = array_sum(array_column($filteredStocks, 'stockQuantity'));
+
+            // استفاده از اطلاعات اولین انبار فیلتر شده به عنوان پایه
+            $result = reset($filteredStocks);
+            $result['stockQuantity'] = $totalQuantity;
+
+            // اگر از چند انبار استفاده شد، نام را به‌روز کن
+            if (count($filteredStocks) > 1) {
+                $warehouseNames = array_column($filteredStocks, 'stockName');
+                $result['stockName'] = implode(' + ', $warehouseNames);
+            }
+
+            Log::info('موجودی از انبار(های) مجاز محاسبه شد', [
+                'item_id' => $result['itemID'] ?? 'unknown',
+                'warehouses_count' => count($filteredStocks),
+                'total_quantity' => $totalQuantity,
+                'warehouse_names' => $result['stockName']
+            ]);
+
+            return $result;
+        }
+
+        // اگر کد انبار خالی باشد، مجموع تمام انبارها را محاسبه کن
+        $totalQuantity = array_sum(array_column($itemStocks, 'stockQuantity'));
+
+        // استفاده از اطلاعات اولین انبار به عنوان پایه
+        $result = $itemStocks[0];
+        $result['stockQuantity'] = $totalQuantity;
+
+        // اگر از چند انبار استفاده شد، نام را به‌روز کن
+        if (count($itemStocks) > 1) {
+            $warehouseNames = array_column($itemStocks, 'stockName');
+            $result['stockName'] = 'مجموع: ' . implode(', ', $warehouseNames);
+        }
+
+        Log::info('موجودی از مجموع تمام انبارها محاسبه شد', [
+            'item_id' => $result['itemID'] ?? 'unknown',
+            'warehouses_count' => count($itemStocks),
+            'total_quantity' => $totalQuantity
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * گروه‌بندی پاسخ Baran بر اساس itemID
+     * چون ممکن است یک آیتم در چند انبار باشد
+     *
+     * @param array $items لیست آیتم‌ها از Baran
+     * @return array آرایه‌ای با کلید itemID و مقدار لیست موجودی‌های آن
+     */
+    protected function groupBaranItemsByItemId($items)
+    {
+        $grouped = [];
+
+        foreach ($items as $item) {
+            $itemId = $item['itemID'] ?? null;
+            if ($itemId) {
+                if (!isset($grouped[$itemId])) {
+                    $grouped[$itemId] = [];
+                }
+                $grouped[$itemId][] = $item;
+            }
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * دریافت تمام ویژگی‌ها (Attributes) از Baran API
+     *
+     * @param object $license لایسنس با user relation
+     * @return array لیست ویژگی‌ها با پروپرتی‌هایشان
+     * @throws \Exception
+     */
+    protected function getBaranAttributes($license)
+    {
+        // دریافت اطلاعات API از user مرتبط با لایسنس
+        $user = $license->user;
+
+        if (!$user) {
+            throw new \Exception('کاربر مرتبط با این لایسنس یافت نشد.');
+        }
+
+        $warehouseApiUrl = $user->warehouse_api_url ?? null;
+        $warehouseApiUsername = $user->warehouse_api_username ?? null;
+        $warehouseApiPassword = $user->warehouse_api_password ?? null;
+
+        if (!$warehouseApiUrl) {
+            throw new \Exception('آدرس API انبار (warehouse_api_url) برای این کاربر تنظیم نشده است.');
+        }
+
+        if (!$warehouseApiUsername || !$warehouseApiPassword) {
+            throw new \Exception('نام کاربری یا رمز عبور API انبار برای این کاربر تنظیم نشده است.');
+        }
+
+        // ساخت URL کامل
+        $url = rtrim($warehouseApiUrl, '/') . '/api/attributes';
+
+        Log::info('=== درخواست دریافت ویژگی‌ها از Baran API ===', [
+            'url' => $url,
+            'username' => $warehouseApiUsername
+        ]);
+
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json'
+            ])->withBasicAuth($warehouseApiUsername, $warehouseApiPassword)
+              ->get($url);
+
+            if ($response->successful()) {
+                $attributes = $response->json();
+
+                Log::info('ویژگی‌ها با موفقیت از Baran دریافت شد', [
+                    'attributes_count' => count($attributes),
+                    'sample' => isset($attributes[0]) ? [
+                        'name' => $attributes[0]['AttributeName'] ?? 'N/A',
+                        'values_count' => count($attributes[0]['Values'] ?? [])
+                    ] : null
+                ]);
+
+                return $attributes;
+            }
+
+            Log::error('خطا در دریافت ویژگی‌ها از Baran', [
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
+            throw new \Exception('خطا در دریافت ویژگی‌ها از Baran: ' . $response->body());
+
+        } catch (\Exception $e) {
+            Log::error('Exception در دریافت ویژگی‌ها از Baran', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            throw $e;
+        }
     }
 }

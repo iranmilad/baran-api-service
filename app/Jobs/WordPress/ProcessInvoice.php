@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\License;
 use App\Models\UserSetting;
 use App\Traits\WordPress\WordPressMasterTrait;
+use App\Traits\PriceUnitConverter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessInvoice implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait, PriceUnitConverter;
 
     public $tries = 3;
     public $timeout = 300;
@@ -376,10 +377,16 @@ class ProcessInvoice implements ShouldQueue
             $shippingCostMethod = $userSettings ? $userSettings->shipping_cost_method : 'expense';
             $shippingProductUniqueId = $userSettings ? $userSettings->shipping_product_unique_id : '';
 
-            Log::info('تنظیمات حمل و نقل', [
+            // دریافت تنظیمات واحد قیمت
+            $wooCommerceUnit = $userSettings && $userSettings->woocommerce_price_unit ? $userSettings->woocommerce_price_unit : 'toman';
+            $rainSaleUnit = $userSettings && $userSettings->rain_sale_price_unit ? $userSettings->rain_sale_price_unit : 'rial';
+
+            Log::info('تنظیمات حمل و نقل و واحد قیمت', [
                 'invoice_id' => $this->invoice->id,
                 'shipping_cost_method' => $shippingCostMethod,
-                'shipping_product_unique_id' => $shippingProductUniqueId
+                'shipping_product_unique_id' => $shippingProductUniqueId,
+                'woocommerce_price_unit' => $wooCommerceUnit,
+                'rain_sale_price_unit' => $rainSaleUnit
             ]);
 
             // استاندارد کردن شماره موبایل مشتری
@@ -843,18 +850,26 @@ class ProcessInvoice implements ShouldQueue
 
 
                 // محاسبه مقدار total در صورت عدم وجود
-                $itemPrice = (float)$item['price'];
+                $itemPriceOriginal = (float)$item['price'];
                 $itemQuantity = (int)$item['quantity'];
-                $total = isset($item['total']) ? (float)$item['total'] : ($itemPrice * $itemQuantity);
+                $totalOriginal = isset($item['total']) ? (float)$item['total'] : ($itemPriceOriginal * $itemQuantity);
+
+                // تبدیل واحد قیمت از WooCommerce به RainSale
+                $itemPrice = $this->convertPriceUnit($itemPriceOriginal, $wooCommerceUnit, $rainSaleUnit);
+                $total = $this->convertPriceUnit($totalOriginal, $wooCommerceUnit, $rainSaleUnit);
 
                 // لاگ محاسبه آیتم
                 Log::info('محاسبه مبلغ آیتم فاکتور', [
                     'invoice_id' => $this->invoice->id,
                     'item_index' => $index,
                     'item_id' => $itemId,
-                    'item_price' => $itemPrice,
+                    'item_price_original' => $itemPriceOriginal,
+                    'item_price_converted' => $itemPrice,
                     'item_quantity' => $itemQuantity,
-                    'calculated_total' => $total,
+                    'total_original' => $totalOriginal,
+                    'total_converted' => $total,
+                    'from_unit' => $wooCommerceUnit,
+                    'to_unit' => $rainSaleUnit,
                     'has_total_in_data' => isset($item['total'])
                 ]);
 
@@ -925,7 +940,10 @@ class ProcessInvoice implements ShouldQueue
             }
 
             // بررسی نیاز به اضافه کردن هزینه حمل و نقل به عنوان آیتم
-            $shippingTotal = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
+            $shippingTotalOriginal = isset($this->invoice->order_data['shipping_total']) ? (float)$this->invoice->order_data['shipping_total'] : 0;
+
+            // تبدیل واحد قیمت برای هزینه حمل و نقل
+            $shippingTotal = $this->convertPriceUnit($shippingTotalOriginal, $wooCommerceUnit, $rainSaleUnit);
 
             if ($shippingCostMethod === 'product' && $shippingTotal > 0) {
                 // اضافه کردن هزینه حمل و نقل به عنوان یک آیتم
@@ -934,6 +952,7 @@ class ProcessInvoice implements ShouldQueue
                     'ItemId' => $shippingProductUniqueId,
                     'LineItemID' => count($items) + 1,
                     'NetAmount' => $shippingTotal,
+                    'Total' => $shippingTotal, // اضافه شده برای سازگاری با RainSale
                     'OperationType' => 1,
                     'Price' => $shippingTotal,
                     'Quantity' => 1,
@@ -944,7 +963,10 @@ class ProcessInvoice implements ShouldQueue
                 Log::info('هزینه حمل و نقل به عنوان آیتم اضافه شد', [
                     'invoice_id' => $this->invoice->id,
                     'shipping_unique_id' => $shippingProductUniqueId,
-                    'shipping_amount' => $shippingTotal
+                    'shipping_amount_original' => $shippingTotalOriginal,
+                    'shipping_amount_converted' => $shippingTotal,
+                    'from_unit' => $wooCommerceUnit,
+                    'to_unit' => $rainSaleUnit
                 ]);
             }
 
@@ -956,13 +978,16 @@ class ProcessInvoice implements ShouldQueue
             }
 
             // محاسبه مبلغ کل بر اساس تنظیمات حمل و نقل
-            $orderTotal = (float)$this->invoice->order_data['total'];
-            // $shippingTotal قبلاً محاسبه شده است
+            $orderTotalOriginal = (float)$this->invoice->order_data['total'];
+            $orderTotal = $this->convertPriceUnit($orderTotalOriginal, $wooCommerceUnit, $rainSaleUnit);
+
+            // $shippingTotal قبلاً محاسبه و تبدیل شده است
 
             // بررسی اینکه آیا total قبلاً شامل هزینه ارسال است یا نه
             $itemsTotal = 0;
             foreach ($this->invoice->order_data['items'] as $item) {
-                $itemsTotal += (float)$item['total'];
+                $itemTotalOriginal = (float)$item['total'];
+                $itemsTotal += $this->convertPriceUnit($itemTotalOriginal, $wooCommerceUnit, $rainSaleUnit);
             }
 
             // محاسبه مبلغ کل و DeliveryCost بر اساس روش حمل و نقل
@@ -986,12 +1011,14 @@ class ProcessInvoice implements ShouldQueue
             Log::info('محاسبه مبلغ کل پرداخت', [
                 'invoice_id' => $this->invoice->id,
                 'items_total' => $itemsTotal,
-                'order_total' => $orderTotal,
+                'order_total_original' => $orderTotalOriginal,
+                'order_total_converted' => $orderTotal,
                 'shipping_total' => $shippingTotal,
                 'shipping_method' => $shippingCostMethod,
                 'delivery_cost' => $deliveryCost,
                 'final_total' => $totalAmount,
-                'code_version' => 'FIXED_VERSION_28200000' // نشانگر نسخه اصلاح شده
+                'price_unit_conversion' => "{$wooCommerceUnit} -> {$rainSaleUnit}",
+                'code_version' => 'WITH_PRICE_UNIT_CONVERSION' // نشانگر نسخه با تبدیل واحد قیمت
             ]);
 
             $payments[] = [
