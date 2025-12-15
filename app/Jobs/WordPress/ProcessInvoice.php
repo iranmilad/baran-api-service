@@ -926,6 +926,8 @@ class ProcessInvoice implements ShouldQueue
                 $items[] = [
                     'IsPriceWithTax' => true,
                     'ItemId' => $itemId,
+                    "IsDelivery" => false,
+                    "Description" => "",
                     //'Barcode' => $barcode,
                     'LineItemID' => count($items) + 1,
                     'NetAmount' => $total,
@@ -971,9 +973,33 @@ class ProcessInvoice implements ShouldQueue
 
             // آماده‌سازی پرداخت‌ها
             $payments = [];
-            $paymentTypeId = 1; // پیش‌فرض برای پرداخت نقدی
-            if ($this->invoice->order_data['payment_method'] === 'cod') {
-                $paymentTypeId = 1; // پرداخت نقدی
+
+            // دریافت روش پرداخت از order_data
+            $paymentMethod = $this->invoice->order_data['payment_method'] ?? 'cod';
+
+            // دریافت تنظیمات حساب‌های درگاه پرداخت
+            $paymentGatewayAccounts = $userSettings->payment_gateway_accounts ?? [];
+
+            // تعیین TypeID بر اساس روش پرداخت و تنظیمات
+            $paymentTypeId = 1; // پیش‌فرض
+
+            if (is_array($paymentGatewayAccounts) && isset($paymentGatewayAccounts[$paymentMethod])) {
+                // تبدیل به integer برای پشتیبانی از اعداد منفی و بزرگ
+                $paymentTypeId = intval($paymentGatewayAccounts[$paymentMethod]);
+
+                Log::info('شناسه نوع پرداخت از تنظیمات درگاه دریافت شد', [
+                    'invoice_id' => $this->invoice->id,
+                    'payment_method' => $paymentMethod,
+                    'payment_type_id' => $paymentTypeId,
+                    'original_value' => $paymentGatewayAccounts[$paymentMethod]
+                ]);
+            } else {
+                Log::warning('شناسه نوع پرداخت در تنظیمات یافت نشد، از مقدار پیش‌فرض استفاده می‌شود', [
+                    'invoice_id' => $this->invoice->id,
+                    'payment_method' => $paymentMethod,
+                    'payment_type_id' => $paymentTypeId,
+                    'available_gateways' => array_keys($paymentGatewayAccounts)
+                ]);
             }
 
             // محاسبه مبلغ کل بر اساس تنظیمات حمل و نقل
@@ -1016,6 +1042,8 @@ class ProcessInvoice implements ShouldQueue
                 'shipping_method' => $shippingCostMethod,
                 'delivery_cost' => $deliveryCost,
                 'final_total' => $totalAmount,
+                'payment_method' => $paymentMethod,
+                'payment_type_id' => $paymentTypeId,
                 'price_unit_conversion' => "{$wooCommerceUnit} -> {$rainSaleUnit}",
                 'code_version' => 'WITH_PRICE_UNIT_CONVERSION' // نشانگر نسخه با تبدیل واحد قیمت
             ]);
@@ -1024,15 +1052,15 @@ class ProcessInvoice implements ShouldQueue
                 'Amount' => $totalAmount,
                 'DueDate' => now()->format('Y-m-d H:i:s'),
                 'LineItemID' => 1,
-                'TypeID' => 2,
+                'TypeID' => $paymentTypeId,
             ];
 
 
             // آماده‌سازی داده‌های فاکتور
             $invoiceRequestData = [
-                'allowToMakeInvoice' => false,
+                'allowToMakeInvoice' => true,
                 'calcPromotion' => false,
-                'calcTax' => false,
+                'calcTax' => true,
                 'order' => [
                     'CustomerId' => $customerResult['CustomerID'],
                     'Address' => $this->invoice->order_data['customer']['address']['address_1'],
@@ -1060,6 +1088,8 @@ class ProcessInvoice implements ShouldQueue
                     ];
                 }, $items),
                 'payment_amount' => $totalAmount,
+                'payment_method' => $paymentMethod,
+                'payment_type_id' => $paymentTypeId,
                 'delivery_cost' => $deliveryCost,
                 'customer_id' => $customerResult['CustomerID']
             ]);
