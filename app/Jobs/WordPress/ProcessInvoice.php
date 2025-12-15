@@ -6,7 +6,6 @@ use App\Models\Invoice;
 use App\Models\License;
 use App\Models\UserSetting;
 use App\Traits\WordPress\WordPressMasterTrait;
-use App\Traits\PriceUnitConverter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -17,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessInvoice implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait, PriceUnitConverter;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WordPressMasterTrait;
 
     public $tries = 3;
     public $timeout = 300;
