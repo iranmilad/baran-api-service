@@ -235,13 +235,24 @@ class UserSettingController extends Controller
                 // پردازش default_warehouse_code: decode اگر encoded ارسال شده
                 $settingsData = $request->settings;
                 if (isset($settingsData['default_warehouse_code']) && is_string($settingsData['default_warehouse_code'])) {
-                    $decoded = json_decode($settingsData['default_warehouse_code'], true);
+                    // حذف backslash‌های اضافی
+                    $cleaned = stripslashes($settingsData['default_warehouse_code']);
+                    $decoded = json_decode($cleaned, true);
+
                     if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                         // اگر JSON معتبر بود، آن را به فرمت استاندارد تبدیل کن
                         $settingsData['default_warehouse_code'] = json_encode($decoded);
                         Log::info('default_warehouse_code decoded', [
                             'original' => $request->settings['default_warehouse_code'],
-                            'decoded' => $settingsData['default_warehouse_code']
+                            'cleaned' => $cleaned,
+                            'decoded_array' => $decoded,
+                            'final' => $settingsData['default_warehouse_code']
+                        ]);
+                    } else {
+                        Log::warning('default_warehouse_code decode failed', [
+                            'original' => $request->settings['default_warehouse_code'],
+                            'cleaned' => $cleaned,
+                            'json_error' => json_last_error_msg()
                         ]);
                     }
                 }
