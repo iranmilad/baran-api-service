@@ -235,8 +235,8 @@ class UserSettingController extends Controller
                 // پردازش default_warehouse_code: decode اگر encoded ارسال شده
                 $settingsData = $request->settings;
                 if (isset($settingsData['default_warehouse_code']) && is_string($settingsData['default_warehouse_code'])) {
-                    // حذف backslash‌های اضافی
-                    $cleaned = stripslashes(stripslashes($settingsData['default_warehouse_code']));
+                    // حذف تمام backslash‌ها
+                    $cleaned = str_replace('\\', '', $settingsData['default_warehouse_code']);
                     $decoded = json_decode($cleaned, true);
 
                     if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
