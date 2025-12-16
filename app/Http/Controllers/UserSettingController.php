@@ -236,7 +236,7 @@ class UserSettingController extends Controller
                 $settingsData = $request->settings;
                 if (isset($settingsData['default_warehouse_code']) && is_string($settingsData['default_warehouse_code'])) {
                     // حذف backslash‌های اضافی
-                    $cleaned = stripslashes($settingsData['default_warehouse_code']);
+                    $cleaned = stripslashes(stripslashes($settingsData['default_warehouse_code']));
                     $decoded = json_decode($cleaned, true);
 
                     if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
