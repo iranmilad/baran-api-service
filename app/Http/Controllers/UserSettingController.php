@@ -124,11 +124,12 @@ class UserSettingController extends Controller
                     }
                 }
 
-                // پردازش default_warehouse_code برای خروجی
+                // پردازش default_warehouse_code برای خروجی: تبدیل به array
                 if (isset($filtered['default_warehouse_code']) && is_string($filtered['default_warehouse_code'])) {
                     $decoded = json_decode($filtered['default_warehouse_code'], true);
                     if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                        $filtered['default_warehouse_code'] = json_encode($decoded);
+                        // برگرداندن به صورت array بدون encode
+                        $filtered['default_warehouse_code'] = $decoded;
                     }
                 }
 
@@ -269,12 +270,12 @@ class UserSettingController extends Controller
                 // آماده‌سازی داده برای خروجی
                 $responseData = $settings->toPluginArray();
 
-                // پردازش default_warehouse_code برای خروجی: اطمینان از فرمت صحیح
+                // پردازش default_warehouse_code برای خروجی: تبدیل به array
                 if (isset($responseData['default_warehouse_code']) && is_string($responseData['default_warehouse_code'])) {
                     $decoded = json_decode($responseData['default_warehouse_code'], true);
                     if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                        // برگرداندن به فرمت استاندارد JSON بدون escape اضافی
-                        $responseData['default_warehouse_code'] = json_encode($decoded);
+                        // برگرداندن به صورت array بدون encode
+                        $responseData['default_warehouse_code'] = $decoded;
                     }
                 }
 
