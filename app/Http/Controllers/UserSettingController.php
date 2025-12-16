@@ -123,6 +123,15 @@ class UserSettingController extends Controller
                         $filtered[$key] = null;
                     }
                 }
+
+                // پردازش default_warehouse_code برای خروجی
+                if (isset($filtered['default_warehouse_code']) && is_string($filtered['default_warehouse_code'])) {
+                    $decoded = json_decode($filtered['default_warehouse_code'], true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $filtered['default_warehouse_code'] = json_encode($decoded);
+                    }
+                }
+
                 return response()->json([
                     'success' => true,
                     'data' => $filtered
@@ -222,8 +231,22 @@ class UserSettingController extends Controller
                     'incoming_settings' => $request->settings
                 ]);
 
+                // پردازش default_warehouse_code: decode اگر encoded ارسال شده
+                $settingsData = $request->settings;
+                if (isset($settingsData['default_warehouse_code']) && is_string($settingsData['default_warehouse_code'])) {
+                    $decoded = json_decode($settingsData['default_warehouse_code'], true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        // اگر JSON معتبر بود، آن را به فرمت استاندارد تبدیل کن
+                        $settingsData['default_warehouse_code'] = json_encode($decoded);
+                        Log::info('default_warehouse_code decoded', [
+                            'original' => $request->settings['default_warehouse_code'],
+                            'decoded' => $settingsData['default_warehouse_code']
+                        ]);
+                    }
+                }
+
                 // تبدیل داده flat به ساختار دیتابیس
-                $dbSettings = UserSetting::fromPluginArray($request->settings);
+                $dbSettings = UserSetting::fromPluginArray($settingsData);
                 // if($license->id!=3)
                     $settings = UserSetting::updateOrCreate(
                         ['license_id' => $license->id],
@@ -242,10 +265,23 @@ class UserSettingController extends Controller
                     'license_id' => $settings->license_id,
                     'saved_settings' => $settings->toArray()
                 ]);
+
+                // آماده‌سازی داده برای خروجی
+                $responseData = $settings->toPluginArray();
+
+                // پردازش default_warehouse_code برای خروجی: اطمینان از فرمت صحیح
+                if (isset($responseData['default_warehouse_code']) && is_string($responseData['default_warehouse_code'])) {
+                    $decoded = json_decode($responseData['default_warehouse_code'], true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        // برگرداندن به فرمت استاندارد JSON بدون escape اضافی
+                        $responseData['default_warehouse_code'] = json_encode($decoded);
+                    }
+                }
+
                 return response()->json([
                     'success' => true,
                     'message' => 'تنظیمات با موفقیت به‌روزرسانی شد',
-                    'data' => $settings->toPluginArray()
+                    'data' => $responseData
                 ]);
 
             } catch (\Exception $e) {
