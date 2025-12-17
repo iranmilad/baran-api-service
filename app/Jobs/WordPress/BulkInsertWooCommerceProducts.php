@@ -435,9 +435,9 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             $userSetting->rain_sale_price_unit,
             $userSetting->woocommerce_price_unit
         );
-        
+
         $data['regular_price'] = (string)$convertedRegularPrice;
-        
+
         Log::info('تبدیل قیمت عادی', [
             'barcode' => $barcode,
             'original_price' => $priceAmount,
@@ -488,7 +488,7 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
                 $userSetting->rain_sale_price_unit,
                 $userSetting->woocommerce_price_unit
             );
-            
+
             $data['sale_price'] = (string)$convertedSalePrice;
 
             Log::info('تنظیم sale_price برای محصول', [

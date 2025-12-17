@@ -247,9 +247,9 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                     $userSetting->rain_sale_price_unit,
                     $userSetting->woocommerce_price_unit
                 );
-                
+
                 $data['regular_price'] = (string)$convertedRegularPrice;
-                
+
                 Log::info('تبدیل قیمت عادی - بروزرسانی', [
                     'sku' => $data['sku'],
                     'original_price' => $regularPrice,
@@ -265,9 +265,9 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                         $userSetting->rain_sale_price_unit,
                         $userSetting->woocommerce_price_unit
                     );
-                    
+
                     $data['sale_price'] = (string)$convertedSalePrice;
-                    
+
                     Log::info('تبدیل قیمت فروش - بروزرسانی', [
                         'sku' => $data['sku'],
                         'original_sale_price' => $salePrice,
