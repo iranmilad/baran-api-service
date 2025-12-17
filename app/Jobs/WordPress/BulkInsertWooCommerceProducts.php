@@ -336,10 +336,15 @@ class BulkInsertWooCommerceProducts implements ShouldQueue
             'unique_id' => (string)$itemId,
             'sku' => (string)$barcode,
             'status' => 'draft', // پیش‌فرض draft، بعداً تغییر می‌کند
-            'manage_stock' => true,
-            'stock_quantity' => (int)$totalCount,
-            'stock_status' => (int)$totalCount > 0 ? 'instock' : 'outofstock'
+            'manage_stock' => true
         ];
+
+        // فقط اگر enable_stock_update فعال باشد، موجودی را اضافه کن
+        if ($userSetting->enable_stock_update) {
+
+            $data['stock_quantity'] = (int)$totalCount;
+            $data['stock_status'] = (int)$totalCount > 0 ? 'instock' : 'outofstock';
+        }
 
         // اضافه کردن اطلاعات واریانت اگر موجود باشد
         if ($isVariant) {

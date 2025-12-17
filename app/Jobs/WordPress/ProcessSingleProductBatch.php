@@ -423,7 +423,6 @@ class ProcessSingleProductBatch implements ShouldQueue
         if ($userSettings->enable_stock_update) {
             $stockQuantity = (int) $product['stock_quantity'];
             $data['stock_quantity'] = $stockQuantity;
-            $data['manage_stock'] = true;
             $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
         }
 

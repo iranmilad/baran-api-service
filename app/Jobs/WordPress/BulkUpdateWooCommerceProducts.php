@@ -353,7 +353,6 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                 ]);
             }
 
-            $data['manage_stock'] = true;
             $data['stock_quantity'] = $stockQuantity;
             $data['stock_status'] = $stockQuantity > 0 ? 'instock' : 'outofstock';
         }        return $data;
