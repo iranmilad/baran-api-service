@@ -1167,8 +1167,8 @@ trait WooCommerceApiTrait
 
             $response = Http::withOptions([
                 'verify' => false,
-                'timeout' => 30,
-                'connect_timeout' => 10
+                'timeout' => 120,
+                'connect_timeout' => 30
             ])->withHeaders([
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json'
