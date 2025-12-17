@@ -371,6 +371,18 @@ class ProcessSingleProductBatch implements ShouldQueue
                     $userSettings->woocommerce_price_unit
                 );
 
+                Log::info('تبدیل قیمت محصول', [
+                    'item_id' => $baranProduct["ItemID"],
+                    'barcode' => $baranProduct["Barcode"],
+                    'original_price' => $baranProduct["Price"],
+                    'discount_percent' => $baranProduct["CurrentDiscount"] ?? 0,
+                    'final_price' => $finalPrice,
+                    'rain_unit' => $userSettings->rain_sale_price_unit,
+                    'woocommerce_unit' => $userSettings->woocommerce_price_unit,
+                    'converted_price' => $convertedPrice,
+                    'license_id' => $this->license->id
+                ]);
+
                 $convertedSalePrice = null;
                 if ($salePrice !== null) {
                     $convertedSalePrice = $this->convertPriceUnit(

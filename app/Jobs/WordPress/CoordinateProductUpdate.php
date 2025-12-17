@@ -166,16 +166,40 @@ class CoordinateProductUpdate implements ShouldQueue
 
             // استخراج unique_id ها
             $uniqueIds = [];
+            $parentCount = 0;
+            $variationCount = 0;
+            $sampleProducts = [];
+
             foreach ($result['data'] as $product) {
                 if (!empty($product['unique_id'])) {
                     $uniqueIds[] = $product['unique_id'];
+
+                    // شمارش انواع محصولات - اگر variation_id خالی باشد، parent است
+                    if (isset($product['variation_id']) && $product['variation_id'] !== null) {
+                        $variationCount++;
+                    } else {
+                        $parentCount++;
+                    }
+
+                    // نمونه برداری از 10 محصول اول
+                    if (count($sampleProducts) < 10) {
+                        $sampleProducts[] = [
+                            'unique_id' => $product['unique_id'],
+                            'product_id' => $product['product_id'] ?? null,
+                            'variation_id' => $product['variation_id'] ?? null,
+                            'barcode' => $product['barcode'] ?? null
+                        ];
+                    }
                 }
             }
 
             Log::info('استخراج unique_ids از WooCommerce', [
                 'license_id' => $license->id,
                 'total_products' => count($result['data']),
-                'valid_unique_ids' => count($uniqueIds)
+                'valid_unique_ids' => count($uniqueIds),
+                'parent_products' => $parentCount,
+                'variation_products' => $variationCount,
+                'sample_products' => $sampleProducts
             ]);
 
             return $uniqueIds;
