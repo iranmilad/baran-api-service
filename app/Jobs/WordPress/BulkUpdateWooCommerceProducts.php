@@ -300,16 +300,22 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                         if (substr(trim($rawCode), 0, 1) === '[') {
                             $decoded = json_decode($rawCode, true);
                             if (is_array($decoded)) {
-                                $defaultWarehouseCodes = array_filter($decoded);
+                                $defaultWarehouseCodes = array_filter(array_map(function($code) {
+                                    return strtolower(trim(stripslashes((string)$code)));
+                                }, $decoded));
                             }
                         } else {
                             // اگر رشته‌ای است با کاما یا semicolon جدا شده
                             $defaultWarehouseCodes = array_filter(
-                                array_map('trim', preg_split('/[,;]/', $rawCode))
+                                array_map(function($code) {
+                                    return strtolower(trim($code));
+                                }, preg_split('/[,;]/', $rawCode))
                             );
                         }
                     } elseif (is_array($rawCode)) {
-                        $defaultWarehouseCodes = array_filter($rawCode);
+                        $defaultWarehouseCodes = array_filter(array_map(function($code) {
+                            return strtolower(trim(stripslashes((string)$code)));
+                        }, $rawCode));
                     }
                 }
 
@@ -319,7 +325,7 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
 
                 // اگر انبارهای خاصی تنظیم شده‌اند، فقط از آن‌ها استفاده کن
                 if (!empty($defaultWarehouseCodes)) {
-                    $query->whereIn('stock_id', $defaultWarehouseCodes);
+                    $query->whereIn(\DB::raw('LOWER(stock_id)'), $defaultWarehouseCodes);
                 }
 
                 $localProducts = $query->get();

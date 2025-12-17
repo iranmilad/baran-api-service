@@ -36,6 +36,22 @@ class Product extends Model
 
     ];
 
+    /**
+     * Mutator برای تبدیل stock_id به حروف کوچک قبل از ذخیره
+     */
+    public function setStockIdAttribute($value)
+    {
+        $this->attributes['stock_id'] = !empty($value) ? strtolower(trim((string)$value)) : null;
+    }
+
+    /**
+     * Accessor برای تبدیل stock_id به حروف کوچک هنگام خواندن
+     */
+    public function getStockIdAttribute($value)
+    {
+        return !empty($value) ? strtolower(trim((string)$value)) : null;
+    }
+
     public function parent(): BelongsTo
     {
         // رابطه بدون کلید خارجی (parent_id ممکن است null باشد)

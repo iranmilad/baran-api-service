@@ -69,7 +69,7 @@ class SyncProductFromRainSale implements ShouldQueue
                 'price_amount' => $itemData['Price'],
                 'price_after_discount' => $itemData['PriceAfterDiscount'] ?? $itemData['Price'],
                 'total_count' => $itemData['Stock'],
-                'stock_id' => $itemData['StockID'] ?? null,
+                'stock_id' => isset($itemData['StockID']) ? strtolower($itemData['StockID']) : null,
                 'raw_response' => $itemData,
                 'is_success' => true
             ]);
