@@ -380,7 +380,7 @@ class ProcessSingleProductBatch implements ShouldQueue
                     'rain_unit' => $userSettings->rain_sale_price_unit,
                     'woocommerce_unit' => $userSettings->woocommerce_price_unit,
                     'converted_price' => $convertedPrice,
-                    'license_id' => $this->license->id
+                    'license_id' => $license->id
                 ]);
 
                 $convertedSalePrice = null;
