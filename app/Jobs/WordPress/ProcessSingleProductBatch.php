@@ -239,6 +239,15 @@ class ProcessSingleProductBatch implements ShouldQueue
                 $itemId = $item['itemID'];
                 $stockId = isset($item['stockID']) ? strtolower($item['stockID']) : null;
 
+                // لاگ هر آیتم خام از API
+                Log::info('پردازش آیتم از API باران', [
+                    'item_id' => $itemId,
+                    'barcode' => $item['barcode'],
+                    'stock_id' => $stockId,
+                    'stock_quantity' => $item['stockQuantity'],
+                    'license_id' => $this->licenseId
+                ]);
+
                 // اگر warehouse codes تنظیم شده‌اند، فقط آیتم‌های مربوط به انبارهای کنفیگ شده را در نظر بگیر
                 if (!empty($warehouseCodes)) {
                     if (!in_array($stockId, $warehouseCodes)) {
@@ -282,6 +291,13 @@ class ProcessSingleProductBatch implements ShouldQueue
                     'stock_id' => $stockId,
                     'quantity' => $quantity
                 ];
+
+                Log::info('بعد از جمع موجودی', [
+                    'item_id' => $itemId,
+                    'current_total' => $groupedItems[$itemId]['StockQuantity'],
+                    'added_quantity' => $quantity,
+                    'license_id' => $this->licenseId
+                ]);
             }
 
             // تبدیل گروه‌بندی شده به آرایه و لاگ تفکیک انبارها
