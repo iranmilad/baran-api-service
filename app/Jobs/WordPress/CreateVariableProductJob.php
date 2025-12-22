@@ -824,7 +824,7 @@ class CreateVariableProductJob implements ShouldQueue
         }
 
         $parentProductData = [
-            'unique_id' => $parentProduct->item_id,
+            'unique_id' => strtolower((string)$parentProduct->item_id),
             'name' => $parentProduct->item_name,
             'type' => 'variable',
             'sku' => $parentProduct->barcode ?? $parentProduct->item_id,
@@ -995,8 +995,8 @@ class CreateVariableProductJob implements ShouldQueue
             }
 
             $variationData = [
-                'unique_id' => $variant->item_id,
-                'parent_unique_id' => $parentProduct->item_id,
+                'unique_id' => strtolower((string)$variant->item_id),
+                'parent_unique_id' => strtolower((string)$parentProduct->item_id),
                 'sku' => $itemInfo['barcode'] ?? $variant->item_id,
                 'regular_price' => (string)$regularPrice,
                 'manage_stock' => true,

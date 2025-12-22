@@ -415,8 +415,8 @@ class AddSingleVariantJob implements ShouldQueue
         }
 
         $variationData = [
-            'unique_id' => $variant->item_id,
-            'parent_unique_id' => $parentUniqueId,
+            'unique_id' => strtolower((string)$variant->item_id),
+            'parent_unique_id' => strtolower((string)$parentUniqueId),
             'sku' => $variant->barcode ?? $variant->item_id,
             'regular_price' => (string)$regularPrice,
             'manage_stock' => true,
@@ -490,7 +490,7 @@ class AddSingleVariantJob implements ShouldQueue
         }
 
         $parentData = [
-            'unique_id' => $parentUniqueId,
+            'unique_id' => strtolower((string)$parentUniqueId),
             'name' => $parentProduct->item_name,
             'type' => 'variable',
             'sku' => $parentProduct->barcode ?? $parentUniqueId,
@@ -565,8 +565,8 @@ class AddSingleVariantJob implements ShouldQueue
             }
 
             $variationData = [
-                'unique_id' => $variant->item_id,
-                'parent_unique_id' => $variantParentId,
+                'unique_id' => strtolower((string)$variant->item_id),
+                'parent_unique_id' => strtolower((string)$variantParentId),
                 'sku' => $variant->barcode ?? $variant->item_id,
                 'regular_price' => (string)$regularPrice,
                 'manage_stock' => true,
