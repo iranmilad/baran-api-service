@@ -84,8 +84,8 @@ class ProcessProductChanges implements ShouldQueue
             $itemStockCombinations = collect($this->changes)
                 ->map(function($change) {
                     return [
-                        'item_id' => $change['product']['ItemId'] ?? null,
-                        'stock_id' => $change['product']['StockID'] ?? null,
+                        'item_id' => !empty($change['product']['ItemId']) ? strtolower(trim($change['product']['ItemId'])) : null,
+                        'stock_id' => !empty($change['product']['StockID']) ? strtolower(trim($change['product']['StockID'])) : null,
                         'barcode' => $change['product']['Barcode'] ?? null,
                     ];
                 })
@@ -114,7 +114,7 @@ class ProcessProductChanges implements ShouldQueue
 
                 // ایجاد key ترکیبی برای دسترسی سریع
                 $existingProducts = $existingProducts->keyBy(function($product) {
-                    return $product->item_id . '_' . $product->stock_id;
+                    return strtolower(trim($product->item_id)) . '_' . strtolower(trim($product->stock_id));
                 });
             }
 
@@ -205,14 +205,14 @@ class ProcessProductChanges implements ShouldQueue
             $productData = [
                 'barcode' => $barcode,
                 'item_name' => $productData['ItemName'],
-                'item_id' => $productData['ItemId'] ?? null,
+                'item_id' => !empty($productData['ItemId']) ? strtolower(trim($productData['ItemId'])) : null,
                 'price_amount' => (int)($productData['PriceAmount'] ?? 0),
                 'price_after_discount' => (int)($productData['PriceAfterDiscount'] ?? 0),
                 'total_count' => (int)($productData['TotalCount'] ?? 0),
-                'stock_id' => $productData['StockID'] ?? null,
+                'stock_id' => !empty($productData['StockID']) ? strtolower(trim($productData['StockID'])) : null,
                 'department_name' => $productData['DepartmentName'] ?? null,
                 'is_variant' => isset($productData['is_variant']) ? (bool)$productData['is_variant'] : false,
-                'parent_id' => (!empty($productData['parent_id']) && trim($productData['parent_id']) !== '') ? $productData['parent_id'] : null,
+                'parent_id' => (!empty($productData['parent_id']) && trim($productData['parent_id']) !== '') ? strtolower(trim($productData['parent_id'])) : null,
                 'last_sync_at' => $now,
                 'license_id' => $this->license_id,
                 'created_at' => $now,
@@ -301,8 +301,8 @@ class ProcessProductChanges implements ShouldQueue
      */
     protected function processChildProduct($productData, $barcode, $changeType, $existingProducts, &$childProducts, &$productsToUpdate, &$updateIds)
     {
-        // ایجاد کلید ترکیبی برای جستجو
-        $compositeKey = $productData['item_id'] . '_' . $productData['stock_id'];
+        // ایجاد کلید ترکیبی برای جستجو (lowercase برای consistency)
+        $compositeKey = strtolower(trim($productData['item_id'])) . '_' . strtolower(trim($productData['stock_id']));
         $existingProduct = $existingProducts->get($compositeKey);
 
         if ($changeType === 'insert') {

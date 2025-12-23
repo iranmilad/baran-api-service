@@ -37,6 +37,38 @@ class Product extends Model
     ];
 
     /**
+     * Mutator برای تبدیل item_id به حروف کوچک قبل از ذخیره
+     */
+    public function setItemIdAttribute($value)
+    {
+        $this->attributes['item_id'] = !empty($value) ? strtolower(trim((string)$value)) : null;
+    }
+
+    /**
+     * Accessor برای تبدیل item_id به حروف کوچک هنگام خواندن
+     */
+    public function getItemIdAttribute($value)
+    {
+        return !empty($value) ? strtolower(trim((string)$value)) : null;
+    }
+
+    /**
+     * Mutator برای تبدیل parent_id به حروف کوچک قبل از ذخیره
+     */
+    public function setParentIdAttribute($value)
+    {
+        $this->attributes['parent_id'] = !empty($value) ? strtolower(trim((string)$value)) : null;
+    }
+
+    /**
+     * Accessor برای تبدیل parent_id به حروف کوچک هنگام خواندن
+     */
+    public function getParentIdAttribute($value)
+    {
+        return !empty($value) ? strtolower(trim((string)$value)) : null;
+    }
+
+    /**
      * Mutator برای تبدیل stock_id به حروف کوچک قبل از ذخیره
      */
     public function setStockIdAttribute($value)
