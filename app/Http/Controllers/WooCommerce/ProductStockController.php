@@ -290,21 +290,34 @@ class ProductStockController extends Controller
             $categoryWarehouseMap = [];
             $userSettings = UserSetting::where('license_id', $license->id)->first();
             $defaultWarehouseCode = $userSettings->default_warehouse_code ?? null;
+
             if (!empty($categories)) {
+                // بررسی اینکه آیا برای این کتگوری‌ها در license_warehouse_categories تنظیمات خاصی وجود دارد
                 $warehouseCategories = LicenseWarehouseCategory::where('license_id', $license->id)
                     ->whereIn('category_name', $categories)
                     ->get();
 
-                foreach ($warehouseCategories as $category) {
-                    $warehouseIds = array_merge($warehouseIds, $category->warehouse_codes);
+                if ($warehouseCategories->isNotEmpty()) {
+                    // اگر تنظیمات خاص وجود داشت، از warehouse_codes آن استفاده کن
+                    foreach ($warehouseCategories as $category) {
+                        $warehouseIds = array_merge($warehouseIds, $category->warehouse_codes);
+                    }
+                    $warehouseIds = array_unique($warehouseIds);
+                } else {
+                    // اگر تنظیمات خاص نبود، از default_warehouse_code استفاده کن
+                    if ($defaultWarehouseCode) {
+                        $warehouseIds = $this->parseWarehouseCodes($defaultWarehouseCode);
+                    } else {
+                        // اگر default_warehouse_code هم خالی بود، همه انبارها
+                        $warehouseIds = [];
+                    }
                 }
-                $warehouseIds = array_unique($warehouseIds);
-            }
-            else{
+            } else {
+                // اگر categories ارسال نشده، از default_warehouse_code استفاده کن
                 if ($defaultWarehouseCode) {
-                    $warehouseIds[] = $defaultWarehouseCode;
-                }
-                else{
+                    $warehouseIds = $this->parseWarehouseCodes($defaultWarehouseCode);
+                } else {
+                    // اگر default_warehouse_code خالی بود، همه انبارها
                     $warehouseIds = [];
                 }
             }
@@ -318,6 +331,14 @@ class ProductStockController extends Controller
                     'message' => $baranResponse['message']
                 ], 500);
             }
+
+            Log::info('تنظیمات انبار برای realtime-stock', [
+                'license_id' => $license->id,
+                'categories' => $categories,
+                'default_warehouse_code' => $defaultWarehouseCode,
+                'warehouse_ids_used' => $warehouseIds,
+                'warehouse_filter_enabled' => !empty($warehouseIds)
+            ]);
 
             // تبدیل پاسخ باران به فرمت مورد نظر
             $stockData = [];
@@ -342,10 +363,13 @@ class ProductStockController extends Controller
                         }
                     } else {
                         foreach ($items as $item) {
-                            if (isset($item['stockID']) && in_array($item['stockID'], $warehouseIds)) {
-                                $stockQuantity = (int)($item['stockQuantity'] ?? 0);
-                                if ($stockQuantity > 0) {
-                                    $totalStock += $stockQuantity;
+                            if (isset($item['stockID'])) {
+                                $stockId = strtolower(trim($item['stockID']));
+                                if (in_array($stockId, $warehouseIds)) {
+                                    $stockQuantity = (int)($item['stockQuantity'] ?? 0);
+                                    if ($stockQuantity > 0) {
+                                        $totalStock += $stockQuantity;
+                                    }
                                 }
                             }
                         }
@@ -460,5 +484,44 @@ class ProductStockController extends Controller
         }
     }
 
+    /**
+     * تجزیه کدهای انبار از فرمت‌های مختلف (JSON array یا comma-separated)
+     *
+     * @param string|array|null $warehouseCode
+     * @return array
+     */
+    private function parseWarehouseCodes($warehouseCode): array
+    {
+        if (empty($warehouseCode)) {
+            return [];
+        }
+
+        // اگر قبلاً آرایه است، مستقیم برگردان
+        if (is_array($warehouseCode)) {
+            return array_filter(array_map(function($code) {
+                return strtolower(trim(stripslashes((string)$code)));
+            }, $warehouseCode));
+        }
+
+        // اگر string است
+        if (is_string($warehouseCode)) {
+            // اگر JSON array است
+            if (substr(trim($warehouseCode), 0, 1) === '[') {
+                $decoded = json_decode($warehouseCode, true);
+                if (is_array($decoded)) {
+                    return array_filter(array_map(function($code) {
+                        return strtolower(trim(stripslashes((string)$code)));
+                    }, $decoded));
+                }
+            }
+
+            // اگر رشته‌ای است با کاما یا semicolon جدا شده
+            return array_filter(array_map(function($code) {
+                return strtolower(trim($code));
+            }, preg_split('/[,;]/', $warehouseCode)));
+        }
+
+        return [];
+    }
 
 }
