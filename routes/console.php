@@ -108,15 +108,15 @@ Schedule::call(function () {
 Schedule::call(function () {
     $expiredLicenses = DB::table('licenses')
         ->where('expires_at', '<', now())
-        ->where('is_active', true)
+        ->where('status', 'active')
         ->get();
 
     if ($expiredLicenses->count() > 0) {
         $deactivatedCount = DB::table('licenses')
             ->where('expires_at', '<', now())
-            ->where('is_active', true)
+            ->where('status', 'active')
             ->update([
-                'is_active' => false,
+                'status' => 'expired',
                 'updated_at' => now()
             ]);
 
