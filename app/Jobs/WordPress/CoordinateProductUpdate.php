@@ -172,7 +172,8 @@ class CoordinateProductUpdate implements ShouldQueue
 
             foreach ($result['data'] as $product) {
                 if (!empty($product['unique_id'])) {
-                    $uniqueIds[] = $product['unique_id'];
+                    // تبدیل unique_id به lowercase برای consistency
+                    $uniqueIds[] = strtolower(trim($product['unique_id']));
 
                     // شمارش انواع محصولات - اگر variation_id خالی باشد، parent است
                     if (isset($product['variation_id']) && $product['variation_id'] !== null) {

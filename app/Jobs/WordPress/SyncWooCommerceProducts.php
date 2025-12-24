@@ -278,6 +278,9 @@ class SyncWooCommerceProducts implements ShouldQueue
             if ($this->operation === 'insert' || $userSettings->enable_stock_update) {
                 // دریافت موجودی از انبارهای تنظیم‌شده یا تمام انبارها
                 $itemId = $item['ItemID'] ?? $item['item_id'] ?? $item['ItemId'] ?? null;
+                // تبدیل itemId به lowercase برای consistency
+                $itemId = !empty($itemId) ? strtolower(trim($itemId)) : null;
+                
                 $stockQuantity = 0;
                 $warehouseInfo = [];
 

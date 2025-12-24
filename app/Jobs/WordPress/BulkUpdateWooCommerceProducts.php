@@ -80,6 +80,9 @@ class BulkUpdateWooCommerceProducts implements ShouldQueue
                     continue;
                 }
 
+                // تبدیل itemId به lowercase برای consistency
+                $itemId = strtolower(trim($itemId));
+
                 $existingProduct = Product::where('item_id', $itemId)
                     ->where('license_id', $this->license_id)
                     ->first();
