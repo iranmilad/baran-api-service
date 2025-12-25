@@ -17,7 +17,9 @@ use App\Traits\PriceUnitConverter;
 
 class ProductStockController extends Controller
 {
-    use WordPressMasterTrait, PriceUnitConverter;
+    use WordPressMasterTrait, PriceUnitConverter {
+        PriceUnitConverter::convertPriceUnit insteadof WordPressMasterTrait;
+    }
     /**
      * دریافت موجودی محصولات بر اساس کدهای یکتا و انبار پیش‌فرض
      */
