@@ -357,13 +357,16 @@ class ProductStockController extends Controller
                     $totalStock = 0;
                     $firstItem = $items->first(); // برای گرفتن قیمت از اولین آیتم
 
-                    // استخراج اطلاعات قیمت
-                    $price = (float)($firstItem['price'] ?? $firstItem['Price'] ?? 0);
-                    $currentDiscount = (float)($firstItem['currentDiscount'] ?? $firstItem['CurrentDiscount'] ?? 0);
+                    // استخراج اطلاعات قیمت - نام فیلدهای API باران
+                    $price = (float)($firstItem['salePrice'] ?? 0);
+                    $currentDiscount = (float)($firstItem['currentDiscount'] ?? 0);
                     $priceAfterDiscount = null;
-
-                    // محاسبه قیمت با تخفیف اگر تخفیف وجود داشت
-                    if ($currentDiscount > 0 && $price > 0) {
+                    
+                    // اگر PriceAfterDiscount در response موجود است از آن استفاده کن
+                    if (isset($firstItem['PriceAfterDiscount']) && $firstItem['PriceAfterDiscount'] !== null) {
+                        $priceAfterDiscount = (float)$firstItem['PriceAfterDiscount'];
+                    } elseif ($currentDiscount > 0 && $price > 0) {
+                        // در غیر این صورت محاسبه کن
                         $priceAfterDiscount = $price - ($price * $currentDiscount / 100);
                     }
 
