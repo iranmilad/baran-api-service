@@ -13,10 +13,11 @@ use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\DB;
 use App\Traits\WordPress\WordPressMasterTrait;
+use App\Traits\PriceUnitConverter;
 
 class ProductStockController extends Controller
 {
-    use WordPressMasterTrait;
+    use WordPressMasterTrait, PriceUnitConverter;
     /**
      * دریافت موجودی محصولات بر اساس کدهای یکتا و انبار پیش‌فرض
      */
@@ -352,6 +353,37 @@ class ProductStockController extends Controller
 
                 if ($items->isNotEmpty()) {
                     $totalStock = 0;
+                    $firstItem = $items->first(); // برای گرفتن قیمت از اولین آیتم
+
+                    // استخراج اطلاعات قیمت
+                    $price = (float)($firstItem['price'] ?? $firstItem['Price'] ?? 0);
+                    $currentDiscount = (float)($firstItem['currentDiscount'] ?? $firstItem['CurrentDiscount'] ?? 0);
+                    $priceAfterDiscount = null;
+
+                    // محاسبه قیمت با تخفیف اگر تخفیف وجود داشت
+                    if ($currentDiscount > 0 && $price > 0) {
+                        $priceAfterDiscount = $price - ($price * $currentDiscount / 100);
+                    }
+
+                    // تبدیل قیمت‌ها بر اساس واحد قیمت‌گذاری (اگر userSettings موجود باشد)
+                    $convertedPrice = $price;
+                    $convertedPriceAfterDiscount = $priceAfterDiscount;
+
+                    if ($userSettings && $userSettings->rain_sale_price_unit && $userSettings->woocommerce_price_unit) {
+                        $convertedPrice = $this->convertPriceUnit(
+                            $price,
+                            $userSettings->rain_sale_price_unit,
+                            $userSettings->woocommerce_price_unit
+                        );
+
+                        if ($priceAfterDiscount !== null) {
+                            $convertedPriceAfterDiscount = $this->convertPriceUnit(
+                                $priceAfterDiscount,
+                                $userSettings->rain_sale_price_unit,
+                                $userSettings->woocommerce_price_unit
+                            );
+                        }
+                    }
 
                     // اگر warehouseIds خالی بود جمع کل انبارها، اگر مقدار داشت فقط جمع انبارهای موجود در warehouseIds
                     if (empty($warehouseIds)) {
@@ -376,11 +408,17 @@ class ProductStockController extends Controller
                     }
 
                     $stockData[$uniqueId] = [
-                        'stock_quantity' => $totalStock
+                        'stock_quantity' => $totalStock,
+                        'price' => $convertedPrice,
+                        'current_discount' => $currentDiscount,
+                        'price_after_discount' => $convertedPriceAfterDiscount
                     ];
                 } else {
                     $stockData[$uniqueId] = [
-                        'stock_quantity' => 0
+                        'stock_quantity' => 0,
+                        'price' => 0,
+                        'current_discount' => 0,
+                        'price_after_discount' => null
                     ];
                 }
             }
