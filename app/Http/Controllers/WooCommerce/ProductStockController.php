@@ -361,7 +361,7 @@ class ProductStockController extends Controller
                     $price = (float)($firstItem['salePrice'] ?? 0);
                     $currentDiscount = (float)($firstItem['currentDiscount'] ?? 0);
                     $priceAfterDiscount = null;
-                    
+
                     // اگر PriceAfterDiscount در response موجود است از آن استفاده کن
                     if (isset($firstItem['PriceAfterDiscount']) && $firstItem['PriceAfterDiscount'] !== null) {
                         $priceAfterDiscount = (float)$firstItem['PriceAfterDiscount'];
