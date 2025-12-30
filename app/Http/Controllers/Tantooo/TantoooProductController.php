@@ -286,7 +286,7 @@ class TantoooProductController extends Controller
                 $syncId,
                 $insertProducts,
                 $updateProducts
-            )->onQueue('tantooo-sync');
+            )->onQueue('default');
 
             // پاسخ فوری به کلاینت
             return response()->json([
@@ -552,7 +552,7 @@ class TantoooProductController extends Controller
             \App\Jobs\Tantooo\UpdateAllProductsJob::dispatch(
                 $license->id,
                 $syncId
-            )->onQueue('tantooo-sync');
+            )->onQueue('default');
 
             // پاسخ فوری به کلاینت
             return response()->json([

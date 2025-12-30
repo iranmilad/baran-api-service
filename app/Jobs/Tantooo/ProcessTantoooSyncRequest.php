@@ -41,7 +41,7 @@ class ProcessTantoooSyncRequest implements ShouldQueue
         $this->syncId = $syncId;
         $this->insertProducts = $insertProducts ?? [];
         $this->updateProducts = $updateProducts ?? [];
-        $this->onQueue('tantooo-sync');
+        $this->onQueue('default');
     }
 
     /**

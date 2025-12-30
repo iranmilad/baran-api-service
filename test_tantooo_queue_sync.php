@@ -2,7 +2,7 @@
 
 /**
  * تست سیستم Queue-based همگام‌سازی Tantooo
- * 
+ *
  * این فایل نحوه استفاده از سیستم جدید همگام‌سازی Tantooo را نشان می‌دهد
  * که عملیات سنگین را روی queue انجام می‌دهد
  */
@@ -30,7 +30,7 @@ $syncRequest = [
             "Stock" => 10
         ],
         [
-            "Barcode" => "987654321", 
+            "Barcode" => "987654321",
             "Title" => "محصول جدید 2",
             "Price" => 200000,
             "Stock" => 5
@@ -146,15 +146,15 @@ echo "  - تشخیص و رفع مشکلات\n\n";
 echo "⚙️ پیکربندی Queue:\n\n";
 
 echo "🔧 Queue Workers:\n";
-echo "php artisan queue:work --queue=tantooo-sync --timeout=600 --memory=512\n\n";
+echo "php artisan queue:work --queue=default --timeout=600 --memory=512\n\n";
 
 echo "📊 مانیتورینگ Queue:\n";
-echo "php artisan queue:monitor tantooo-sync\n\n";
+echo "php artisan queue:monitor default\n\n";
 
 echo "🔄 Supervisor Configuration:\n";
-echo "[program:tantooo-sync-worker]\n";
+echo "[program:default-worker]\n";
 echo "process_name=%(program_name)s_%(process_num)02d\n";
-echo "command=php /path/to/artisan queue:work --queue=tantooo-sync --sleep=3 --tries=3 --max-time=3600\n";
+echo "command=php /path/to/artisan queue:work --queue=default --sleep=3 --tries=3 --max-time=3600\n";
 echo "autostart=true\n";
 echo "autorestart=true\n";
 echo "stopasgroup=true\n";
@@ -162,7 +162,7 @@ echo "killasgroup=true\n";
 echo "user=www-data\n";
 echo "numprocs=2\n";
 echo "redirect_stderr=true\n";
-echo "stdout_logfile=/var/log/tantooo-sync-worker.log\n";
+echo "stdout_logfile=/var/log/default-worker.log\n";
 echo "stopwaitsecs=3600\n\n";
 
 // === 6. خطاهای محتمل و راه‌حل ===
